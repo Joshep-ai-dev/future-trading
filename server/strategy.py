@@ -1,4 +1,4 @@
-"""Causal 15m structure / 5m sweep simulation. All bar timestamps are opens."""
+"""Shared cost/risk simulator and legacy sweep rules. All bar timestamps are opens."""
 from bisect import bisect_left, bisect_right, insort
 from datetime import date, datetime, timedelta, timezone
 from math import ceil, floor
@@ -15,6 +15,13 @@ class BacktestRequest(BaseModel):
     start_date: date
     end_date: date
     validation_date: date
+    strategy: Literal['sweep', 'mtf'] = 'sweep'
+    direction_active: bool = True
+    direction_timeframe: Literal['15m', '30m', '1h', '4h'] = '1h'
+    setup_active: bool = True
+    setup_timeframe: Literal['5m', '15m', '30m', '1h'] = '15m'
+    entry_active: bool = True
+    entry_timeframe: Literal['1m', '3m', '5m', '15m'] = '5m'
     capital: float = Field(default=2000, gt=0, le=1e9)
     tick_size: float = Field(default=.01, gt=0, le=10)
     fee_bps: float = Field(default=5, ge=0, le=100)
@@ -32,6 +39,8 @@ class BacktestRequest(BaseModel):
             raise ValueError('Validation date must be after the start date and on or before the end date.')
         if self.session_start == self.session_end or (self.session_start == 0 and self.session_end == 0):
             raise ValueError('Session hours must differ; use 00–24 for a full day.')
+        if self.strategy == 'mtf' and not any((self.direction_active, self.setup_active, self.entry_active)):
+            raise ValueError('Activate at least one timeframe for the EMA + RSI strategy.')
         return self
 
 
@@ -161,20 +170,20 @@ def metrics(trades, equity, capital):
                 meets100Trades=len(trades) >= 100)
 
 
-def simulate(frame, events, settings, start, end, name):
+def simulate(frame, events, settings, start, end, name, bar_seconds=300, orders=None):
     times = frame.index.asi8 // 10**9
     rows = frame[['open', 'high', 'low', 'close']].to_numpy()
     balance = settings.capital
     pending = position = None
     trades, equity = [], [dict(time=start, value=balance)]
-    diagnostics = dict(sweeps=0, blockedByLevel=0, expiredOrders=0, cancelledOrders=0, ambiguousBars=0)
+    diagnostics = dict(signals=0, invalidEntries=0, sweeps=0, blockedByLevel=0, expiredOrders=0, cancelledOrders=0, ambiguousBars=0)
     state = dict(trend=0, highs=[], lows=[], resistance=[], support=[])
     event_index = 0
     current_session, session_trades, session_losses = None, 0, 0
     friction = settings.spread/2+settings.slippage
     fee = settings.fee_bps/10000
     prior_time, prior_close = None, None
-    valid_indices = np.flatnonzero((times >= start) & (times+300 <= end) & np.isfinite(rows).all(axis=1))
+    valid_indices = np.flatnonzero((times >= start) & (times+bar_seconds <= end) & np.isfinite(rows).all(axis=1))
     if not len(valid_indices):
         return dict(name=name, start=start, end=end, trades=[], equity=equity,
                     summary=metrics([], equity, balance), diagnostics=diagnostics, status='no_complete_bars')
@@ -202,10 +211,13 @@ def simulate(frame, events, settings, start, end, name):
         t = int(time_value)
         if t < start:
             continue
-        if t+300 > end or i > last_index:
+        if t+bar_seconds > end or i > last_index:
             break
         row = tuple(map(float, rows[i]))
         session = session_at(t, settings)
+        # A coarse execution bar cannot establish prices at a session boundary inside it.
+        if session is not None and session_at(t+bar_seconds-1, settings) != session:
+            session = None
         # Gaps flatten at the last known close; unknown prices cannot be simulated.
         if not np.isfinite(row).all():
             if position is not None:
@@ -223,19 +235,20 @@ def simulate(frame, events, settings, start, end, name):
                 diagnostics['cancelledOrders'] += 1
             pending = None
             current_session, session_trades, session_losses = session, 0, 0
-        closing_session = session_at(t+300, settings) != session
+        closing_session = session_at(t+bar_seconds, settings) != session
         just_entered = False
         if pending is not None and session is not None:
             d = pending['direction']
-            triggered = row[1] >= pending['trigger'] if d == 1 else row[2] <= pending['trigger']
+            market_order = pending.get('orderType') == 'market'
+            triggered = market_order or (row[1] >= pending['trigger'] if d == 1 else row[2] <= pending['trigger'])
             if triggered:
-                raw_entry = max(row[0], pending['trigger']) if d == 1 else min(row[0], pending['trigger'])
+                raw_entry = row[0] if market_order else (max(row[0], pending['trigger']) if d == 1 else min(row[0], pending['trigger']))
                 entry = raw_entry+d*friction
                 risk = d*(entry-pending['stop'])
                 obstacle = pending['obstacle']
                 blocked = obstacle is not None and d*(obstacle-entry) < 2*risk
                 if blocked or risk <= 0 or balance <= 0 or entry+d*2*risk <= 0:
-                    diagnostics['blockedByLevel'] += 1
+                    diagnostics['blockedByLevel' if blocked else 'invalidEntries'] += 1
                 else:
                     risk_budget = balance*.005
                     stop_fill = pending['stop']-d*friction
@@ -262,22 +275,23 @@ def simulate(frame, events, settings, start, end, name):
             if outcome is not None:
                 price, reason, ambiguous = outcome
                 # A low/high on the entry candle could predate the entry; assume stop first.
-                close_trade(price, t, reason, ambiguous or (just_entered and reason == 'stop'))
+                close_trade(price, t, reason, ambiguous or (just_entered and position.get('orderType') != 'market' and reason == 'stop'))
             elif closing_session or i == last_index:
                 close_trade(row[3]-position['direction']*friction, t,
                             'session_end' if closing_session else 'period_end')
-        while event_index < len(events) and events[event_index]['time'] <= t+300:
+        while event_index < len(events) and events[event_index]['time'] <= t+bar_seconds:
             state = events[event_index]
             event_index += 1
         if (session is not None and not closing_session and i < last_index and
                 position is None and pending is None and session_trades < 2 and session_losses < 2 and balance > 0):
-            order = setup_order(rows, i, state, settings)
+            order = setup_order(rows, i, state, settings) if orders is None else orders.get(i)
             if order is not None:
-                diagnostics['sweeps'] += 1
+                diagnostics['signals'] += 1
+                diagnostics['sweeps'] += int(orders is None)
                 if order['blocked']:
                     diagnostics['blockedByLevel'] += 1
                 else:
-                    pending = dict(order, signalTime=t, expires=i+3, session=session)
+                    pending = dict(order, signalTime=t, expires=i+(1 if order.get('orderType') == 'market' else 3), session=session)
         if (closing_session or i == last_index) and pending is not None:
             diagnostics['cancelledOrders'] += 1
             pending = None
@@ -286,7 +300,7 @@ def simulate(frame, events, settings, start, end, name):
             liquidation = row[3]-position['direction']*friction
             mark += position['direction']*(liquidation-position['entry'])*position['quantity']
             mark -= abs(liquidation*position['quantity'])*fee
-        equity.append(dict(time=t+300, value=float(mark)))
+        equity.append(dict(time=t+bar_seconds, value=float(mark)))
         prior_time, prior_close = t, float(row[3])
     return dict(name=name, start=start, end=end, trades=trades, equity=equity,
                 summary=metrics(trades, equity, settings.capital), diagnostics=diagnostics, status='ok')
@@ -300,4 +314,5 @@ def run_backtest(five, fifteen, settings):
     candles = [dict(time=int(t.timestamp()), open=float(r.open), high=float(r.high), low=float(r.low), close=float(r.close))
                for t,r in five.loc[(five.index >= pd.Timestamp(start,unit='s',tz='UTC')) &
                                    (five.index < pd.Timestamp(end,unit='s',tz='UTC'))].dropna().iterrows()]
-    return dict(settings=settings.model_dump(mode='json'), research=research, validation=validation, candles=candles)
+    return dict(settings=settings.model_dump(mode='json'), research=research, validation=validation, candles=candles,
+                strategyName='Structure / liquidity sweep', executionTimeframe='5m', barSeconds=300, indicators=[])

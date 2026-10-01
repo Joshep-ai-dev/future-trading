@@ -1,0 +1,59 @@
+{
+  "settings": {
+    "start_date": "2026-03-26",
+    "end_date": "2026-09-27",
+    "validation_date": "2026-08-02",
+    "strategy": "mtf",
+    "direction_active": true,
+    "direction_timeframe": "1h",
+    "setup_active": true,
+    "setup_timeframe": "15m",
+    "entry_active": true,
+    "entry_timeframe": "5m",
+    "capital": 2000.0,
+    "tick_size": 0.01,
+    "fee_bps": 5.0,
+    "spread": 0.01,
+    "slippage": 0.01,
+    "funding_bps": 1.0,
+    "max_leverage": 1.0,
+    "session_start": 0,
+    "session_end": 24,
+    "session_timezone": "UTC"
+  },
+  "executionTimeframe": "5m",
+  "periods": {
+    "research": {
+      "trades": 232,
+      "wins": 46,
+      "losses": 186,
+      "netPnl": -679.8761323955395,
+      "endingBalance": 1320.1238676044604,
+      "returnPct": -33.993806619776976,
+      "winRate": 19.82758620689655,
+      "profitFactor": 0.23709507918452435,
+      "maxDrawdownPct": -33.993806619776876,
+      "averageR": -0.3570669646486277,
+      "fees": 368.6935714768912,
+      "funding": 0.05419922849240069,
+      "executionCost": 158.7632423051684,
+      "meets100Trades": true
+    },
+    "validation": {
+      "trades": 102,
+      "wins": 22,
+      "losses": 80,
+      "netPnl": -266.32307271763534,
+      "endingBalance": 1733.6769272823647,
+      "returnPct": -13.316153635881767,
+      "winRate": 21.568627450980394,
+      "profitFactor": 0.34816698603349655,
+      "maxDrawdownPct": -13.431543383157308,
+      "averageR": -0.2791260803592284,
+      "fees": 185.275028680076,
+      "funding": 0.7285556601760206,
+      "executionCost": 85.26327536183182,
+      "meets100Trades": true
+    }
+  }
+}

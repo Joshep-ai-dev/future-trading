@@ -20,7 +20,7 @@ class DataTests(unittest.TestCase):
             minute,q=load_bars('1m',path)
             self.assertEqual(len(minute),120)
             self.assertTrue(np.isnan(minute.close.iloc[10]))
-            for timeframe, expected in [('5m', 23), ('10m', 11)]:
+            for timeframe, expected in [('3m', 39), ('5m', 23), ('10m', 11), ('30m', 3)]:
                 aggregated, quality = load_bars(timeframe, path)
                 self.assertEqual(quality['completeBars'], expected)
                 self.assertEqual(quality['excludedBars'], 1)

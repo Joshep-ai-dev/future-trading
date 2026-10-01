@@ -28,7 +28,7 @@ function App() {
     <Tabs value={page} onChange={navigate}/>
     <div id="page-price" role="tabpanel" aria-labelledby="tab-price" hidden={page!=='price'}>
     <form className="price-form" onSubmit={run}><fieldset disabled={busy}><div className="settings-grid">
-      <label>Bar size<select value={settings.timeframe} onChange={e=>setSettings({...settings,timeframe:e.target.value as Parameters['timeframe']})}>{['1m','5m','10m','15m','1h','4h','1d'].map(t=><option key={t}>{t}</option>)}</select></label>
+      <label>Bar size<select value={settings.timeframe} onChange={e=>setSettings({...settings,timeframe:e.target.value as Parameters['timeframe']})}>{['1m','3m','5m','10m','15m','30m','1h','4h','1d'].map(t=><option key={t}>{t}</option>)}</select></label>
     </div><div className="form-actions"><button type="submit">{busy?'Loading…':'Load prices'}</button></div></fieldset></form>
     {error && <p role="alert" className="error">{error}</p>}{changed && <p className="notice">Bar size changed. Load prices to update the chart.</p>}
     {busy && <p role="status">Reading CSV…</p>}

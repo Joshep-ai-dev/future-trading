@@ -6,13 +6,14 @@ from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 from .data import load_bars
 from .strategy import BacktestRequest, run_backtest
+from .mtf import active_stages, run_mtf_backtest
 
 app = FastAPI(title='Silver Price Research')
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 class Parameters(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    timeframe: Literal['1m', '5m', '10m', '15m', '1h', '4h', '1d'] = '1m'
+    timeframe: Literal['1m', '3m', '5m', '10m', '15m', '30m', '1h', '4h', '1d'] = '1m'
 
 @app.get('/api/health')
 def health():
@@ -38,6 +39,9 @@ def run(parameters: Parameters):
 @app.post('/api/backtest')
 def backtest(parameters: BacktestRequest):
     try:
+        if parameters.strategy == 'mtf':
+            frames = {timeframe: load_bars(timeframe)[0] for timeframe in {tf for _, tf in active_stages(parameters)}}
+            return run_mtf_backtest(frames, parameters)
         five, _ = load_bars('5m')
         fifteen, _ = load_bars('15m')
         return run_backtest(five, fifteen, parameters)

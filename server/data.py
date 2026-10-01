@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 CSV = Path(__file__).resolve().parents[1] / 'data' / 'OKX_XAG-USDT-SWAP_1m.csv'
-TIMEFRAMES = {'1m': 60, '5m': 300, '10m': 600, '15m': 900, '1h': 3600, '4h': 14400, '1d': 86400}
+TIMEFRAMES = {'1m': 60, '3m': 180, '5m': 300, '10m': 600, '15m': 900, '30m': 1800, '1h': 3600, '4h': 14400, '1d': 86400}
 
 
 def load_bars(timeframe='1m', path=CSV):

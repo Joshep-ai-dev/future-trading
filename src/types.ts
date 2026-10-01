@@ -1,4 +1,4 @@
-export type Parameters = {timeframe: '1m'|'5m'|'10m'|'15m'|'1h'|'4h'|'1d'};
+export type Parameters = {timeframe: '1m'|'3m'|'5m'|'10m'|'15m'|'30m'|'1h'|'4h'|'1d'};
 export type Analysis = {
   history?: {hasMore: boolean; nextBefore: number | null};
   params: Parameters; asOf: number; dataRange: {startDate: string; endDate: string};
@@ -8,16 +8,21 @@ export type Analysis = {
 export const fmt = (v: number, digits=2) => v.toLocaleString('en-US', {maximumFractionDigits: digits});
 
 export type BacktestSettings = {
+  strategy: 'sweep'|'mtf';
+  direction_active: boolean; direction_timeframe: '15m'|'30m'|'1h'|'4h';
+  setup_active: boolean; setup_timeframe: '5m'|'15m'|'30m'|'1h';
+  entry_active: boolean; entry_timeframe: '1m'|'3m'|'5m'|'15m';
   start_date: string; end_date: string; validation_date: string; capital: number;
   tick_size: number; fee_bps: number; spread: number; slippage: number; funding_bps: number;
   max_leverage: number; session_start: number; session_end: number; session_timezone: string;
 };
 export type Trade = {
   id: number; direction: number; signalTime: number; entryTime: number; exitTime: number;
-  entry: number; exit: number; stop: number; target: number; trigger: number; sweepLevel: number;
+  entry: number; exit: number; stop: number; target: number; trigger: number | null; sweepLevel: number | null;
   quantity: number; riskBudget: number; plannedRisk: number; netPnl: number; grossPnl: number;
   fees: number; funding: number; executionCost: number; netR: number; balance: number;
   exitReason: string; session: string; ambiguous: boolean; obstacle: number | null;
+  signalLabel?: string; signalCloseTime?: number; confirmations?: Confirmation[];
   swingHighs: number[]; swingLows: number[]; period: string;
 };
 export type Summary = {
@@ -28,8 +33,10 @@ export type Summary = {
 export type PeriodResult = {
   name: string; start: number; end: number; trades: Trade[]; equity: {time: number; value: number}[];
   summary: Summary; status: string;
-  diagnostics: {sweeps: number; blockedByLevel: number; expiredOrders: number; cancelledOrders: number; ambiguousBars: number};
+  diagnostics: {signals: number; invalidEntries: number; sweeps: number; blockedByLevel: number; expiredOrders: number; cancelledOrders: number; ambiguousBars: number};
 };
-export type BacktestResult = {settings: BacktestSettings; research: PeriodResult; validation: PeriodResult; candles: Analysis['candles']};
+export type Confirmation = {stage: string; timeframe: string; closeTime: number; ema20: number; ema50: number; rsi20: number | null};
+export type IndicatorPoint = {time: number; ema20: number | null; ema50: number | null; rsi20: number | null};
+export type BacktestResult = {strategyName: string; executionTimeframe: string; barSeconds: number; indicators: IndicatorPoint[]; settings: BacktestSettings; research: PeriodResult; validation: PeriodResult; candles: Analysis['candles']};
 
 export type CandlePage = {candles: Analysis["candles"]; hasMore: boolean; nextBefore: number | null};
