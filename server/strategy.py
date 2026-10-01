@@ -25,7 +25,12 @@ class BacktestRequest(BaseModel):
     entry_active: bool = True
     entry_timeframe: Literal['1m', '3m', '5m', '15m'] = '5m'
     exit_condition: Literal['none', 'ema', 'rsi', 'either'] = 'none'
-    stop_mode: Literal['fixed', 'breakeven', 'trailing', 'breakeven_trailing'] = 'fixed'
+    stop_mode: Literal['none', 'fixed', 'breakeven', 'trailing', 'breakeven_trailing'] = 'fixed'
+    ema_fast: int = Field(default=20, ge=1, le=500)
+    ema_slow: int = Field(default=50, ge=2, le=1000)
+    rsi_period: int = Field(default=20, ge=1, le=500)
+    rsi_threshold: float = Field(default=50, gt=0, lt=100)
+    rsi_active: bool = True
     capital: float = Field(default=2000, gt=0, le=1e9)
     tick_size: float = Field(default=.01, gt=0, le=10)
     fee_bps: float = Field(default=5, ge=0, le=100)
@@ -39,12 +44,19 @@ class BacktestRequest(BaseModel):
 
     @model_validator(mode='after')
     def check_ranges(self):
+        if self.ema_fast >= self.ema_slow:
+            raise ValueError('Fast EMA period must be less than slow EMA period.')
         if not self.start_date < self.validation_date <= self.end_date:
             raise ValueError('Validation date must be after the start date and on or before the end date.')
         if self.session_start == self.session_end or (self.session_start == 0 and self.session_end == 0):
             raise ValueError('Session hours must differ; use 00–24 for a full day.')
         if self.strategy == 'mtf' and not any((self.direction_active, self.setup_active, self.entry_active)):
             raise ValueError('Activate at least one timeframe for the EMA + RSI strategy.')
+        if self.strategy == 'mtf':
+            self.exit_condition = 'ema'
+            self.stop_mode = 'none'
+        elif self.stop_mode == 'none':
+            raise ValueError('Sweep requires a stop-loss mode.')
         return self
 
 
@@ -93,6 +105,8 @@ def structure_events(frame):
 
 def session_at(stamp, settings):
     local = datetime.fromtimestamp(stamp, timezone.utc).astimezone(ZoneInfo(settings.session_timezone))
+    if local.weekday() >= 5:
+        return None
     hour = local.hour + local.minute / 60
     start, end = settings.session_start, settings.session_end
     if start < end:
@@ -175,6 +189,7 @@ def metrics(trades, equity, capital):
 
 
 def simulate(frame, events, settings, start, end, name, bar_seconds=300, orders=None, exit_values=None):
+    protected = settings.strategy != 'mtf'
     times = frame.index.asi8 // 10**9
     rows = frame[['open', 'high', 'low', 'close']].to_numpy()
     balance = settings.capital
@@ -204,6 +219,9 @@ def simulate(frame, events, settings, start, end, name, bar_seconds=300, orders=
         trade = {k:v for k,v in p.items() if k not in ('entryFee', 'lastFunding', 'pendingStop', 'pendingExit')}
         trade['finalStop'] = p['stop']
         trade['stop'] = p['initialStop']
+        if not protected:
+            trade['sizingReference'] = p['initialStop']
+            trade.update(stop=None, initialStop=None, finalStop=None, target=None, stopHistory=[], plannedRisk=None)
         raw = price+p['direction']*friction if raw is None else raw
         trade.update(id=len(trades)+1, exitTime=stamp, exit=price, exitReason=reason,
                      grossPnl=gross, fees=fees, netPnl=net, netR=net/p['riskBudget'], balance=balance,
@@ -254,10 +272,10 @@ def simulate(frame, events, settings, start, end, name, bar_seconds=300, orders=
             if triggered:
                 raw_entry = row[0] if market_order else (max(row[0], pending['trigger']) if d == 1 else min(row[0], pending['trigger']))
                 entry = raw_entry+d*friction
-                risk = d*(entry-pending['stop'])
+                risk = d*(entry-pending['stop']) if protected else max(abs(entry-pending['stop']), settings.tick_size)
                 obstacle = pending['obstacle']
                 blocked = obstacle is not None and d*(obstacle-entry) < 2*risk
-                if blocked or risk <= 0 or balance <= 0 or entry+d*2*risk <= 0:
+                if blocked or risk <= 0 or balance <= 0 or (protected and entry+d*2*risk <= 0):
                     diagnostics['blockedByLevel' if blocked else 'invalidEntries'] += 1
                 else:
                     risk_budget = balance*.005
@@ -286,15 +304,15 @@ def simulate(frame, events, settings, start, end, name, bar_seconds=300, orders=
             queued_exit = position.pop('pendingExit', None)
             if queued_exit is not None:
                 d = position['direction']
-                gap_stop = row[0] <= position['stop'] if d == 1 else row[0] >= position['stop']
-                gap_target = row[0] >= position['target'] if d == 1 else row[0] <= position['target']
+                gap_stop = protected and (row[0] <= position['stop'] if d == 1 else row[0] >= position['stop'])
+                gap_target = protected and (row[0] >= position['target'] if d == 1 else row[0] <= position['target'])
                 # Existing protective orders take priority at the next open.
                 position['exitSignal'] = queued_exit
                 reason = 'stop' if gap_stop else 'target' if gap_target else queued_exit['reason']
                 raw_exit = position['target'] if gap_target and not gap_stop else row[0]
                 close_trade(raw_exit-d*friction, t, reason)
             else:
-                outcome = exit_on_bar(position, row, friction, just_entered)
+                outcome = exit_on_bar(position, row, friction, just_entered) if protected else None
                 if outcome is not None:
                     price, reason, ambiguous = outcome
                     close_trade(price, t, reason, ambiguous or (just_entered and position.get('orderType') != 'market' and reason == 'stop'))
@@ -304,7 +322,7 @@ def simulate(frame, events, settings, start, end, name, bar_seconds=300, orders=
             if position is not None:
                 # Observe this candle only after price stops/targets have been evaluated.
                 if exit_values is not None and i > 0:
-                    reason = indicator_exit(position['direction'], exit_values[i-1], exit_values[i], settings.exit_condition)
+                    reason = indicator_exit(position['direction'], exit_values[i-1], exit_values[i], settings.exit_condition, settings.rsi_threshold)
                     if reason:
                         values = exit_values[i]
                         position['pendingExit'] = dict(time=t, closeTime=t+bar_seconds, reason=reason,
@@ -344,7 +362,7 @@ def simulate(frame, events, settings, start, end, name, bar_seconds=300, orders=
 def run_backtest(five, fifteen, settings):
     events = structure_events(fifteen)
     start, split, end = seconds(settings.start_date), seconds(settings.validation_date), seconds(settings.end_date+timedelta(days=1))
-    calculated = indicators(five) if settings.exit_condition != 'none' else None
+    calculated = indicators(five, settings.ema_fast, settings.ema_slow, settings.rsi_period) if settings.exit_condition != 'none' else None
     exit_values = calculated.to_numpy() if calculated is not None else None
     research = simulate(five, events, settings, start, split, 'Research', exit_values=exit_values)
     validation = simulate(five, events, settings, split, end, 'Validation', exit_values=exit_values)

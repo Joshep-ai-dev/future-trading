@@ -10,7 +10,7 @@ from .test_mtf import frame, settings
 
 
 def run_case(rows=None, direction=1, values=None, **changes):
-    cfg=settings(direction_active=False,setup_active=False,**changes)
+    cfg=settings(direction_active=False,setup_active=False,**({'strategy':'sweep'}|changes))
     rows=rows or [[100,105,95,100]]*5
     data=frame(count=len(rows));data.iloc[:]=rows
     order=dict(direction=direction,orderType='market',trigger=None,stop=90 if direction==1 else 110,
@@ -21,6 +21,22 @@ def run_case(rows=None, direction=1, values=None, **changes):
 
 
 class CloseConditionTests(unittest.TestCase):
+    def test_mtf_ignores_stop_target_and_rsi_and_exits_on_ema_next_open(self):
+        for direction in [1, -1]:
+            values=np.array([[105,100,60],[105,100,40],[99,100,40],[99,100,40],[99,100,40]],dtype=float)
+            if direction == -1:
+                values[:,0]=200-values[:,0]
+                values[:,2]=100-values[:,2]
+            rows=[[100,105,95,100],[100,140,60,100],[100,140,60,100],[103,140,60,100],[100,105,95,100]]
+            trade=run_case(rows,direction=direction,values=values,strategy='mtf',exit_condition='either',stop_mode='breakeven_trailing')['trades'][0]
+            self.assertEqual(trade['exitReason'],'ema_exit')
+            self.assertEqual(trade['exitTime']-trade['entryTime'],600)
+            self.assertEqual(trade['exit'],103)
+            self.assertIsNone(trade['stop'])
+            self.assertIsNone(trade['target'])
+            self.assertIsNone(trade['plannedRisk'])
+            self.assertEqual(trade['stopHistory'],[])
+
     def test_each_condition_and_both_directions(self):
         for d,previous,current in [(1,[105,100,60],[99,100,40]),(-1,[95,100,40],[101,100,60])]:
             self.assertEqual(indicator_exit(d,previous,current,'ema'),'ema_exit')

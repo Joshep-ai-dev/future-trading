@@ -22,13 +22,13 @@ def execution_stage(settings):
 
 
 
-def alignment(values, use_rsi=True):
+def alignment(values, use_rsi=True, threshold=50):
     fast, slow, rsi = values
     if not np.isfinite(fast) or not np.isfinite(slow) or (use_rsi and not np.isfinite(rsi)):
         return 0
-    if fast > slow and (not use_rsi or rsi > 50):
+    if fast > slow and (not use_rsi or rsi > threshold):
         return 1
-    if fast < slow and (not use_rsi or rsi < 50):
+    if fast < slow and (not use_rsi or rsi < threshold):
         return -1
     return 0
 
@@ -36,7 +36,7 @@ def alignment(values, use_rsi=True):
 def build_orders(frames, settings, calculated=None):
     stages = active_stages(settings)
     signal_stage, timeframe = execution_stage(settings)
-    calculated = calculated if calculated is not None else {tf: indicators(frames[tf]) for _, tf in stages}
+    calculated = calculated if calculated is not None else {tf: indicators(frames[tf], settings.ema_fast, settings.ema_slow, settings.rsi_period) for _, tf in stages}
     frame = frames[timeframe]
     bar_seconds = TIMEFRAMES[timeframe]
     closes = frame.index.asi8//10**9 + bar_seconds
@@ -46,7 +46,7 @@ def build_orders(frames, settings, calculated=None):
     orders, previous_signal = {}, 0
     prices = frame[['open','high','low','close']].to_numpy()
     for i, close_time in enumerate(closes):
-        signal = alignment(arrays[timeframe][i], use_rsi=signal_stage != 'direction')
+        signal = alignment(arrays[timeframe][i], use_rsi=settings.rsi_active and signal_stage != 'direction', threshold=settings.rsi_threshold)
         fresh = signal != 0 and signal != previous_signal
         previous_signal = signal
         if not fresh or not np.isfinite(prices[i]).all():
@@ -58,17 +58,17 @@ def build_orders(frames, settings, calculated=None):
             if j < 0 or close_time-times[tf][j] >= TIMEFRAMES[tf]:
                 break
             values = arrays[tf][j]
-            if alignment(values, use_rsi=stage != 'direction') != signal:
+            if alignment(values, use_rsi=settings.rsi_active and stage != 'direction', threshold=settings.rsi_threshold) != signal:
                 break
             confirmations.append(dict(stage=stage, timeframe=tf, closeTime=int(times[tf][j]),
                                       ema20=float(values[0]), ema50=float(values[1]),
-                                      rsi20=float(values[2]) if stage != 'direction' else None))
+                                      rsi20=float(values[2]) if settings.rsi_active and stage != 'direction' else None))
         if len(confirmations) != len(stages):
             continue
         stop = float(prices[i, 2] if signal == 1 else prices[i, 1])
         orders[i] = dict(direction=signal, orderType='market', trigger=None, stop=stop,
                          sweepLevel=None, obstacle=None, blocked=False, swingHighs=[], swingLows=[],
-                         confirmations=confirmations, signalLabel='EMA alignment' if signal_stage == 'direction' else 'EMA + RSI',
+                         confirmations=confirmations, signalLabel='EMA alignment' if signal_stage == 'direction' or not settings.rsi_active else 'EMA + RSI',
                          signalCloseTime=int(close_time))
     return orders
 
@@ -77,7 +77,7 @@ def run_mtf_backtest(frames, settings):
     _, timeframe = execution_stage(settings)
     frame = frames[timeframe]
     bar_seconds = TIMEFRAMES[timeframe]
-    calculated = {tf: indicators(frame) for tf, frame in frames.items()}
+    calculated = {tf: indicators(frame, settings.ema_fast, settings.ema_slow, settings.rsi_period) for tf, frame in frames.items()}
     orders = build_orders(frames, settings, calculated)
     start, split, end = seconds(settings.start_date), seconds(settings.validation_date), seconds(settings.end_date+timedelta(days=1))
     exit_values = calculated[timeframe].to_numpy()

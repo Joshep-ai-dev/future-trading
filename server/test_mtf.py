@@ -158,7 +158,7 @@ class ConfirmationTests(unittest.TestCase):
 
 
 class ExecutionTests(unittest.TestCase):
-    def test_market_entry_at_next_open_3m_and_target(self):
+    def test_market_entry_at_next_open_3m_without_target(self):
         cfg=settings(direction_active=False,setup_active=False,entry_timeframe='3m')
         data=frame('3m',count=4)
         data.iloc[0]=[100,102,98,101]
@@ -170,21 +170,20 @@ class ExecutionTests(unittest.TestCase):
         t=r['trades'][0]
         self.assertEqual(t['entryTime']-t['signalTime'],180)
         self.assertEqual(t['entry'],101)
-        self.assertEqual(t['stop'],98)
-        self.assertEqual(t['target'],107)
-        self.assertEqual(t['exitReason'],'target')
-        self.assertAlmostEqual(t['netR'],2)
-        self.assertAlmostEqual(r['equity'][-1]['value'],2020)
+        self.assertIsNone(t['stop'])
+        self.assertIsNone(t['target'])
+        self.assertEqual(t['exitReason'],'period_end')
+        self.assertAlmostEqual(r['equity'][-1]['value'],2000+t['netPnl'])
         json.dumps(r,allow_nan=False)
 
-    def test_entry_beyond_signal_stop_is_skipped(self):
+    def test_entry_beyond_sizing_reference_is_allowed(self):
         cfg=settings(direction_active=False,setup_active=False)
         data=frame(count=4)
         orders=build_orders({'5m':data},cfg,{'5m':fake_indicators(data)})
         data.iloc[1]=[97,98,96,97]
         r=simulate(data,[],cfg,seconds(cfg.start_date),seconds(cfg.validation_date),'Test',300,orders)
-        self.assertEqual(r['trades'],[])
-        self.assertEqual(r['diagnostics']['invalidEntries'],1)
+        self.assertEqual(len(r['trades']),1)
+        self.assertEqual(r['diagnostics']['invalidEntries'],0)
 
     def test_coarse_bars_cannot_fill_outside_session(self):
         cfg=settings(direction_timeframe='4h',setup_active=False,entry_active=False,session_start=9,session_end=17)

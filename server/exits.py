@@ -2,7 +2,7 @@
 import numpy as np
 
 
-def indicator_exit(direction, previous, current, mode):
+def indicator_exit(direction, previous, current, mode, threshold=50):
     if mode == 'none':
         return None
     ema = False
@@ -11,7 +11,7 @@ def indicator_exit(direction, previous, current, mode):
         ema = before >= 0 and now < 0 if direction == 1 else before <= 0 and now > 0
     rsi = False
     if mode in ('rsi', 'either') and np.isfinite(previous[2]) and np.isfinite(current[2]):
-        rsi = previous[2] >= 50 and current[2] < 50 if direction == 1 else previous[2] <= 50 and current[2] > 50
+        rsi = previous[2] >= threshold and current[2] < threshold if direction == 1 else previous[2] <= threshold and current[2] > threshold
     if ema and rsi:
         return 'ema_rsi_exit'
     if ema:

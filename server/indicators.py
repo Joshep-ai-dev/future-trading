@@ -3,8 +3,8 @@ import numpy as np
 import pandas as pd
 
 
-def indicators(frame):
-    """SMA-seeded EMA20/50; RSI20 uses Wilder smoothing (flat market = 50)."""
+def indicators(frame, fast_period=20, slow_period=50, rsi_period=20):
+    """Configurable SMA-seeded EMAs and Wilder RSI (flat market = 50)."""
     values = frame.close.to_numpy(dtype=float)
     output = np.full((len(values), 3), np.nan)
     history = []
@@ -16,28 +16,28 @@ def indicators(frame):
             ema20 = ema50 = gain = loss = previous = None
             continue
         history.append(value)
-        if len(history) == 20:
+        if len(history) == fast_period:
             ema20 = float(np.mean(history))
         elif ema20 is not None:
-            ema20 += (value-ema20)*2/21
-        if len(history) == 50:
+            ema20 += (value-ema20)*2/(fast_period+1)
+        if len(history) == slow_period:
             ema50 = float(np.mean(history))
         elif ema50 is not None:
-            ema50 += (value-ema50)*2/51
+            ema50 += (value-ema50)*2/(slow_period+1)
         if previous is not None:
             up, down = max(value-previous, 0.), max(previous-value, 0.)
             if gain is None:
                 gains.append(up)
                 losses.append(down)
-                if len(gains) == 20:
+                if len(gains) == rsi_period:
                     gain, loss = float(np.mean(gains)), float(np.mean(losses))
             else:
-                gain, loss = (gain*19+up)/20, (loss*19+down)/20
+                gain, loss = (gain*(rsi_period-1)+up)/rsi_period, (loss*(rsi_period-1)+down)/rsi_period
         rsi = np.nan if gain is None else (50. if gain == loss == 0 else 100. if loss == 0 else 100-100/(1+gain/loss))
         output[i] = (ema20 if ema20 is not None else np.nan, ema50 if ema50 is not None else np.nan, rsi)
         previous = value
-        # Only the initial 50 closes are needed to seed the EMAs.
-        if len(history) > 50:
-            history = history[-51:]
+        # Only the initial period closes are needed to seed the EMAs.
+        if len(history) > max(fast_period, slow_period):
+            history = history[-(max(fast_period, slow_period)+1):]
     return pd.DataFrame(output, index=frame.index, columns=['ema20', 'ema50', 'rsi20'])
 

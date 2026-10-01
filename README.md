@@ -39,7 +39,7 @@ Every chart has **Time + / −**, **Price + / −** (or **Amount + / −** on eq
 ## Checks
 
 ```sh
-python -m unittest server.test_data server.test_strategy server.test_mtf server.test_history server.test_exits -v
+python -m unittest server.test_data server.test_strategy server.test_mtf server.test_history server.test_exits server.test_indicator_settings -v
 npm run build
 ```
 
@@ -59,7 +59,7 @@ Each stage has an independent **Active / Disabled** switch. Disabled stages reta
 
 Use only completed candles. An unfinished hourly candle cannot confirm a 5-minute signal. Candles that close at the same instant may confirm each other. EMA20/50 are seeded with the first 20/50 closes' simple average, then updated with `2/(period+1)`. RSI20 uses Wilder smoothing, seeded with the first 20 price changes; a flat market has RSI 50. Warmup restarts after gaps. Each active stage needs at least 50 completed candles.
 
-Confirmed signals enter at the **next execution candle's open**, plus the configured adverse spread/slippage. A long stop uses the signal candle's low; a short stop uses its high. Target is 2× actual entry-to-stop distance. Entries opening beyond the stop are skipped. This strategy has no sweep or swing-resistance filter. It retains the existing 0.5% risk budget, notional cap, costs/funding, two-trade/two-loss session limits and independent research/validation balances. Only execution candles fully contained in the selected session are tradable; a 4H candle crossing a session boundary is excluded from execution, and positions close at the prior usable candle's close. Drawdown is measured on the selected execution timeframe's closing equity.
+Confirmed signals enter at the **next execution candle's open**, plus the configured adverse spread/slippage. There is no stop-loss order or profit target. Longs close when EMA20 crosses below EMA50; shorts close on the reverse crossover, using a completed execution candle and filling at the next open. RSI remains an entry filter only. The signal candle low/high is retained only as a sizing reference; 0.5% is not a maximum loss. Session, period and data-gap exits still apply. This strategy has no sweep or swing-resistance filter. It retains the existing 0.5% risk budget, notional cap, costs/funding, two-trade/two-loss session limits and independent research/validation balances. Only execution candles fully contained in the selected session are tradable; a 4H candle crossing a session boundary is excluded from execution, and positions close at the prior usable candle's close. Drawdown is measured on the selected execution timeframe's closing equity.
 
 The position chart follows the effective execution timeframe and displays EMA20/50, an RSI20 pane with its 50 reference, signals, entries/exits, and stop/target zones. Selecting a trade shows each active stage's indicator values and the completed candle timestamp used for confirmation. Exports include these snapshots, the exact switch settings, `executionTimeframe`, `barSeconds`, and indicator series.
 
@@ -79,9 +79,19 @@ API example (omitting `strategy` retains the legacy sweep API behavior):
 
 The initial default run is recorded in [reports/mtf-backtest-summary.md](reports/mtf-backtest-summary.md). Tick size, fees, spread, slippage and funding remain editable modeled assumptions, not verified historical execution costs.
 
+## Indicator controls and weekdays
+
+In **Strategy settings → Indicator settings**, edit the fast EMA period (default 20), slow EMA period (50), RSI period (20), and RSI threshold (50). These values apply across all active timeframes and indicator exits. Fast EMA must be shorter than slow EMA. The EMA + RSI **RSI Active / Disabled** switch controls the Setup and Entry RSI filter; Direction remains EMA-only. Disabled RSI does not block entry or require RSI warmup, and its chart pane is hidden. EMA reversal remains the only indicator exit for this strategy.
+
+Both strategies exclude Saturday and Sunday according to the selected **session timezone**. Positions close at the last usable candle before the weekend, and pending orders cannot fill over the weekend. This is a weekday filter, not an exchange holiday calendar. Existing historical reports predate this filter and should be rerun.
+
+API fields: `ema_fast`, `ema_slow`, `rsi_period`, `rsi_threshold`, `rsi_active`. Chart labels and confirmation values use the chosen settings. Exported `ema20`, `ema50`, and `rsi20` field names are retained for compatibility; they contain the configured fast EMA, slow EMA and RSI values, with periods recorded in `settings`.
+
 ## Close conditions and stop management
 
-Both strategies expose **Close conditions & stop loss** in Strategy settings. Defaults remain **Stop / target only** and **Fixed initial stop**, preserving the baseline reports.
+EMA + RSI uses EMA reversal only, with stop loss and target disabled. The API normalizes its settings to `exit_condition: ema` and `stop_mode: none`. Earlier MTF reports describe the old stop/target rules and must be rerun for this version.
+
+The sweep strategy exposes **Close conditions & stop loss** in Strategy settings. Its defaults remain **Stop / target only** and **Fixed initial stop**.
 
 - **EMA reversal:** exit a long when EMA20 crosses below EMA50; reverse for shorts.
 - **RSI cross:** exit a long when RSI20 crosses below 50; reverse for shorts.
@@ -94,7 +104,7 @@ Conditions use the execution timeframe: 5M for sweep, or the effective active ti
 
 Results show counts by exit reason. Select a position to see its initial/final stop, stop-adjustment history and indicator close signal. The chart displays the moving stop and close-signal marker; the shaded risk zone retains the original stop. JSON exports include `initialStop`, `finalStop`, `initialRisk`, `stopHistory` and, where applicable, `exitSignal`.
 
-API settings: `exit_condition` is `none`, `ema`, `rsi` or `either`; `stop_mode` is `fixed`, `breakeven`, `trailing` or `breakeven_trailing`. These settings apply to both `strategy` values.
+API settings: `exit_condition` is `none`, `ema`, `rsi` or `either`; `stop_mode` is `fixed`, `breakeven`, `trailing` or `breakeven_trailing`. These selectable modes apply to sweep; EMA + RSI always uses `ema` and `none`.
 
 ## Sweep strategy backtest
 
@@ -132,7 +142,7 @@ Initial local-data results and assumptions are saved in [reports/sweep-backtest-
 Run the execution tests with:
 
 ```sh
-python -m unittest server.test_data server.test_strategy server.test_mtf server.test_history server.test_exits -v
+python -m unittest server.test_data server.test_strategy server.test_mtf server.test_history server.test_exits server.test_indicator_settings -v
 npm run build
 ```
 
