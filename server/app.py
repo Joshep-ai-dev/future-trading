@@ -1,8 +1,9 @@
 """Local CSV price API."""
 from typing import Literal
+import pandas as pd
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.gzip import GZipMiddleware
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from .data import load_bars
 from .strategy import BacktestRequest, run_backtest
 
@@ -24,10 +25,9 @@ def run(parameters: Parameters):
         complete = frame.dropna(subset=['open', 'high', 'low', 'close'])
         if complete.empty:
             raise ValueError('No complete bars available for this timeframe.')
-        candles = [dict(time=int(t.timestamp()), open=float(row.open),
-                        high=float(row.high), low=float(row.low), close=float(row.close))
-                   for t, row in complete.tail(5000).iterrows()]
-        return dict(params=parameters.model_dump(), quality=quality, candles=candles,
+        page = candle_page(complete)
+        return dict(params=parameters.model_dump(), quality=quality, candles=page['candles'],
+                    history=dict(hasMore=page['hasMore'], nextBefore=page['nextBefore']),
                     asOf=int(complete.index[-1].timestamp()),
                     dataRange=dict(startDate=frame.index[0].strftime('%Y-%m-%d'),
                                    endDate=frame.index[-1].strftime('%Y-%m-%d')))
@@ -41,5 +41,30 @@ def backtest(parameters: BacktestRequest):
         five, _ = load_bars('5m')
         fifteen, _ = load_bars('15m')
         return run_backtest(five, fifteen, parameters)
+    except (ValueError, OSError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+class CandleRequest(Parameters):
+    before: int | None = Field(default=None, ge=0, le=4102444800)
+    limit: int = Field(default=5000, ge=1, le=5000)
+
+
+def candle_page(frame, before=None, limit=5000):
+    complete = frame.dropna(subset=['open', 'high', 'low', 'close'])
+    if before is not None:
+        complete = complete.loc[complete.index < pd.Timestamp(before, unit='s', tz='UTC')]
+    selected = complete.tail(limit)
+    candles = [dict(time=int(t.timestamp()), open=float(row.open), high=float(row.high),
+                    low=float(row.low), close=float(row.close)) for t, row in selected.iterrows()]
+    return dict(candles=candles, hasMore=len(complete) > len(selected),
+                nextBefore=candles[0]['time'] if candles else None)
+
+
+@app.post('/api/candles')
+def history(parameters: CandleRequest):
+    try:
+        frame, _ = load_bars(parameters.timeframe)
+        return candle_page(frame, parameters.before, parameters.limit)
     except (ValueError, OSError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error

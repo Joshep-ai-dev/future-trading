@@ -19,16 +19,27 @@ WSL can also use an existing Windows `.venv/Scripts/python.exe`. Do not run Wind
 
 ## Data and charts
 
-Select 1m, 5m, 10m, 15m, 1h, 4h, or UTC 1d bars and click **Load prices**. The chart shows the latest 5,000 complete bars with 168 initially visible, pan/zoom and UTC OHLC hover.
+Select 1m, 5m, 10m, 15m, 1h, 4h, or UTC 1d bars and click **Load prices**. The chart starts with the latest 5,000 complete bars and 168 initially visible. Pan to the left edge to automatically load earlier candles in batches of 5,000, preserving the current viewport. **Load earlier** fetches another batch manually; **Latest** returns to the newest bars. The history counter indicates when the beginning of the CSV is reached. UTC OHLC hover remains available.
 
 The loader validates timestamps and OHLCV values, preserves gaps, and excludes incomplete bars. Source CSV and existing model data are left untouched.
 
-`POST /api/analyze` accepts `{"timeframe":"1m"}` and returns candles and data quality. `GET /api/health` identifies the backend as `silver-price`, version 3.
+`POST /api/analyze` accepts `{"timeframe":"1m"}` and returns candles, data quality and a history cursor. `POST /api/candles` accepts `timeframe`, an optional exclusive `before` UNIX-seconds cursor, and `limit` (1–5,000); it returns ordered candles, `hasMore` and `nextBefore`. `GET /api/health` identifies the backend as `silver-price`, version 3.
+
+## Tabbed workspace and chart controls
+
+- **Price chart**: timeframe selection, candles, and older-history loading.
+- **Strategy settings**: dates, sessions, execution costs, and strategy rules.
+- **Results & equity**: performance summary and account balance graph.
+- **Trade positions**: entries/exits, stop/target zones, and the trade ledger.
+
+Tabs keep settings, results, selected trades, loaded history, and chart zoom in memory while switching; switching tabs does not rerun the backtest. Use arrow keys or Home/End to navigate tabs with the keyboard.
+
+Every chart has **Time + / −**, **Price + / −** (or **Amount + / −** on equity), and **Fit / reset**. Mouse wheel or pinch zooms time; drag the chart to pan, or drag an axis to scale it. Fit resets the amount/price axis to automatic scaling and shows the loaded history. Drag the lower-right corner of a chart to adjust its height. The equity graph initially fits the full selected period, and zoom persists when changing tabs.
 
 ## Checks
 
 ```sh
-python -m unittest server.test_data -v
+python -m unittest server.test_data server.test_strategy server.test_history -v
 npm run build
 ```
 
@@ -55,7 +66,7 @@ Sizing uses continuous silver-equivalent units, not exchange contract lot roundi
 
 ### Results and position charts
 
-Use **Run backtest** to refresh after editing dates, session or cost assumptions. Switch between Research and Validation to inspect net return, equity, win rate, drawdown, profit factor, fees, funding, and spread/slippage cost. Select a trade in the ledger or click an entry/exit candle to focus the position: sweep marker, buy/sell arrow, exit marker, entry line, shaded stop zone and shaded 2R target zone. The overview shows the last 5,000 candles; any older trade remains accessible from the paginated ledger. **Export result JSON** includes settings, all trades, equity and 5m candles.
+Open **Strategy settings** and use **Run backtest** to refresh after editing dates, session or cost assumptions. A completed manual run opens **Results & equity**. Switch between Research and Validation to inspect net return, equity, win rate, drawdown, profit factor, fees, funding, and spread/slippage cost. Select a trade in the ledger or click an entry/exit candle to focus the position: sweep marker, buy/sell arrow, exit marker, entry line, shaded stop zone and shaded 2R target zone. The **Trade positions** chart contains all candles in the selected research or validation period. Selecting a trade focuses its surrounding candles without removing earlier or later history; keep dragging or zooming to explore beyond the selected trade. **Export result JSON** includes settings, all trades, equity and 5m candles.
 
 Initial local-data results and assumptions are saved in [reports/sweep-backtest-summary.md](reports/sweep-backtest-summary.md), with a CSV trade ledger. The tested strategy lost money under these assumptions; this is a testable hypothesis, not evidence of an edge.
 
@@ -68,7 +79,7 @@ Initial local-data results and assumptions are saved in [reports/sweep-backtest-
 Run the execution tests with:
 
 ```sh
-python -m unittest server.test_data server.test_strategy -v
+python -m unittest server.test_data server.test_strategy server.test_history -v
 npm run build
 ```
 

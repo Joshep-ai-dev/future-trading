@@ -1,1 +1,1 @@
-{"root":["./vite.config.ts","./src/BacktestChart.tsx","./src/BacktestPanel.tsx","./src/Chart.tsx","./src/api.ts","./src/main.tsx","./src/types.ts"],"version":"5.9.3"}
+{"root":["./vite.config.ts","./src/BacktestChart.tsx","./src/BacktestPanel.tsx","./src/Chart.tsx","./src/ChartTools.tsx","./src/Tabs.tsx","./src/api.ts","./src/main.tsx","./src/types.ts"],"version":"5.9.3"}

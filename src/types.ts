@@ -1,5 +1,6 @@
 export type Parameters = {timeframe: '1m'|'5m'|'10m'|'15m'|'1h'|'4h'|'1d'};
 export type Analysis = {
+  history: {hasMore: boolean; nextBefore: number | null};
   params: Parameters; asOf: number; dataRange: {startDate: string; endDate: string};
   quality: {minuteBars: number; missingMinutes: number; excludedBars: number; completeBars: number};
   candles: {time: number; open: number; high: number; low: number; close: number}[];
@@ -30,3 +31,5 @@ export type PeriodResult = {
   diagnostics: {sweeps: number; blockedByLevel: number; expiredOrders: number; cancelledOrders: number; ambiguousBars: number};
 };
 export type BacktestResult = {settings: BacktestSettings; research: PeriodResult; validation: PeriodResult; candles: Analysis['candles']};
+
+export type CandlePage = {candles: Analysis["candles"]; hasMore: boolean; nextBefore: number | null};
