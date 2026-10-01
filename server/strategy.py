@@ -364,6 +364,8 @@ def simulate(frame, events, settings, start, end, name, bar_seconds=300, orders=
                 diagnostics['sweeps'] += int(orders is None)
                 if order['blocked']:
                     diagnostics['blockedByLevel'] += 1
+                elif any(p['direction'] == order['direction'] for p in positions):
+                    diagnostics['cancelledOrders'] += 1
                 else:
                     pending = dict(order, signalTime=t, expires=i+(1 if order.get('orderType') == 'market' else 3), session=session)
         if (closing_session or i == last_index) and pending is not None:

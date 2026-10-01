@@ -21,21 +21,22 @@ def run_case(rows=None, direction=1, values=None, **changes):
 
 
 class CloseConditionTests(unittest.TestCase):
-    def test_concurrent_positions_close_and_reconcile(self):
+    def test_one_buy_and_one_sell_can_overlap_but_duplicates_are_skipped(self):
         data = frame(count=8)
-        values = np.array([[101 if i < 5 else 99, 100, 60] for i in range(8)])
         order = dict(direction=1, orderType='market', trigger=None, stop=90,
                      sweepLevel=None, obstacle=None, blocked=False, swingHighs=[], swingLows=[])
+        short = dict(order, direction=-1, stop=110)
         cfg = settings(fee_bps=5, funding_bps=1)
         result = simulate(data, [], cfg, seconds(cfg.start_date), seconds(cfg.validation_date),
-                          'Test', 300, {i: order for i in [0, 2, 4]}, values)
+                          'Test', 300, {0:order, 2:short, 4:order, 5:short})
         trades = result['trades']
-        self.assertEqual(len(trades), 3)
+        self.assertEqual(len(trades), 2)
+        self.assertEqual({t['direction'] for t in trades}, {1,-1})
         self.assertLess(trades[-1]['entryTime'], trades[0]['exitTime'])
-        self.assertTrue(all(t['exitReason'] == 'ema_exit' for t in trades))
-        self.assertEqual(len({t['id'] for t in trades}), 3)
+        self.assertEqual(result['diagnostics']['cancelledOrders'], 2)
+        self.assertEqual(len({t['id'] for t in trades}), 2)
         self.assertAlmostEqual(result['equity'][-1]['value'], cfg.capital+sum(t['netPnl'] for t in trades))
-        self.assertAlmostEqual(result['equity'][4]['value'], cfg.capital-sum(t['fees'] for t in trades[:2]))
+        self.assertAlmostEqual(result['equity'][4]['value'], cfg.capital-sum(t['fees'] for t in trades))
 
     def test_concurrent_positions_share_notional_capacity(self):
         data = frame(count=6)
@@ -43,7 +44,7 @@ class CloseConditionTests(unittest.TestCase):
                      sweepLevel=None, obstacle=None, blocked=False, swingHighs=[], swingLows=[])
         cfg = settings(max_leverage=1)
         result = simulate(data, [], cfg, seconds(cfg.start_date), seconds(cfg.validation_date),
-                          'Test', 300, {i: order for i in [0, 1, 2]})
+                          'Test', 300, {0:order, 1:dict(order,direction=-1,stop=100.1), 2:dict(order,direction=-1,stop=100.1)})
         self.assertEqual(len(result['trades']), 1)
         self.assertEqual(result['trades'][0]['quantity'], 20)
         self.assertEqual(result['diagnostics']['invalidEntries'], 2)

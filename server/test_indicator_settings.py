@@ -61,7 +61,7 @@ class IndicatorSettingsTests(unittest.TestCase):
                          obstacle=None, blocked=False, swingHighs=[], swingLows=[], sweepLevel=None)
             orders = {i: order for i in range(len(data))}
             result = simulate(data, [], cfg, seconds(cfg.start_date), seconds(cfg.validation_date), 'Test', 300, orders)
-            self.assertEqual(len(result['trades']), 2 if strategy == 'mtf' else 1)
+            self.assertEqual(len(result['trades']), 1)
             trade = result['trades'][0]
             self.assertEqual(trade['exitReason'], 'session_end')
             self.assertEqual(pd.Timestamp(trade['exitTime'], unit='s', tz='UTC').isoformat(), '2026-09-25T23:55:00+00:00')
