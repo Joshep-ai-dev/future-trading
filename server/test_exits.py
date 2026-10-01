@@ -21,6 +21,47 @@ def run_case(rows=None, direction=1, values=None, **changes):
 
 
 class CloseConditionTests(unittest.TestCase):
+    def test_concurrent_positions_close_and_reconcile(self):
+        data = frame(count=8)
+        values = np.array([[101 if i < 5 else 99, 100, 60] for i in range(8)])
+        order = dict(direction=1, orderType='market', trigger=None, stop=90,
+                     sweepLevel=None, obstacle=None, blocked=False, swingHighs=[], swingLows=[])
+        cfg = settings(fee_bps=5, funding_bps=1)
+        result = simulate(data, [], cfg, seconds(cfg.start_date), seconds(cfg.validation_date),
+                          'Test', 300, {i: order for i in [0, 2, 4]}, values)
+        trades = result['trades']
+        self.assertEqual(len(trades), 3)
+        self.assertLess(trades[-1]['entryTime'], trades[0]['exitTime'])
+        self.assertTrue(all(t['exitReason'] == 'ema_exit' for t in trades))
+        self.assertEqual(len({t['id'] for t in trades}), 3)
+        self.assertAlmostEqual(result['equity'][-1]['value'], cfg.capital+sum(t['netPnl'] for t in trades))
+        self.assertAlmostEqual(result['equity'][4]['value'], cfg.capital-sum(t['fees'] for t in trades[:2]))
+
+    def test_concurrent_positions_share_notional_capacity(self):
+        data = frame(count=6)
+        order = dict(direction=1, orderType='market', trigger=None, stop=99.9,
+                     sweepLevel=None, obstacle=None, blocked=False, swingHighs=[], swingLows=[])
+        cfg = settings(max_leverage=1)
+        result = simulate(data, [], cfg, seconds(cfg.start_date), seconds(cfg.validation_date),
+                          'Test', 300, {i: order for i in [0, 1, 2]})
+        self.assertEqual(len(result['trades']), 1)
+        self.assertEqual(result['trades'][0]['quantity'], 20)
+        self.assertEqual(result['diagnostics']['invalidEntries'], 2)
+
+    def test_mtf_continues_after_two_trades_and_two_losses(self):
+        data = frame(count=10)
+        values = np.array([[101 if i % 2 == 0 else 99, 100, 50] for i in range(10)])
+        order = dict(direction=1, orderType='market', trigger=None, stop=90,
+                     sweepLevel=None, obstacle=None, blocked=False, swingHighs=[], swingLows=[])
+        orders = {i: order for i in [0, 2, 4, 6]}
+        for strategy, expected in [('mtf', 4), ('sweep', 2)]:
+            cfg = settings(strategy=strategy, exit_condition='ema', fee_bps=5)
+            result = simulate(data, [], cfg, seconds(cfg.start_date), seconds(cfg.validation_date),
+                              'Test', 300, orders, values)
+            self.assertEqual(len(result['trades']), expected)
+            self.assertTrue(all(t['netPnl'] < 0 for t in result['trades']))
+            self.assertTrue(all(t['exitReason'] == 'ema_exit' for t in result['trades']))
+
     def test_mtf_ignores_stop_target_and_rsi_and_exits_on_ema_next_open(self):
         for direction in [1, -1]:
             values=np.array([[105,100,60],[105,100,40],[99,100,40],[99,100,40],[99,100,40]],dtype=float)

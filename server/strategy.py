@@ -194,6 +194,7 @@ def simulate(frame, events, settings, start, end, name, bar_seconds=300, orders=
     rows = frame[['open', 'high', 'low', 'close']].to_numpy()
     balance = settings.capital
     pending = position = None
+    positions = []
     trades, equity = [], [dict(time=start, value=balance)]
     diagnostics = dict(signals=0, invalidEntries=0, sweeps=0, blockedByLevel=0, expiredOrders=0, cancelledOrders=0, ambiguousBars=0)
     state = dict(trend=0, highs=[], lows=[], resistance=[], support=[])
@@ -229,6 +230,7 @@ def simulate(frame, events, settings, start, end, name, bar_seconds=300, orders=
                      ambiguous=ambiguous, period=name)
         trades.append(trade)
         diagnostics['ambiguousBars'] += int(ambiguous)
+        positions.remove(p)
         position = None
 
     for i, time_value in enumerate(times):
@@ -244,7 +246,7 @@ def simulate(frame, events, settings, start, end, name, bar_seconds=300, orders=
             session = None
         # Gaps flatten at the last known close; unknown prices cannot be simulated.
         if not np.isfinite(row).all():
-            if position is not None:
+            for position in positions.copy():
                 close_trade(prior_close-position['direction']*friction, prior_time, 'data_gap')
                 equity[-1]['value'] = balance
             if pending is not None:
@@ -253,14 +255,16 @@ def simulate(frame, events, settings, start, end, name, bar_seconds=300, orders=
             prior_time = prior_close = None
             continue
         if session != current_session:
-            if position is not None:
+            for position in positions.copy():
                 close_trade(prior_close-position['direction']*friction, prior_time, 'session_end')
             if pending is not None:
                 diagnostics['cancelledOrders'] += 1
             pending = None
             current_session, session_trades, session_losses = session, 0, 0
         closing_session = session_at(t+bar_seconds, settings) != session
-        if position is not None and position.get('pendingStop'):
+        for position in positions:
+            if not position.get('pendingStop'):
+                continue
             update = position.pop('pendingStop')
             position['stop'] = update['price']
             position['stopHistory'].append(dict(time=t, **update))
@@ -278,24 +282,34 @@ def simulate(frame, events, settings, start, end, name, bar_seconds=300, orders=
                 if blocked or risk <= 0 or balance <= 0 or (protected and entry+d*2*risk <= 0):
                     diagnostics['blockedByLevel' if blocked else 'invalidEntries'] += 1
                 else:
-                    risk_budget = balance*.005
+                    account_equity = balance + sum(p['direction']*(row[0]-p['entry'])*p['quantity'] for p in positions)
+                    risk_budget = max(0., account_equity)*.005
                     stop_fill = pending['stop']-d*friction
                     unit_loss = risk+friction+(entry+abs(stop_fill))*fee
-                    quantity = min(risk_budget/unit_loss, balance*settings.max_leverage/entry)
-                    position = {k:v for k,v in pending.items() if k not in ('expires', 'blocked')}
-                    position.update(entryTime=t, entry=entry, rawEntry=raw_entry, target=entry+d*2*risk,
-                                    quantity=quantity, riskBudget=risk_budget, plannedRisk=quantity*unit_loss,
-                                    entryFee=entry*quantity*fee, funding=0., lastFunding=t,
-                                    initialStop=pending['stop'], initialRisk=risk,
-                                    stopHistory=[dict(time=t, price=pending['stop'], reason='initial')])
-                    balance -= position['entryFee']
-                    session_trades += 1
-                    just_entered = True
+                    used_notional = sum(abs(p['quantity']*row[0]) for p in positions)
+                    capacity = max(0., account_equity*settings.max_leverage-used_notional)
+                    quantity = min(risk_budget/unit_loss, capacity/entry)
+                    if quantity <= 0:
+                        diagnostics['invalidEntries'] += 1
+                        pending = None
+                        # Existing positions must still be processed on this candle.
+                    else:
+                        position = {k:v for k,v in pending.items() if k not in ('expires', 'blocked')}
+                        position.update(entryTime=t, entry=entry, rawEntry=raw_entry, target=entry+d*2*risk,
+                                        quantity=quantity, riskBudget=risk_budget, plannedRisk=quantity*unit_loss,
+                                        entryFee=entry*quantity*fee, funding=0., lastFunding=t,
+                                        initialStop=pending['stop'], initialRisk=risk,
+                                        stopHistory=[dict(time=t, price=pending['stop'], reason='initial')])
+                        positions.append(position)
+                        balance -= position['entryFee']
+                        session_trades += 1
+                        just_entered = True
                 pending = None
             elif i >= pending['expires']:
                 diagnostics['expiredOrders'] += 1
                 pending = None
-        if position is not None:
+        for position in positions.copy():
+            just_entered = position['entryTime'] == t
             # Fixed illustrative funding at 00/08/16 UTC. Intrabar entries skip that bar's opening event.
             if not just_entered and t % (8*3600) == 0:
                 payment = position['direction']*position['quantity']*row[0]*settings.funding_bps/10000
@@ -336,7 +350,8 @@ def simulate(frame, events, settings, start, end, name, bar_seconds=300, orders=
             state = events[event_index]
             event_index += 1
         if (session is not None and not closing_session and i < last_index and
-                position is None and pending is None and session_trades < 2 and session_losses < 2 and balance > 0):
+                (not positions or settings.strategy == 'mtf') and pending is None and balance > 0 and
+                (settings.strategy == 'mtf' or (session_trades < 2 and session_losses < 2))):
             order = setup_order(rows, i, state, settings) if orders is None else orders.get(i)
             if order is not None:
                 diagnostics['signals'] += 1
@@ -349,7 +364,7 @@ def simulate(frame, events, settings, start, end, name, bar_seconds=300, orders=
             diagnostics['cancelledOrders'] += 1
             pending = None
         mark = balance
-        if position is not None:
+        for position in positions:
             liquidation = row[3]-position['direction']*friction
             mark += position['direction']*(liquidation-position['entry'])*position['quantity']
             mark -= abs(liquidation*position['quantity'])*fee
