@@ -8,6 +8,8 @@ from zoneinfo import ZoneInfo
 import numpy as np
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from .indicators import indicators
+from .exits import indicator_exit, updated_stop
 
 
 class BacktestRequest(BaseModel):
@@ -22,6 +24,8 @@ class BacktestRequest(BaseModel):
     setup_timeframe: Literal['5m', '15m', '30m', '1h'] = '15m'
     entry_active: bool = True
     entry_timeframe: Literal['1m', '3m', '5m', '15m'] = '5m'
+    exit_condition: Literal['none', 'ema', 'rsi', 'either'] = 'none'
+    stop_mode: Literal['fixed', 'breakeven', 'trailing', 'breakeven_trailing'] = 'fixed'
     capital: float = Field(default=2000, gt=0, le=1e9)
     tick_size: float = Field(default=.01, gt=0, le=10)
     fee_bps: float = Field(default=5, ge=0, le=100)
@@ -170,7 +174,7 @@ def metrics(trades, equity, capital):
                 meets100Trades=len(trades) >= 100)
 
 
-def simulate(frame, events, settings, start, end, name, bar_seconds=300, orders=None):
+def simulate(frame, events, settings, start, end, name, bar_seconds=300, orders=None, exit_values=None):
     times = frame.index.asi8 // 10**9
     rows = frame[['open', 'high', 'low', 'close']].to_numpy()
     balance = settings.capital
@@ -197,7 +201,9 @@ def simulate(frame, events, settings, start, end, name, bar_seconds=300, orders=
         net = gross-fees-p['funding']
         balance += gross-abs(price*p['quantity'])*fee
         session_losses += int(net < 0)
-        trade = {k:v for k,v in p.items() if k not in ('entryFee', 'lastFunding')}
+        trade = {k:v for k,v in p.items() if k not in ('entryFee', 'lastFunding', 'pendingStop', 'pendingExit')}
+        trade['finalStop'] = p['stop']
+        trade['stop'] = p['initialStop']
         raw = price+p['direction']*friction if raw is None else raw
         trade.update(id=len(trades)+1, exitTime=stamp, exit=price, exitReason=reason,
                      grossPnl=gross, fees=fees, netPnl=net, netR=net/p['riskBudget'], balance=balance,
@@ -236,6 +242,10 @@ def simulate(frame, events, settings, start, end, name, bar_seconds=300, orders=
             pending = None
             current_session, session_trades, session_losses = session, 0, 0
         closing_session = session_at(t+bar_seconds, settings) != session
+        if position is not None and position.get('pendingStop'):
+            update = position.pop('pendingStop')
+            position['stop'] = update['price']
+            position['stopHistory'].append(dict(time=t, **update))
         just_entered = False
         if pending is not None and session is not None:
             d = pending['direction']
@@ -257,7 +267,9 @@ def simulate(frame, events, settings, start, end, name, bar_seconds=300, orders=
                     position = {k:v for k,v in pending.items() if k not in ('expires', 'blocked')}
                     position.update(entryTime=t, entry=entry, rawEntry=raw_entry, target=entry+d*2*risk,
                                     quantity=quantity, riskBudget=risk_budget, plannedRisk=quantity*unit_loss,
-                                    entryFee=entry*quantity*fee, funding=0., lastFunding=t)
+                                    entryFee=entry*quantity*fee, funding=0., lastFunding=t,
+                                    initialStop=pending['stop'], initialRisk=risk,
+                                    stopHistory=[dict(time=t, price=pending['stop'], reason='initial')])
                     balance -= position['entryFee']
                     session_trades += 1
                     just_entered = True
@@ -271,14 +283,37 @@ def simulate(frame, events, settings, start, end, name, bar_seconds=300, orders=
                 payment = position['direction']*position['quantity']*row[0]*settings.funding_bps/10000
                 position['funding'] += payment
                 balance -= payment
-            outcome = exit_on_bar(position, row, friction, just_entered)
-            if outcome is not None:
-                price, reason, ambiguous = outcome
-                # A low/high on the entry candle could predate the entry; assume stop first.
-                close_trade(price, t, reason, ambiguous or (just_entered and position.get('orderType') != 'market' and reason == 'stop'))
-            elif closing_session or i == last_index:
-                close_trade(row[3]-position['direction']*friction, t,
-                            'session_end' if closing_session else 'period_end')
+            queued_exit = position.pop('pendingExit', None)
+            if queued_exit is not None:
+                d = position['direction']
+                gap_stop = row[0] <= position['stop'] if d == 1 else row[0] >= position['stop']
+                gap_target = row[0] >= position['target'] if d == 1 else row[0] <= position['target']
+                # Existing protective orders take priority at the next open.
+                position['exitSignal'] = queued_exit
+                reason = 'stop' if gap_stop else 'target' if gap_target else queued_exit['reason']
+                raw_exit = position['target'] if gap_target and not gap_stop else row[0]
+                close_trade(raw_exit-d*friction, t, reason)
+            else:
+                outcome = exit_on_bar(position, row, friction, just_entered)
+                if outcome is not None:
+                    price, reason, ambiguous = outcome
+                    close_trade(price, t, reason, ambiguous or (just_entered and position.get('orderType') != 'market' and reason == 'stop'))
+                elif closing_session or i == last_index:
+                    close_trade(row[3]-position['direction']*friction, t,
+                                'session_end' if closing_session else 'period_end')
+            if position is not None:
+                # Observe this candle only after price stops/targets have been evaluated.
+                if exit_values is not None and i > 0:
+                    reason = indicator_exit(position['direction'], exit_values[i-1], exit_values[i], settings.exit_condition)
+                    if reason:
+                        values = exit_values[i]
+                        position['pendingExit'] = dict(time=t, closeTime=t+bar_seconds, reason=reason,
+                            ema20=float(values[0]) if np.isfinite(values[0]) else None,
+                            ema50=float(values[1]) if np.isfinite(values[1]) else None,
+                            rsi20=float(values[2]) if np.isfinite(values[2]) else None)
+                update = updated_stop(position, row, settings.stop_mode, settings.tick_size)
+                if update:
+                    position['pendingStop'] = dict(update, confirmedAt=t+bar_seconds)
         while event_index < len(events) and events[event_index]['time'] <= t+bar_seconds:
             state = events[event_index]
             event_index += 1
@@ -309,10 +344,16 @@ def simulate(frame, events, settings, start, end, name, bar_seconds=300, orders=
 def run_backtest(five, fifteen, settings):
     events = structure_events(fifteen)
     start, split, end = seconds(settings.start_date), seconds(settings.validation_date), seconds(settings.end_date+timedelta(days=1))
-    research = simulate(five, events, settings, start, split, 'Research')
-    validation = simulate(five, events, settings, split, end, 'Validation')
+    calculated = indicators(five) if settings.exit_condition != 'none' else None
+    exit_values = calculated.to_numpy() if calculated is not None else None
+    research = simulate(five, events, settings, start, split, 'Research', exit_values=exit_values)
+    validation = simulate(five, events, settings, split, end, 'Validation', exit_values=exit_values)
     candles = [dict(time=int(t.timestamp()), open=float(r.open), high=float(r.high), low=float(r.low), close=float(r.close))
                for t,r in five.loc[(five.index >= pd.Timestamp(start,unit='s',tz='UTC')) &
                                    (five.index < pd.Timestamp(end,unit='s',tz='UTC'))].dropna().iterrows()]
     return dict(settings=settings.model_dump(mode='json'), research=research, validation=validation, candles=candles,
-                strategyName='Structure / liquidity sweep', executionTimeframe='5m', barSeconds=300, indicators=[])
+                strategyName='Structure / liquidity sweep', executionTimeframe='5m', barSeconds=300,
+                indicators=[] if calculated is None else [dict(time=int(t.timestamp()),
+                    **{k:float(v) if np.isfinite(v) else None for k,v in row.items()})
+                    for t,row in calculated.loc[five.index[(five.index.asi8//10**9 >= start) &
+                        (five.index.asi8//10**9 < end) & five.close.notna().to_numpy()]].iterrows()])

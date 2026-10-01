@@ -1,5 +1,5 @@
 import {useEffect, useRef, useState} from 'react';
-import {CandlestickSeries, ColorType, createChart, createSeriesMarkers, LineSeries, BaselineSeries, LineStyle, type IChartApi, type UTCTimestamp, type SeriesMarker} from 'lightweight-charts';
+import {CandlestickSeries, ColorType, createChart, createSeriesMarkers, LineSeries, BaselineSeries, LineStyle, LineType, type IChartApi, type UTCTimestamp, type SeriesMarker} from 'lightweight-charts';
 import ChartTools,{chartInteraction,resizeChart} from './ChartTools';
 import {fmt, type Analysis, type PeriodResult, type Trade, type IndicatorPoint} from './types';
 
@@ -51,14 +51,20 @@ export default function BacktestChart({candles,trades,selected,onSelect,indicato
       if(present.has(t.exitTime)) markers.push({time:t.exitTime as UTCTimestamp,position:t.direction===1?'aboveBar':'belowBar',shape:'circle',color:t.netPnl>=0?'#6ce4bc':'#ff8291',text:`EXIT #${t.id} ${fmt(t.netPnl)}`});
     }
     if(selected && present.has(selected.signalTime)) markers.push({time:selected.signalTime as UTCTimestamp,position:selected.direction===1?'belowBar':'aboveBar',shape:'square',color:'#e0c278',text:selected.signalLabel?'SIGNAL':'SWEEP'});
+    if(selected?.exitSignal && present.has(selected.exitSignal.time)) markers.push({time:selected.exitSignal.time as UTCTimestamp,position:'aboveBar',shape:'square',color:'#be9bf3',text:'CLOSE SIGNAL'});
     createSeriesMarkers(price,markers.sort((a,b)=>Number(a.time)-Number(b.time)));
     if(selected && present.has(selected.entryTime)) {
       const from = selected.entryTime as UTCTimestamp;
       const to = Math.max(selected.exitTime,selected.entryTime+barSeconds) as UTCTimestamp;
-      for (const [label,value,color] of [['Entry',selected.entry,'#88bfff'],['Stop',selected.stop,'#ff8291'],['Target 2R',selected.target,'#6ce4bc']] as const) {
+      for (const [label,value,color] of [['Entry',selected.entry,'#88bfff'],['Target 2R',selected.target,'#6ce4bc']] as const) {
         const line = chart.addSeries(LineSeries,{color,lineWidth:2,lineStyle:LineStyle.Dashed,title:label,priceLineVisible:false,lastValueVisible:true,priceFormat:{type:'price',precision:3,minMove:.001}});
         line.setData([{time:from,value},{time:to,value}]);
       }
+      const history=selected.stopHistory?.length?selected.stopHistory:[{time:selected.entryTime,price:selected.stop,reason:'initial'}];
+      const stopPoints=new Map(history.filter(h=>h.time<=selected.exitTime).map(h=>[h.time,h.price]));
+      stopPoints.set(Number(to),selected.finalStop??selected.stop);
+      chart.addSeries(LineSeries,{color:'#ff8291',lineWidth:2,lineType:LineType.WithSteps,title:'Active stop',priceLineVisible:false,
+        priceFormat:{type:'price',precision:3,minMove:.001}}).setData([...stopPoints].sort((a,b)=>a[0]-b[0]).map(([time,value])=>({time:time as UTCTimestamp,value})));
       for (const [value,color] of [[selected.target,'rgba(108,228,188,0.14)'],[selected.stop,'rgba(255,130,145,0.14)']] as const) {
         chart.addSeries(BaselineSeries,{baseValue:{type:'price',price:selected.entry},topFillColor1:color,topFillColor2:color,bottomFillColor1:color,bottomFillColor2:color,topLineColor:'transparent',bottomLineColor:'transparent',priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false}).setData([{time:from,value},{time:to,value}]);
       }

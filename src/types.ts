@@ -9,6 +9,8 @@ export const fmt = (v: number, digits=2) => v.toLocaleString('en-US', {maximumFr
 
 export type BacktestSettings = {
   strategy: 'sweep'|'mtf';
+  exit_condition: 'none'|'ema'|'rsi'|'either';
+  stop_mode: 'fixed'|'breakeven'|'trailing'|'breakeven_trailing';
   direction_active: boolean; direction_timeframe: '15m'|'30m'|'1h'|'4h';
   setup_active: boolean; setup_timeframe: '5m'|'15m'|'30m'|'1h';
   entry_active: boolean; entry_timeframe: '1m'|'3m'|'5m'|'15m';
@@ -21,6 +23,9 @@ export type Trade = {
   entry: number; exit: number; stop: number; target: number; trigger: number | null; sweepLevel: number | null;
   quantity: number; riskBudget: number; plannedRisk: number; netPnl: number; grossPnl: number;
   fees: number; funding: number; executionCost: number; netR: number; balance: number;
+  initialStop?: number; finalStop?: number; initialRisk?: number;
+  stopHistory?: {time: number; price: number; reason: string; confirmedAt?: number}[];
+  exitSignal?: {time: number; closeTime: number; reason: string; ema20: number | null; ema50: number | null; rsi20: number | null};
   exitReason: string; session: string; ambiguous: boolean; obstacle: number | null;
   signalLabel?: string; signalCloseTime?: number; confirmations?: Confirmation[];
   swingHighs: number[]; swingLows: number[]; period: string;

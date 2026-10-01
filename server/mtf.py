@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 
 from .data import TIMEFRAMES
+from .indicators import indicators
 from .strategy import seconds, simulate
 
 
@@ -19,44 +20,6 @@ def execution_stage(settings):
         raise ValueError('Activate at least one timeframe for the EMA + RSI strategy.')
     return stages[-1]
 
-
-def indicators(frame):
-    """SMA-seeded EMA20/50; RSI20 uses Wilder smoothing (flat market = 50)."""
-    values = frame.close.to_numpy(dtype=float)
-    output = np.full((len(values), 3), np.nan)
-    history = []
-    ema20 = ema50 = gain = loss = previous = None
-    gains, losses = [], []
-    for i, value in enumerate(values):
-        if not np.isfinite(value):
-            history, gains, losses = [], [], []
-            ema20 = ema50 = gain = loss = previous = None
-            continue
-        history.append(value)
-        if len(history) == 20:
-            ema20 = float(np.mean(history))
-        elif ema20 is not None:
-            ema20 += (value-ema20)*2/21
-        if len(history) == 50:
-            ema50 = float(np.mean(history))
-        elif ema50 is not None:
-            ema50 += (value-ema50)*2/51
-        if previous is not None:
-            up, down = max(value-previous, 0.), max(previous-value, 0.)
-            if gain is None:
-                gains.append(up)
-                losses.append(down)
-                if len(gains) == 20:
-                    gain, loss = float(np.mean(gains)), float(np.mean(losses))
-            else:
-                gain, loss = (gain*19+up)/20, (loss*19+down)/20
-        rsi = np.nan if gain is None else (50. if gain == loss == 0 else 100. if loss == 0 else 100-100/(1+gain/loss))
-        output[i] = (ema20 if ema20 is not None else np.nan, ema50 if ema50 is not None else np.nan, rsi)
-        previous = value
-        # Only the initial 50 closes are needed to seed the EMAs.
-        if len(history) > 50:
-            history = history[-51:]
-    return pd.DataFrame(output, index=frame.index, columns=['ema20', 'ema50', 'rsi20'])
 
 
 def alignment(values, use_rsi=True):
@@ -117,8 +80,9 @@ def run_mtf_backtest(frames, settings):
     calculated = {tf: indicators(frame) for tf, frame in frames.items()}
     orders = build_orders(frames, settings, calculated)
     start, split, end = seconds(settings.start_date), seconds(settings.validation_date), seconds(settings.end_date+timedelta(days=1))
-    research = simulate(frame, [], settings, start, split, 'Research', bar_seconds, orders)
-    validation = simulate(frame, [], settings, split, end, 'Validation', bar_seconds, orders)
+    exit_values = calculated[timeframe].to_numpy()
+    research = simulate(frame, [], settings, start, split, 'Research', bar_seconds, orders, exit_values)
+    validation = simulate(frame, [], settings, split, end, 'Validation', bar_seconds, orders, exit_values)
     mask = (frame.index.asi8//10**9 >= start) & (frame.index.asi8//10**9+bar_seconds <= end)
     mask &= frame[['open','high','low','close']].notna().all(axis=1).to_numpy()
     candles = [dict(time=int(t.timestamp()), open=float(r.open), high=float(r.high), low=float(r.low), close=float(r.close))

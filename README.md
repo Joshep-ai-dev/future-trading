@@ -39,7 +39,7 @@ Every chart has **Time + / −**, **Price + / −** (or **Amount + / −** on eq
 ## Checks
 
 ```sh
-python -m unittest server.test_data server.test_strategy server.test_mtf server.test_history -v
+python -m unittest server.test_data server.test_strategy server.test_mtf server.test_history server.test_exits -v
 npm run build
 ```
 
@@ -79,6 +79,23 @@ API example (omitting `strategy` retains the legacy sweep API behavior):
 
 The initial default run is recorded in [reports/mtf-backtest-summary.md](reports/mtf-backtest-summary.md). Tick size, fees, spread, slippage and funding remain editable modeled assumptions, not verified historical execution costs.
 
+## Close conditions and stop management
+
+Both strategies expose **Close conditions & stop loss** in Strategy settings. Defaults remain **Stop / target only** and **Fixed initial stop**, preserving the baseline reports.
+
+- **EMA reversal:** exit a long when EMA20 crosses below EMA50; reverse for shorts.
+- **RSI cross:** exit a long when RSI20 crosses below 50; reverse for shorts.
+- **Either:** close when either selected indicator crosses against the position.
+- **Breakeven after +1R:** move the stop to the entry price after price reaches the original entry-to-stop distance in profit.
+- **Trailing:** move a long stop one tick below the last completed candle’s low, or a short stop one tick above its high.
+- **Breakeven + trailing:** apply whichever gives the tighter stop. Stops never loosen. Position size, original risk and the 2R target stay unchanged.
+
+Conditions use the execution timeframe: 5M for sweep, or the effective active timeframe for EMA + RSI. A completed candle’s close signal fills at the next open; stop adjustments also take effect on the next candle. Existing stop/target fills take precedence during the signal candle, and protective stop/target gaps take precedence at the next open. Session, period and data-gap exits still apply. Breakeven means entry price before costs, so net P&L can still be negative.
+
+Results show counts by exit reason. Select a position to see its initial/final stop, stop-adjustment history and indicator close signal. The chart displays the moving stop and close-signal marker; the shaded risk zone retains the original stop. JSON exports include `initialStop`, `finalStop`, `initialRisk`, `stopHistory` and, where applicable, `exitSignal`.
+
+API settings: `exit_condition` is `none`, `ema`, `rsi` or `either`; `stop_mode` is `fixed`, `breakeven`, `trailing` or `breakeven_trailing`. These settings apply to both `strategy` values.
+
 ## Sweep strategy backtest
 
 The dashboard runs a **15-minute market structure / 5-minute liquidity sweep** hypothesis. The price viewer also supports **5m and 10m**. Its timeframe selector does not change the strategy's fixed timeframes.
@@ -115,7 +132,7 @@ Initial local-data results and assumptions are saved in [reports/sweep-backtest-
 Run the execution tests with:
 
 ```sh
-python -m unittest server.test_data server.test_strategy server.test_mtf server.test_history -v
+python -m unittest server.test_data server.test_strategy server.test_mtf server.test_history server.test_exits -v
 npm run build
 ```
 
