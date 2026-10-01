@@ -1,0 +1,50 @@
+I will build future trading bot to run on htx or mexc.
+
+1. theme
+  beautiful and ux, darkmode theme, strong animation effect.
+
+2.function
+
+1) technical analysis
+ you can set parameters for SuperTrend, Macd, RSI.
+2) marketing analysis
+ - trending
+ - range
+ - sideway
+ - liquicity
+ - ...
+3) PT/SL
+ pt/sl tailer apply.
+ maybe you may use supertrend as sl.
+4) risk management
+ margin and trading count as trading
+5) bot trading
+ how to set entry and close?
+ you can use supertrending curve.
+ also you can use other method.
+ leverage, direction,margin, ...
+6)AI function
+- future price prediction for 1~5h, today, or week
+for this:
+  you predict based on time that change suddenly on history data
+  you study backhistory.
+  you study yourself my history trading.
+  you study similiar pattern recognization
+  you can use lstm, lru, conv1 net and so on.
+  you can use news and gpt.
+7) news analysis
+  emotion analysis of marketing
+8) api statue of htx or mexc
+  connecting, trading complecte.
+9) auto notification on telegram
+ entry, close, PnL, fee, trading status, marketing status, news and so on.
+10) backtesting
+ study for ai and check and simuation bot using back historical data
+11) time session
+ attention time stamp.(utc+8 20:30, 14:30 and so on)
+ London, new York/COMEX, cpi, asia starting time
+12) display trading history and current open trading
+ date and time, margin, leverage, fee, trading kind, open, close, pnl, fee, liquicity
+ current amount.
+13) price curve view like trading view. also you can use trading view
+14) manual trading function.
