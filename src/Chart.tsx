@@ -8,11 +8,11 @@ export default function Chart({data}: {data: Analysis}) {
   const ref=useRef<HTMLDivElement>(null),chartRef=useRef<IChartApi|null>(null);
   const earlier=useRef<()=>void>(()=>{}),latest=useRef<()=>void>(()=>{});
   const [readout,setReadout]=useState('Hover for UTC time and OHLC.');
-  const [history,setHistory]=useState({count:data.candles.length,first:data.candles[0]?.time,hasMore:data.history.hasMore});
+  const [history,setHistory]=useState({count:data.candles.length,first:data.candles[0]?.time,hasMore:(data.history?.hasMore??data.candles.length<data.quality.completeBars)});
   const [loading,setLoading]=useState(false),[error,setError]=useState('');
   useEffect(()=>{
     if(!ref.current)return;
-    let candles=[...data.candles],hasMore=data.history.hasMore,pending=false,disposed=false;
+    let candles=[...data.candles],hasMore=(data.history?.hasMore??data.candles.length<data.quality.completeBars),pending=false,disposed=false;
     const abort=new AbortController();
     setReadout('Hover for UTC time and OHLC.');setError('');setLoading(false);
     setHistory({count:candles.length,first:candles[0]?.time,hasMore});

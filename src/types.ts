@@ -1,6 +1,6 @@
 export type Parameters = {timeframe: '1m'|'5m'|'10m'|'15m'|'1h'|'4h'|'1d'};
 export type Analysis = {
-  history: {hasMore: boolean; nextBefore: number | null};
+  history?: {hasMore: boolean; nextBefore: number | null};
   params: Parameters; asOf: number; dataRange: {startDate: string; endDate: string};
   quality: {minuteBars: number; missingMinutes: number; excludedBars: number; completeBars: number};
   candles: {time: number; open: number; high: number; low: number; close: number}[];
