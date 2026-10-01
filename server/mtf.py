@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 from .data import TIMEFRAMES
-from .indicators import indicators
+from .indicators import indicators, atr
 from .strategy import seconds, simulate
 
 
@@ -38,6 +38,7 @@ def build_orders(frames, settings, calculated=None):
     signal_stage, timeframe = execution_stage(settings)
     calculated = calculated if calculated is not None else {tf: indicators(frames[tf], settings.ema_fast, settings.ema_slow, settings.rsi_period) for _, tf in stages}
     frame = frames[timeframe]
+    atr_values = atr(frame, settings.atr_period) if settings.atr_active else None
     bar_seconds = TIMEFRAMES[timeframe]
     closes = frame.index.asi8//10**9 + bar_seconds
     arrays = {tf: calculated[tf].to_numpy() for _, tf in stages}
@@ -65,11 +66,15 @@ def build_orders(frames, settings, calculated=None):
                                       rsi20=float(values[2]) if settings.rsi_active and stage != 'direction' else None))
         if len(confirmations) != len(stages):
             continue
+        if atr_values is not None and (not np.isfinite(atr_values[i]) or atr_values[i] <= 0):
+            continue
         stop = float(prices[i, 2] if signal == 1 else prices[i, 1])
         orders[i] = dict(direction=signal, orderType='market', trigger=None, stop=stop,
                          sweepLevel=None, obstacle=None, blocked=False, swingHighs=[], swingLows=[],
                          confirmations=confirmations, signalLabel='EMA alignment' if signal_stage == 'direction' or not settings.rsi_active else 'EMA + RSI',
                          signalCloseTime=int(close_time))
+        if atr_values is not None:
+            orders[i].update(atr=float(atr_values[i]), atrDistance=float(atr_values[i]*settings.atr_multiplier))
     return orders
 
 

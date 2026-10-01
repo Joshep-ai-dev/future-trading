@@ -39,7 +39,7 @@ Every chart has **Time + / −**, **Price + / −** (or **Amount + / −** on eq
 ## Checks
 
 ```sh
-python -m unittest server.test_data server.test_strategy server.test_mtf server.test_history server.test_exits server.test_indicator_settings -v
+python -m unittest server.test_data server.test_strategy server.test_mtf server.test_history server.test_exits server.test_indicator_settings server.test_atr -v
 npm run build
 ```
 
@@ -59,7 +59,7 @@ Each stage has an independent **Active / Disabled** switch. Disabled stages reta
 
 Use only completed candles. An unfinished hourly candle cannot confirm a 5-minute signal. Candles that close at the same instant may confirm each other. EMA20/50 are seeded with the first 20/50 closes' simple average, then updated with `2/(period+1)`. RSI20 uses Wilder smoothing, seeded with the first 20 price changes; a flat market has RSI 50. Warmup restarts after gaps. Each active stage needs at least 50 completed candles.
 
-Confirmed signals enter at the **next execution candle's open**, plus the configured adverse spread/slippage. There is no stop-loss order or profit target. Longs close when EMA20 crosses below EMA50; shorts close on the reverse crossover, using a completed execution candle and filling at the next open. RSI remains an entry filter only. The signal candle low/high is retained only as a sizing reference; 0.5% is not a maximum loss. Session, period and data-gap exits still apply. This strategy has no sweep or swing-resistance filter. It retains the existing 0.5% sizing reference, notional cap, costs/funding, independent research/validation balances, with no daily trade-count or loss-count limit. Multiple positions may overlap: each fresh qualifying signal can open another trade. The notional/equity cap applies to total open exposure, and equity includes all open positions. Each position retains its own fees, funding, and exit record. A persistent signal does not add a trade on every candle. Only execution candles fully contained in the selected session are tradable; a 4H candle crossing a session boundary is excluded from execution, and positions close at the prior usable candle's close. Drawdown is measured on the selected execution timeframe's closing equity.
+Confirmed signals enter at the **next execution candle's open**, plus the configured adverse spread/slippage. There is no profit target. An optional ATR stop loss can be activated alongside EMA reversal exits. Longs close when EMA20 crosses below EMA50; shorts close on the reverse crossover, using a completed execution candle and filling at the next open. RSI remains an entry filter only. The signal candle low/high is retained only as a sizing reference; 0.5% is not a maximum loss. Session, period and data-gap exits still apply. This strategy has no sweep or swing-resistance filter. It retains the existing 0.5% sizing reference, notional cap, costs/funding, independent research/validation balances, with no daily trade-count or loss-count limit. Multiple positions may overlap: each fresh qualifying signal can open another trade. The notional/equity cap applies to total open exposure, and equity includes all open positions. Each position retains its own fees, funding, and exit record. A persistent signal does not add a trade on every candle. Only execution candles fully contained in the selected session are tradable; a 4H candle crossing a session boundary is excluded from execution, and positions close at the prior usable candle's close. Drawdown is measured on the selected execution timeframe's closing equity.
 
 The position chart follows the effective execution timeframe and displays EMA20/50, an RSI20 pane with its 50 reference, signals, entries/exits, and stop/target zones. Selecting a trade shows each active stage's indicator values and the completed candle timestamp used for confirmation. Exports include these snapshots, the exact switch settings, `executionTimeframe`, `barSeconds`, and indicator series.
 
@@ -87,9 +87,17 @@ Both strategies exclude Saturday and Sunday according to the selected **session 
 
 API fields: `ema_fast`, `ema_slow`, `rsi_period`, `rsi_threshold`, `rsi_active`. Chart labels and confirmation values use the chosen settings. Exported `ema20`, `ema50`, and `rsi20` field names are retained for compatibility; they contain the configured fast EMA, slow EMA and RSI values, with periods recorded in `settings`.
 
+## Optional ATR stop for EMA + RSI
+
+In Strategy settings, turn **ATR Active** on to combine an ATR stop with EMA-reversal exits. Defaults are ATR period **14**, multiplier **2**, initially disabled. Long stop = actual entry price − ATR × multiplier; short stop = entry + ATR × multiplier. Each overlapping position gets its own fixed stop, shown on its chart, and keeps its EMA-reversal exit. No profit target is added.
+
+ATR uses the completed execution-timeframe signal candle, seeds from the average of the first period true ranges, then uses Wilder smoothing. True range includes gaps from the previous close; missing candles reset warmup. Signals without a positive warmed-up ATR are skipped. Stops are active on the entry candle; gap-through stops fill at the adverse opening price plus modeled costs. EMA exits still fill at the next open; a stop already breached at that open takes precedence. ATR distance is used in position sizing when enabled. Session, weekend and data-gap rules remain in force.
+
+API: `atr_active`, `atr_period`, `atr_multiplier`. Trade exports include the signal `atr`, `atrDistance`, and stop levels. Disabled ATR preserves EMA-only behavior.
+
 ## Close conditions and stop management
 
-EMA + RSI uses EMA reversal only, with stop loss and target disabled. The API normalizes its settings to `exit_condition: ema` and `stop_mode: none`. Earlier MTF reports describe the old stop/target rules and must be rerun for this version.
+EMA + RSI uses EMA reversal exits with an optional fixed ATR stop and no profit target. The API normalizes its settings to `exit_condition: ema` and `stop_mode: none`. Earlier MTF reports describe the old stop/target rules and must be rerun for this version.
 
 The sweep strategy exposes **Close conditions & stop loss** in Strategy settings. Its defaults remain **Stop / target only** and **Fixed initial stop**.
 
@@ -142,7 +150,7 @@ Initial local-data results and assumptions are saved in [reports/sweep-backtest-
 Run the execution tests with:
 
 ```sh
-python -m unittest server.test_data server.test_strategy server.test_mtf server.test_history server.test_exits server.test_indicator_settings -v
+python -m unittest server.test_data server.test_strategy server.test_mtf server.test_history server.test_exits server.test_indicator_settings server.test_atr -v
 npm run build
 ```
 

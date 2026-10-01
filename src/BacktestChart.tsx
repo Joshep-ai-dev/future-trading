@@ -75,7 +75,8 @@ export default function BacktestChart({candles,trades,selected,onSelect,indicato
       sweep.setData([{time:selected.signalTime as UTCTimestamp,value:selected.sweepLevel},{time:to,value:selected.sweepLevel}]);
       }
     }
-    if(selected && selected.stop===null && present.has(selected.entryTime)) {
+    if(selected && selected.target===null && present.has(selected.entryTime)) {
+      if(selected.stop!==null) chart.addSeries(LineSeries,{color:'#ff8291',lineWidth:2,title:'ATR stop',priceLineVisible:false}).setData([{time:selected.entryTime as UTCTimestamp,value:selected.stop},{time:Math.max(selected.exitTime,selected.entryTime+barSeconds) as UTCTimestamp,value:selected.stop}]);
       chart.addSeries(LineSeries,{color:'#88bfff',lineWidth:2,lineStyle:LineStyle.Dashed,title:'Entry',priceLineVisible:false}).setData([{time:selected.entryTime as UTCTimestamp,value:selected.entry},{time:Math.max(selected.exitTime,selected.entryTime+barSeconds) as UTCTimestamp,value:selected.entry}]);
     }
     const byTime = new Map(view.map(c=>[c.time,c]));

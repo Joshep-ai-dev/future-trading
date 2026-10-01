@@ -26,6 +26,9 @@ class BacktestRequest(BaseModel):
     entry_timeframe: Literal['1m', '3m', '5m', '15m'] = '5m'
     exit_condition: Literal['none', 'ema', 'rsi', 'either'] = 'none'
     stop_mode: Literal['none', 'fixed', 'breakeven', 'trailing', 'breakeven_trailing'] = 'fixed'
+    atr_active: bool = False
+    atr_period: int = Field(default=14, ge=1, le=500)
+    atr_multiplier: float = Field(default=2., gt=0, le=100)
     ema_fast: int = Field(default=20, ge=1, le=500)
     ema_slow: int = Field(default=50, ge=2, le=1000)
     rsi_period: int = Field(default=20, ge=1, le=500)
@@ -161,7 +164,7 @@ def exit_on_bar(position, row, friction, entered_this_bar=False):
     opening, high, low, _ = row
     d, stop, target = position['direction'], position['stop'], position['target']
     hit_stop = low <= stop if d == 1 else high >= stop
-    hit_target = high >= target if d == 1 else low <= target
+    hit_target = target is not None and (high >= target if d == 1 else low <= target)
     if hit_stop:
         raw = stop if entered_this_bar else (min(opening, stop) if d == 1 else max(opening, stop))
         return raw-d*friction, 'stop', bool(hit_target)
@@ -189,7 +192,8 @@ def metrics(trades, equity, capital):
 
 
 def simulate(frame, events, settings, start, end, name, bar_seconds=300, orders=None, exit_values=None):
-    protected = settings.strategy != 'mtf'
+    atr_enabled = settings.strategy == 'mtf' and settings.atr_active
+    protected = settings.strategy != 'mtf' or atr_enabled
     times = frame.index.asi8 // 10**9
     rows = frame[['open', 'high', 'low', 'close']].to_numpy()
     balance = settings.capital
@@ -276,10 +280,12 @@ def simulate(frame, events, settings, start, end, name, bar_seconds=300, orders=
             if triggered:
                 raw_entry = row[0] if market_order else (max(row[0], pending['trigger']) if d == 1 else min(row[0], pending['trigger']))
                 entry = raw_entry+d*friction
+                if atr_enabled:
+                    pending['stop'] = entry-d*pending['atrDistance']
                 risk = d*(entry-pending['stop']) if protected else max(abs(entry-pending['stop']), settings.tick_size)
                 obstacle = pending['obstacle']
                 blocked = obstacle is not None and d*(obstacle-entry) < 2*risk
-                if blocked or risk <= 0 or balance <= 0 or (protected and entry+d*2*risk <= 0):
+                if blocked or risk <= 0 or balance <= 0 or (protected and pending['stop'] <= 0) or (settings.strategy != 'mtf' and entry+d*2*risk <= 0):
                     diagnostics['blockedByLevel' if blocked else 'invalidEntries'] += 1
                 else:
                     account_equity = balance + sum(p['direction']*(row[0]-p['entry'])*p['quantity'] for p in positions)
@@ -295,7 +301,7 @@ def simulate(frame, events, settings, start, end, name, bar_seconds=300, orders=
                         # Existing positions must still be processed on this candle.
                     else:
                         position = {k:v for k,v in pending.items() if k not in ('expires', 'blocked')}
-                        position.update(entryTime=t, entry=entry, rawEntry=raw_entry, target=entry+d*2*risk,
+                        position.update(entryTime=t, entry=entry, rawEntry=raw_entry, target=None if settings.strategy == 'mtf' else entry+d*2*risk,
                                         quantity=quantity, riskBudget=risk_budget, plannedRisk=quantity*unit_loss,
                                         entryFee=entry*quantity*fee, funding=0., lastFunding=t,
                                         initialStop=pending['stop'], initialRisk=risk,
@@ -319,7 +325,7 @@ def simulate(frame, events, settings, start, end, name, bar_seconds=300, orders=
             if queued_exit is not None:
                 d = position['direction']
                 gap_stop = protected and (row[0] <= position['stop'] if d == 1 else row[0] >= position['stop'])
-                gap_target = protected and (row[0] >= position['target'] if d == 1 else row[0] <= position['target'])
+                gap_target = position['target'] is not None and protected and (row[0] >= position['target'] if d == 1 else row[0] <= position['target'])
                 # Existing protective orders take priority at the next open.
                 position['exitSignal'] = queued_exit
                 reason = 'stop' if gap_stop else 'target' if gap_target else queued_exit['reason']
