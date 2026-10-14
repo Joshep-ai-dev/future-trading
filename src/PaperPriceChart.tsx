@@ -1,3 +1,4 @@
+import {indicatorColor} from './indicatorColors';
 import IndicatorHeader from './IndicatorHeader';
 import IndicatorSettings,{readIndicatorSettings,type IndicatorConfig,type IndicatorKind} from './IndicatorSettings';
 import {AdxDecoration,displayAdx} from './adxDisplay';
@@ -8,7 +9,7 @@ import {api} from './api';
 import {mergeHistory} from './candleHistory';
 import {candleLogical,captureViewport,restoreViewport} from './chartViewport';
 import {useEffect,useRef,useState} from 'react';
-import {CandlestickSeries,ColorType,createChart,createSeriesMarkers,LineSeries,LineStyle,type ISeriesApi,type IChartApi,type UTCTimestamp,type SeriesMarker} from 'lightweight-charts';
+import {CandlestickSeries,ColorType,createChart,createSeriesMarkers,LineSeries,LineStyle,type AutoscaleInfo,type ISeriesApi,type IChartApi,type UTCTimestamp,type SeriesMarker} from 'lightweight-charts';
 import {fillMarker,FillLabels} from './fillMarkers';
 import ChartTools,{chartInteraction,resizeChart} from './ChartTools';
 import {fmt,type Analysis} from './types';
@@ -75,7 +76,7 @@ export default function PaperPriceChart(props:Props) {
     function paintOscillators(){
       const last=oscillatorData.at(-1);setPaneValues({atr:last?.atr??null,adx:last?.adx??null,rsi:last?.rsi??null});
       for(const [key,series] of oscillatorSeries){
-        if(key!=='adx')series.setData(oscillatorData.map(p=>p[key]===null?{time:p.time as UTCTimestamp}:{time:p.time as UTCTimestamp,value:p[key]}));
+        if(key!=='adx')series.setData(oscillatorData.map(p=>p[key]===null?{time:p.time as UTCTimestamp}:{time:p.time as UTCTimestamp,value:p[key],color:indicatorColor(key,p[key],panelConfig)}));
         else{
           const displayed=displayAdx(oscillatorData,panelConfig.displaySmoothing);
           series.setData(displayed.map(p=>p.display===null?{time:p.time as UTCTimestamp}:{time:p.time as UTCTimestamp,value:p.display,color:p.color}));
@@ -97,6 +98,10 @@ export default function PaperPriceChart(props:Props) {
           for(const [value,color,title,style] of [[20,'#90a4aea6','20 Weak',LineStyle.Dotted],[25,'#26a69acc','25 Trend',LineStyle.Dashed],[config.adxThreshold,'#ff40ff','Entry',LineStyle.Dashed]] as const)
             series.createPriceLine({price:value,color,title,lineStyle:style,lineWidth:1,axisLabelVisible:true});
           adxDecoration=new AdxDecoration(config.showStatus,config.adxThreshold);series.attachPrimitive(adxDecoration);
+        }
+        if(key==='atr'){
+          series.createPriceLine({price:config.atrThreshold,color:'#ffb74d',title:'TH',lineStyle:LineStyle.Dashed,lineWidth:1,axisLabelVisible:true});
+          series.applyOptions({autoscaleInfoProvider:(original:()=>AutoscaleInfo|null)=>{const info=original();return info?.priceRange?{...info,priceRange:{minValue:Math.min(info.priceRange.minValue,config.atrThreshold),maxValue:Math.max(info.priceRange.maxValue,config.atrThreshold)}}:null;}});
         }
         if(key==='rsi'){
           series.applyOptions({autoscaleInfoProvider:()=>({priceRange:{minValue:0,maxValue:100}})});
