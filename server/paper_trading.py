@@ -39,7 +39,9 @@ class PaperTrading:
         with self.lock:
             if self.state is None:
                 return dict(session=None, error=self.error)
-            return dict(session={k:v for k,v in self.state.items() if k not in ('candles','replayCandles')}, error=self.error)
+            session = {k:v for k,v in self.state.items() if k not in ('candles','replayCandles')}
+            session['chartCandles'] = self.state['candles'][-1000:]
+            return dict(session=session, error=self.error)
 
     def begin(self, request):
         if request.strategy != 'bb_outer_reversal':
@@ -175,7 +177,17 @@ class PaperTrading:
             if position:
                 position['entry_time'] = int(position['entry_time'].timestamp())
             bars = result['bars']
+            chart_indicators, chart_stops = [], []
+            for stamp, bar in bars.tail(1000).iterrows():
+                point = dict(time=int(stamp.timestamp()))
+                for key,source in [('bbBasis','bb_basis'),('bbUpper','bb_upper'),
+                                   ('bbLower','bb_lower'),('trendSma','trend_sma')]:
+                    value = bar.get(source,float('nan'))
+                    point[key] = float(value) if pd.notna(value) else None
+                chart_indicators.append(point)
+                chart_stops.append(dict(time=point['time'],price=float(bar.stop) if pd.notna(bar.stop) else None))
             state.update(candles=combined, lastProcessed=int(bars.index[-1].timestamp()),
+                chartIndicators=chart_indicators, chartStops=chart_stops,
                 balance=result['cash'], equity=float(bars.equity.iloc[-1]), openPosition=position,
                 trades=trades, latestPrice=float(bars.close.iloc[-1]),
                 equityHistory=[dict(time=int(t.timestamp()),value=float(v)) for t,v in bars.equity.items()],

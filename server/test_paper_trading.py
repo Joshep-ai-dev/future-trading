@@ -33,6 +33,12 @@ class PaperTradingTests(unittest.TestCase):
                 service.advance()
                 self.assertEqual(service.state['lastProcessed'],int(index[0].timestamp()))
                 self.assertIsNotNone(service.state['openPosition'])
+                visible=service.status()['session']
+                self.assertEqual(len(visible['chartCandles']),1)
+                self.assertLessEqual(visible['chartCandles'][-1]['time']+300,visible['virtualTime'])
+                self.assertEqual(visible['chartIndicators'][-1]['time'],int(index[0].timestamp()))
+                self.assertNotIn('replayCandles',visible)
+                self.assertNotIn('candles',visible)
                 service.set_running(False)
                 clock[0]+=1000
                 service.advance()
