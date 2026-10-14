@@ -6,7 +6,7 @@ import pandas as pd
 from scipy.stats import randint
 from sklearn.ensemble import (ExtraTreesRegressor, HistGradientBoostingRegressor,
                               RandomForestRegressor, VotingRegressor)
-from sklearn.model_selection import ParameterSampler
+from sklearn.model_selection import KFold, ParameterSampler, cross_val_score
 
 from .bb_outer_reversal import Settings, calculate, run_backtest
 from .data import TIMEFRAMES
@@ -16,6 +16,7 @@ from .strategy import seconds
 TRIALS = 64
 ADAPTIVE_TRIALS = 16
 SHORTLIST = 5
+ML_HYPERPARAMETER_TRIALS = 6
 PARAMETERS = (
     'bb_length', 'bb_mult', 'min_bb_width_pct',
     'atr_length', 'min_atr', 'adx_length',
@@ -114,21 +115,53 @@ def _candidate_set(base, count, seed, excluded=()):
     return candidates
 
 
-def _fit_ensemble(rows):
+def _ensemble(config):
+    return VotingRegressor(estimators=[
+        ('random_forest', RandomForestRegressor(
+            n_estimators=config['rf_trees'], min_samples_leaf=config['rf_leaf'],
+            max_features=config['rf_max_features'], random_state=1729, n_jobs=1)),
+        ('extra_trees', ExtraTreesRegressor(
+            n_estimators=config['extra_trees'], min_samples_leaf=config['extra_leaf'],
+            max_features=config['extra_max_features'], random_state=1733, n_jobs=1)),
+        ('hist_gradient_boosting', HistGradientBoostingRegressor(
+            max_iter=config['hist_iterations'], max_leaf_nodes=config['hist_leaf_nodes'],
+            l2_regularization=config['hist_l2'], random_state=1741)),
+    ], weights=config['weights'])
+
+
+def _fit_ensemble(rows, config):
     features = np.asarray([_parameter_key(params) for params, _ in rows], dtype=float)
     scores = np.asarray([metrics['score'] for _, metrics in rows], dtype=float)
-    model = VotingRegressor(estimators=[
-        ('random_forest', RandomForestRegressor(n_estimators=120, min_samples_leaf=2,
-                                                random_state=1729, n_jobs=1)),
-        ('extra_trees', ExtraTreesRegressor(n_estimators=120, min_samples_leaf=2,
-                                            random_state=1733, n_jobs=1)),
-        ('hist_gradient_boosting', HistGradientBoostingRegressor(max_iter=100,
-                                                                  max_leaf_nodes=7,
-                                                                  l2_regularization=1.,
-                                                                  random_state=1741)),
-    ])
+    model = _ensemble(config)
     model.fit(features, scores)
     return model
+
+
+def _tune_model_hyperparameters(rows, progress):
+    features = np.asarray([_parameter_key(params) for params, _ in rows], dtype=float)
+    scores = np.asarray([metrics['score'] for _, metrics in rows], dtype=float)
+    choices = {
+        'rf_trees': [80, 140, 220], 'rf_leaf': [1, 2, 4],
+        'rf_max_features': [0.7, 1.0], 'extra_trees': [80, 140, 220],
+        'extra_leaf': [1, 2, 4], 'extra_max_features': [0.7, 1.0],
+        'hist_iterations': [80, 140], 'hist_leaf_nodes': [7, 15],
+        'hist_l2': [0.1, 1., 5.], 'weights': [(1, 1, 1), (2, 1, 1), (1, 2, 1)],
+    }
+    sampler_space = {name: randint(0, len(values)) for name, values in choices.items()}
+    configs = [{name: choices[name][index] for name, index in sample.items()}
+               for sample in ParameterSampler(sampler_space, n_iter=ML_HYPERPARAMETER_TRIALS,
+                                              random_state=4817)]
+    folds = KFold(n_splits=3, shuffle=True, random_state=4819)
+    scored = []
+    for index, config in enumerate(configs, start=1):
+        errors = -cross_val_score(_ensemble(config), features, scores, cv=folds,
+                                  scoring='neg_root_mean_squared_error', n_jobs=1)
+        rmse = float(errors.mean())
+        scored.append((rmse, config))
+        progress(48 + int(8 * index / len(configs)),
+                 f'Tuning model hyperparameters: configuration {index} of {len(configs)}')
+    rmse, best_config = min(scored, key=lambda item: item[0])
+    return best_config, round(rmse, 4)
 
 
 def _score(result, capital):
@@ -195,23 +228,25 @@ def fine_tune(frame, request, progress=None):
     def evaluate(params, phase, start_pct, span_pct, total):
         config = replace(base, **params)
         next_count = phase_counts.get(phase, 0) + 1
-        report(min(92, start_pct + int(span_pct * (next_count - .5) / max(1, total))),
+        report(min(94, start_pct + int(span_pct * (next_count - .5) / max(1, total))),
                f'{phase}: preparing setting {next_count} of {total}')
         train, _, _ = candidate_segments(config)
         result = run_backtest(train, config, close_at_end=True, prepared_bars=train)
         metrics = _score(result, request.capital)
         evaluated[_parameter_key(params)] = (params, metrics)
         phase_counts[phase] = phase_counts.get(phase, 0) + 1
-        report(min(92, start_pct + int(span_pct * phase_counts[phase] / max(1, total))),
+        report(min(94, start_pct + int(span_pct * phase_counts[phase] / max(1, total))),
                f'{phase}: evaluated {phase_counts[phase]} settings')
 
     initial_candidates = _candidate_set(base, TRIALS, seed=1729)
     report(3, f'Testing {len(initial_candidates)} starting settings')
     for params in initial_candidates:
-        evaluate(params, 'Initial search', 3, 52, len(initial_candidates))
+        evaluate(params, 'Initial search', 3, 44, len(initial_candidates))
 
-    report(57, 'Fitting the scikit-learn ensemble')
-    first_model = _fit_ensemble(list(evaluated.values()))
+    report(48, 'Tuning the scikit-learn model hyperparameters')
+    model_hyperparameters, model_cv_rmse = _tune_model_hyperparameters(
+        list(evaluated.values()), report)
+    first_model = _fit_ensemble(list(evaluated.values()), model_hyperparameters)
     first_pool = _candidate_set(base, 1024, seed=2731, excluded=evaluated)
     adaptive_evaluated = 0
     if first_pool:
@@ -219,11 +254,11 @@ def fine_tune(frame, request, progress=None):
         predictions = first_model.predict(features)
         proposals = sorted(zip(predictions, first_pool), key=lambda item: item[0], reverse=True)
         for _, params in proposals[:ADAPTIVE_TRIALS]:
-            evaluate(params, 'ML guided search', 58, 17, min(ADAPTIVE_TRIALS, len(proposals)))
+            evaluate(params, 'ML guided search', 57, 15, min(ADAPTIVE_TRIALS, len(proposals)))
             adaptive_evaluated += 1
 
-    report(76, 'Fitting the ensemble to the expanded search')
-    model = _fit_ensemble(list(evaluated.values()))
+    report(74, 'Fitting the tuned ensemble to the expanded search')
+    model = _fit_ensemble(list(evaluated.values()), model_hyperparameters)
     final_pool = _candidate_set(base, 2048, seed=3739, excluded=evaluated)
     ranked = list(evaluated.values())
     if final_pool:
@@ -243,10 +278,10 @@ def fine_tune(frame, request, progress=None):
         if len(shortlist) == SHORTLIST:
             break
 
-    report(78, 'Rechecking finalists and validating their settings')
+    report(75, 'Rechecking finalists and validating their settings')
     for index, params in enumerate(shortlist):
         if _parameter_key(params) not in evaluated:
-            evaluate(params, 'Finalist check', 78 + index * 2, 2, 1)
+            evaluate(params, 'Finalist check', 75 + index * 2, 2, 1)
 
     validated = []
     for index, params in enumerate(shortlist):
@@ -255,31 +290,45 @@ def fine_tune(frame, request, progress=None):
         result = run_backtest(validation, config, close_at_end=True, prepared_bars=validation)
         validated.append((_score(result, request.capital),
                           evaluated[_parameter_key(params)][1], params))
-        report(90 + int(5 * (index + 1) / len(shortlist)),
+        report(85 + int(8 * (index + 1) / len(shortlist)),
                f'Validation: checked {index + 1} of {len(shortlist)} finalists')
     validated.sort(key=lambda item: (item[0]['score'], item[0]['netPnl'],
                                      item[0]['maxDrawdownPct']), reverse=True)
+    candidate_results = []
+    for index, (validation_metrics, train_metrics, params) in enumerate(validated, start=1):
+        config = replace(base, **params)
+        _, _, forward = candidate_segments(config)
+        forward_result = run_backtest(forward, config, close_at_end=True, prepared_bars=forward)
+        candidate_results.append(dict(
+            id=f'case-{index}', rank=index,
+            bestParameters=params,
+            bestSettings=request.model_copy(update={
+                'bb_reversal': {**request.bb_reversal, **{key: value for key, value in params.items()
+                                                          if key != 'leverage'}},
+                'max_leverage': params['leverage'],
+            }).model_dump(mode='json'),
+            periods=dict(train=dict(metrics=train_metrics),
+                         validation=dict(metrics=validation_metrics),
+                         forwardTest=dict(metrics=_score(forward_result, request.capital))),
+        ))
+        report(95 + index, f'Forward-tested selected candidate {index} of {len(validated)}')
     validation_metrics, train_metrics, best_params = validated[0]
-    best = replace(base, **best_params)
-    _, _, forward = candidate_segments(best)
-    forward_result = run_backtest(forward, best, close_at_end=True, prepared_bars=forward)
+    forward_metrics = candidate_results[0]['periods']['forwardTest']['metrics']
     timestamps = [int(reference.index[0].timestamp()), int(reference.index[train_end].timestamp()),
                   int(reference.index[validation_end].timestamp()),
                   int(reference.index[-1].timestamp())]
-    best_settings = request.model_copy(update={
-        'bb_reversal': {**request.bb_reversal, **{key: value for key, value in best_params.items()
-                                                  if key not in ('leverage',)}},
-        'max_leverage': best_params['leverage'],
-    }).model_dump(mode='json')
+    best_settings = candidate_results[0]['bestSettings']
     report(100, 'Fine tuning complete')
     return dict(
         bestSettings=best_settings, bestParameters=best_params,
         model='scikit-learn VotingRegressor: RandomForestRegressor + ExtraTreesRegressor + HistGradientBoostingRegressor',
         objective='35% win rate, 35% profit, 20% drawdown control, 10% average loss control; small samples are discounted.',
+        candidates=candidate_results, modelHyperparameters=model_hyperparameters,
+        modelCrossValidationRmse=model_cv_rmse,
         candidatesEvaluated=len(evaluated), seedCandidates=len(initial_candidates),
         adaptiveCandidatesEvaluated=adaptive_evaluated, shortlisted=len(validated),
         periods=dict(train=dict(start=timestamps[0], end=timestamps[1], metrics=train_metrics),
                      validation=dict(start=timestamps[1], end=timestamps[2], metrics=validation_metrics),
                      forwardTest=dict(start=timestamps[2], end=timestamps[3],
-                                      metrics=_score(forward_result, request.capital))),
+                                      metrics=forward_metrics)),
     )

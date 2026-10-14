@@ -48,10 +48,16 @@ export type Confirmation = {stage: string; timeframe: string; closeTime: number;
 export type IndicatorPoint = {time: number; ema20: number | null; ema50: number | null; rsi20: number | null; bbBasis?: number | null; bbUpper?: number | null; bbLower?: number | null; trendSma?:number|null; adx?:number|null; atr?:number|null; bbWidthPct?:number|null};
 export type BacktestResult = {strategyName: string; executionTimeframe: string; barSeconds: number; indicators: IndicatorPoint[]; settings: BacktestSettings; backtest: PeriodResult; candles: Analysis['candles']};
 export type TuneMetrics = {score:number;trades:number;wins:number;losses:number;winRate:number;netPnl:number;returnPct:number;maxDrawdownPct:number;averageLossPct:number};
+export type FineTuneCase = {
+  id:string;rank:number;bestSettings:BacktestSettings;
+  bestParameters:Partial<BacktestSettings['bb_reversal']>&{leverage?:number};
+  periods:{train:{metrics:TuneMetrics};validation:{metrics:TuneMetrics};forwardTest:{metrics:TuneMetrics}};
+};
 export type FineTuneResult = {
   bestSettings:BacktestSettings;bestParameters:Partial<BacktestSettings['bb_reversal']>&{leverage?:number};
   model:string;objective:string;candidatesEvaluated:number;seedCandidates:number;adaptiveCandidatesEvaluated:number;shortlisted:number;
   periods:{train:{start:number;end:number;metrics:TuneMetrics};validation:{start:number;end:number;metrics:TuneMetrics};forwardTest:{start:number;end:number;metrics:TuneMetrics}};
+  candidates?:FineTuneCase[];modelHyperparameters?:Record<string,number|number[]>;modelCrossValidationRmse?:number;
 };
 
 export type CandlePage = {candles: Analysis["candles"]; hasMore: boolean; nextBefore: number | null};

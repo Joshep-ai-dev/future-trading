@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from queue import Queue
 from threading import Thread
 import json
+import logging
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.gzip import GZipMiddleware
@@ -31,6 +32,7 @@ async def lifespan(app):
 
 app = FastAPI(title='Silver Price Research', lifespan=lifespan)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+logger = logging.getLogger(__name__)
 
 class Parameters(BaseModel):
     model_config = ConfigDict(extra='forbid')
@@ -321,8 +323,9 @@ def fine_tune_backtest(parameters: FineTuneRequest):
             updates.put({'type': 'result', 'result': result})
         except (ValueError, OSError) as error:
             updates.put({'type': 'error', 'detail': str(error)})
-        except Exception:
-            updates.put({'type': 'error', 'detail': 'Fine tuning failed. Check the backend log for details.'})
+        except Exception as error:
+            logger.exception('Fine tuning failed')
+            updates.put({'type': 'error', 'detail': str(error) or 'Fine tuning failed. Check the backend log.'})
         finally:
             updates.put(None)
 
@@ -333,7 +336,12 @@ def fine_tune_backtest(parameters: FineTuneRequest):
             update = updates.get()
             if update is None:
                 break
-            yield json.dumps(update, allow_nan=False) + '\n'
+            try:
+                encoded = json.dumps(update, allow_nan=False,
+                                     default=lambda value: value.item() if hasattr(value, 'item') else str(value))
+            except (TypeError, ValueError) as error:
+                encoded = json.dumps({'type': 'error', 'detail': f'Could not encode tuning result: {error}'})
+            yield encoded + '\n'
 
     return StreamingResponse(events(), media_type='application/x-ndjson',
                              headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
