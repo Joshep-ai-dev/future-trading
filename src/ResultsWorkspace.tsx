@@ -15,7 +15,7 @@ export default function ResultsWorkspace({result,busy,stale,onRun,onConfigure,on
   const currentPage=Math.min(page,pages-1);
   const exits=useMemo(()=>Object.entries((p?.trades??[]).reduce<Record<string,number>>((counts,t)=>{counts[t.exitReason]=(counts[t.exitReason]??0)+1;return counts;},{})),[p]);
   return <>
-    <div className="workspace-heading"><div><span className="eyebrow">STRATEGY ANALYSIS</span><h1>Results & trades</h1><p>One continuous backtest. Every fill, position and account change in one workspace.</p></div><div className="workspace-actions"><button className="secondary" onClick={onConfigure}>Edit settings</button>{result&&<button className="secondary" onClick={onExport}>Export JSON</button>}<button disabled={busy} onClick={onRun}>{busy?'Running…':'Run backtest'}</button></div></div>
+    <div className="workspace-heading"><div><span className="eyebrow">STRATEGY ANALYSIS</span><h1>Results</h1><p>One continuous backtest. Every fill, position and account change in one workspace.</p></div><div className="workspace-actions"><button className="secondary" onClick={onConfigure}>Edit settings</button>{result&&<button className="secondary" onClick={onExport}>Export JSON</button>}<button disabled={busy} onClick={onRun}>{busy?'Running…':'Run backtest'}</button></div></div>
     {stale&&<p className="notice">Settings have changed. These results use the previous configuration.</p>}
     {result&&p&&s?<>
       <div className="run-context"><span className="run-label">BB OUTER BAND REVERSAL</span><span>{result.executionTimeframe.toUpperCase()} candles</span><span>{result.settings.max_leverage}× leverage</span><span>{utc(p.start)} — {utc(p.end)} UTC</span><span className="paper-badge">SIMULATED</span></div>
