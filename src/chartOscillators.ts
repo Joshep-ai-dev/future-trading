@@ -11,12 +11,13 @@ function wilder(length:number){
 }
 
 /** Wilder ATR and DMI/ADX, with the same warmup and gap resets as the bot. */
-export function chartOscillators(candles:Candle[],duration:number,atrLength:number,adxLength:number,atrSmoothing:'RMA'|'SMA'|'EMA'|'WMA'='RMA'){
+export function chartOscillators(candles:Candle[],duration:number,atrLength:number,adxLength:number,atrSmoothing:'RMA'|'SMA'|'EMA'|'WMA'='RMA',rsiLength=14){
   let atr=wilder(atrLength),tr=wilder(adxLength),plus=wilder(adxLength),minus=wilder(adxLength),adx=wilder(adxLength);
   let previous:Candle|undefined,previousPlus:number|null=null,previousMinus:number|null=null;
+  let gains=wilder(rsiLength),losses=wilder(rsiLength);
   let ranges:number[]=[],ema:number|null=null;
   return candles.map(c=>{
-    if(previous&&c.time-previous.time>duration){atr=wilder(atrLength);tr=wilder(adxLength);plus=wilder(adxLength);minus=wilder(adxLength);adx=wilder(adxLength);previous=undefined;previousPlus=previousMinus=null;ranges=[];ema=null;}
+    if(previous&&c.time-previous.time>duration){atr=wilder(atrLength);tr=wilder(adxLength);plus=wilder(adxLength);minus=wilder(adxLength);adx=wilder(adxLength);previous=undefined;previousPlus=previousMinus=null;ranges=[];ema=null;gains=wilder(rsiLength);losses=wilder(rsiLength);}
     const range=previous?Math.max(c.high-c.low,Math.abs(c.high-previous.close),Math.abs(c.low-previous.close)):c.high-c.low;
     ranges.push(range);if(ranges.length>atrLength)ranges.shift();
     ema=ema===null?range:ema+2/(atrLength+1)*(range-ema);
@@ -28,7 +29,10 @@ export function chartOscillators(candles:Candle[],duration:number,atrLength:numb
     const mdi=smoothTr&&m!==null?100*m/smoothTr:previousMinus;
     previousPlus=pdi;previousMinus=mdi;
     const dx=pdi===null||mdi===null?null:100*Math.abs(pdi-mdi)/((pdi+mdi)||1);
+    const change=previous?c.close-previous.close:null;
+    const gain=gains(change===null?null:Math.max(change,0)),loss=losses(change===null?null:Math.max(-change,0));
+    const rsi=gain===null||loss===null?null:loss===0?(gain>0?100:50):100-100/(1+gain/loss);
     const adxValue=adx(dx);previous=c;
-    return {time:c.time,atr:atrValue,adx:adxValue};
+    return {time:c.time,atr:atrValue,adx:adxValue,rsi};
   });
 }

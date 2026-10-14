@@ -119,6 +119,43 @@ class BBOuterReversalTests(unittest.TestCase):
                                    amount_unit=unit, amount_per_trade=amount)
             self.assertEqual(result['open_position']['quantity'], 30)
 
+    def test_optional_rsi_price_exit_long_and_short(self):
+        for direction, first, value in [(1,(99.5,100.5,98.9,100.),86.),
+                                         (-1,(100.5,101.2,99.8,100.),14.)]:
+            bars = self.bars([first,(100.35,100.45,100.1,100.4)])
+            bars['exit_rsi'] = [50.,value]
+            result = self.run_bars(bars,rsi_exit_enabled=True,initial_sl=2,
+                                   use_sma_trend_adjustment=False,trail_trigger=10)
+            trade = result['trades'].iloc[0]
+            self.assertEqual(trade.direction,direction)
+            self.assertEqual(trade.exit_reason,'rsi_price_exit')
+            self.assertEqual(trade.exit_price,100.4)
+            self.assertAlmostEqual(trade.pnl,.4*direction)
+            self.assertIsNone(result['open_position'])
+
+    def test_optional_exit_is_strict_disabled_and_waits_for_rsi(self):
+        for first,threshold in [((99.5,100.5,98.9,100.),85.),((100.5,101.2,99.8,100.),15.)]:
+            for enabled,close,value in [(False,100.4,86. if threshold==85 else 14.),
+                                        (True,100.4,threshold),
+                                        (True,100.3,86. if threshold==85 else 14.),
+                                        (True,100.4,np.nan)]:
+                bars = self.bars([first,(close-.01,close+.01,100.1,close)])
+                bars['exit_rsi'] = [50.,value]
+                result = self.run_bars(bars,rsi_exit_enabled=enabled,initial_sl=2,
+                                       use_sma_trend_adjustment=False,trail_trigger=10)
+                self.assertTrue(result['trades'].empty)
+                self.assertIsNotNone(result['open_position'])
+
+    def test_optional_short_exit_uses_literal_upward_difference_and_stop_priority(self):
+        bars = self.bars([(100.5,101.2,99.8,100.),(99.5,100.1,99.5,99.6)])
+        bars['exit_rsi'] = [50.,10.]
+        self.assertTrue(self.run_bars(bars,rsi_exit_enabled=True,initial_sl=2,
+                                     use_sma_trend_adjustment=False,trail_trigger=10)['trades'].empty)
+        bars = self.bars([(99.5,100.5,98.9,100.),(100.,100.5,99.,100.4)])
+        bars['exit_rsi'] = [50.,90.]
+        result = self.run_bars(bars,rsi_exit_enabled=True)
+        self.assertEqual(result['trades'].iloc[0].exit_reason,'stop')
+
     def test_fixed_dollar_allocation_is_capped_after_loss(self):
         bars = self.bars([(99.5,100.5,98.9,100.),(99.,100.5,98.8,100.),
                           (100.5,101.2,99.8,100.)])

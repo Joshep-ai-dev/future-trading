@@ -14,7 +14,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from .indicators import atr
+from .indicators import atr, rsi
 
 
 @dataclass(frozen=True)
@@ -44,8 +44,21 @@ class Settings:
     leverage: float | None = None
     amount_per_trade: float = 100.0
     amount_unit: str = 'percent'
+    rsi_exit_enabled: bool = False
+    rsi_exit_length: int = 14
+    rsi_exit_move: float = 0.30
+    rsi_exit_short: float = 15.
+    rsi_exit_long: float = 85.
 
     def __post_init__(self):
+        if not isinstance(self.rsi_exit_enabled, bool):
+            raise ValueError('RSI exit enabled must be boolean')
+        if isinstance(self.rsi_exit_length, bool) or not isinstance(self.rsi_exit_length, int) or not 1 <= self.rsi_exit_length <= 500:
+            raise ValueError('RSI exit length must be an integer between 1 and 500')
+        if not np.isfinite(self.rsi_exit_move) or self.rsi_exit_move < 0:
+            raise ValueError('RSI exit price move must be finite and nonnegative')
+        if not all(np.isfinite(v) and 0 <= v <= 100 for v in (self.rsi_exit_short, self.rsi_exit_long)):
+            raise ValueError('RSI exit thresholds must be between 0 and 100')
         if self.amount_unit not in ('price', 'percent'):
             raise ValueError('amount_unit must be price ($) or percent')
         if not np.isfinite(self.amount_per_trade) or self.amount_per_trade <= 0:
@@ -124,6 +137,7 @@ def calculate(frame, settings=None, *, bar_seconds=None):
     result['bb_lower'] = basis - deviation
     result['bb_width_pct'] = 200 * deviation / basis.abs().replace(0, np.nan)
     result['atr'] = atr(data, s.atr_length)
+    result['exit_rsi'] = rsi(data, s.rsi_exit_length) if s.rsi_exit_enabled else np.nan
     up, down = data.high.diff(), -data.low.diff()
     plus = np.where((up > down) & (up > 0), up, 0.).astype(float)
     minus = np.where((down > up) & (down > 0), down, 0.).astype(float)
@@ -183,6 +197,15 @@ def run_backtest(frame, settings=None, *, start=None, close_at_end=False, bar_se
                 close_position(time, min(bar.open, stop), 'stop')
             elif direction == -1 and bar.high >= stop:
                 close_position(time, max(bar.open, stop), 'stop')
+
+        if position is not None and s.rsi_exit_enabled:
+            exit_rsi = bar.get('exit_rsi', np.nan)
+            # User-defined upward price difference for BOTH sides, not directional profit.
+            price_condition = bar.close > position['entry_price']+s.rsi_exit_move
+            rsi_condition = (exit_rsi < s.rsi_exit_short if position['direction'] == -1
+                             else exit_rsi > s.rsi_exit_long)
+            if price_condition and np.isfinite(exit_rsi) and rsi_condition:
+                close_position(time, bar.close, 'rsi_price_exit')
 
         if bar.low <= bar.bb_lower:
             lower_touch = i

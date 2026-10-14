@@ -56,3 +56,5 @@ Download status and **Download latest prices now** remain available above the wo
 python -m unittest discover -s server -t .
 npm run build
 ```
+
+Optional RSI + price exit (Bot settings): disabled by default. Uses Wilder RSI of execution-candle closes (default length 14). Both long and short require close price minus entry price strictly greater than 0.3; long additionally requires RSI strictly greater than 85, short RSI strictly less than 15. All thresholds are configurable. This literal upward price condition is adverse for shorts. Existing intrabar stops take priority; this exit fills at candle close and records `rsi_price_exit`. Settings apply to new backtests or new paper sessions; chart indicator settings are independent.

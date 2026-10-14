@@ -1,4 +1,4 @@
-import IndicatorSettings,{readIndicatorSettings,type IndicatorConfig} from './IndicatorSettings';
+import IndicatorSettings,{readIndicatorSettings,type IndicatorConfig,type IndicatorKind} from './IndicatorSettings';
 import {AdxDecoration,displayAdx} from './adxDisplay';
 import {chartOscillators} from './chartOscillators';
 import {TIMEFRAMES} from './chartTimeframe';
@@ -20,12 +20,12 @@ type Props=Data&{sessionId:number;showSma:boolean;timeframe:string;atrLength:num
 export default function PaperPriceChart(props:Props) {
   const container=useRef<HTMLDivElement>(null),chartRef=useRef<IChartApi|null>(null);
   const update=useRef<(data:Data)=>void>(()=>{});
-  const [selectedIndicators,setSelectedIndicators]=useState<{atr:boolean;adx:boolean}>(()=>{try{const saved=JSON.parse(localStorage.getItem('silver.chart.oscillators')??'{}');return {atr:saved.atr===true,adx:saved.adx===true};}catch{return {atr:false,adx:false};}});
-  const [indicatorConfig,setIndicatorConfig]=useState(readIndicatorSettings),[settingsOpen,setSettingsOpen]=useState(false);
+  const [selectedIndicators,setSelectedIndicators]=useState<{atr:boolean;adx:boolean;rsi:boolean}>(()=>{try{const saved=JSON.parse(localStorage.getItem('silver.chart.oscillators')??'{}');return {atr:saved.atr===true,adx:saved.adx===true,rsi:saved.rsi===true};}catch{return {atr:false,adx:false,rsi:false};}});
+  const [indicatorConfig,setIndicatorConfig]=useState(readIndicatorSettings),[settingsOpen,setSettingsOpen]=useState<IndicatorKind|null>(null);
   const configRef=useRef(indicatorConfig);configRef.current=indicatorConfig;
   function applyIndicatorConfig(config:IndicatorConfig){setIndicatorConfig(config);try{localStorage.setItem('silver.chart.indicatorSettings',JSON.stringify(config));}catch{}}
-  const changePanels=useRef<(selection:{atr:boolean;adx:boolean},config:IndicatorConfig)=>void>(()=>{});
-  function toggleIndicator(key:'atr'|'adx'){setSelectedIndicators(old=>{const next={...old,[key]:!old[key]};try{localStorage.setItem('silver.chart.oscillators',JSON.stringify(next));}catch{}return next;});}
+  const changePanels=useRef<(selection:{atr:boolean;adx:boolean;rsi:boolean},config:IndicatorConfig)=>void>(()=>{});
+  function toggleIndicator(key:IndicatorKind){setSelectedIndicators(old=>{const next={...old,[key]:!old[key]};try{localStorage.setItem('silver.chart.oscillators',JSON.stringify(next));}catch{}return next;});}
   const loadEarlier=useRef<()=>void>(()=>{});
   const [loading,setLoading]=useState(false),[hasMore,setHasMore]=useState(true),[historyError,setHistoryError]=useState('');
   const following=useRef(true),lastTime=useRef<number|undefined>(undefined);
@@ -51,11 +51,11 @@ export default function PaperPriceChart(props:Props) {
     const stopOverlay=new StopOverlay();price.attachPrimitive(stopOverlay);
     const entry=chart.addSeries(LineSeries,{color:'#88bfff',lineWidth:2,title:'Open entry',priceLineVisible:false});
     let oscillatorData:ReturnType<typeof chartOscillators>=[],oscillatorKey='',panelConfig=configRef.current;
-    const oscillatorSeries=new Map<'atr'|'adx',ISeriesApi<'Line'>>();
+    const oscillatorSeries=new Map<IndicatorKind,ISeriesApi<'Line'>>();
     let adxHalo:ISeriesApi<'Line'>|null=null,adxDecoration:AdxDecoration|null=null;
     function paintOscillators(){
       for(const [key,series] of oscillatorSeries){
-        if(key==='atr')series.setData(oscillatorData.map(p=>p.atr===null?{time:p.time as UTCTimestamp}:{time:p.time as UTCTimestamp,value:p.atr}));
+        if(key!=='adx')series.setData(oscillatorData.map(p=>p[key]===null?{time:p.time as UTCTimestamp}:{time:p.time as UTCTimestamp,value:p[key]}));
         else{
           const displayed=displayAdx(oscillatorData,panelConfig.displaySmoothing);
           series.setData(displayed.map(p=>p.display===null?{time:p.time as UTCTimestamp}:{time:p.time as UTCTimestamp,value:p.display,color:p.color}));
@@ -70,15 +70,20 @@ export default function PaperPriceChart(props:Props) {
       if(adxHalo){chart.removeSeries(adxHalo);adxHalo=null;}adxDecoration=null;
       for(const series of oscillatorSeries.values())chart.removeSeries(series);
       oscillatorSeries.clear();
-      for(const key of ['atr','adx'] as const)if(selection[key]){
+      for(const key of ['atr','adx','rsi'] as const)if(selection[key]){
         const pane=chart.panes().length;
         if(key==='adx')adxHalo=chart.addSeries(LineSeries,{color:'#90a4ae26',lineWidth:4,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false},pane);
-        const series=chart.addSeries(LineSeries,{color:key==='atr'?'#38d9ff':'#90a4ae',lineWidth:key==='atr'?2:3,title:key==='atr'?`ATR (${config.atrLength}, ${config.atrSmoothing})`:`ADX (${config.adxLength})`,priceLineVisible:false,priceFormat:{type:'price',precision:key==='atr'?3:2,minMove:key==='atr'?.001:.01}},pane);
+        const series=chart.addSeries(LineSeries,{color:key==='atr'?'#38d9ff':key==='rsi'?'#bd93f9':'#90a4ae',lineWidth:key==='atr'?2:3,title:key==='atr'?`ATR (${config.atrLength}, ${config.atrSmoothing})`:key==='adx'?`ADX (${config.adxLength})`:`RSI (${config.rsiLength})`,priceLineVisible:false,priceFormat:{type:'price',precision:key==='atr'?3:2,minMove:key==='atr'?.001:.01}},pane);
         series.priceScale().applyOptions({scaleMargins:{top:.23,bottom:.12}});oscillatorSeries.set(key,series);
         if(key==='adx'){
           for(const [value,color,title,style] of [[20,'#90a4aea6','20 Weak',LineStyle.Dotted],[25,'#26a69acc','25 Trend',LineStyle.Dashed],[config.adxThreshold,'#ff40ff','Entry',LineStyle.Dashed]] as const)
             series.createPriceLine({price:value,color,title,lineStyle:style,lineWidth:1,axisLabelVisible:true});
           adxDecoration=new AdxDecoration(config.showStatus,config.adxThreshold);series.attachPrimitive(adxDecoration);
+        }
+        if(key==='rsi'){
+          series.applyOptions({autoscaleInfoProvider:()=>({priceRange:{minValue:0,maxValue:100}})});
+          for(const [value,color,title] of [[config.rsiUpper,'#ff8191','Upper'],[50,'#61718b','Mid'],[config.rsiLower,'#43d9a5','Lower']] as const)
+            series.createPriceLine({price:value,color,title,lineStyle:LineStyle.Dashed,lineWidth:1,axisLabelVisible:true});
         }
       }
       chart.panes().forEach((pane,index)=>pane.setStretchFactor(index===0?3:1));
@@ -131,7 +136,7 @@ export default function PaperPriceChart(props:Props) {
       const duration=TIMEFRAMES[props.timeframe as keyof typeof TIMEFRAMES];
       const completed=data.candles.filter(c=>c.time+duration<=data.indicatorClock);
       const nextKey=`${completed.length}:${completed[0]?.time}:${completed.at(-1)?.time}`;
-      if(nextKey!==oscillatorKey){oscillatorKey=nextKey;oscillatorData=chartOscillators(completed,duration,panelConfig.atrLength,panelConfig.adxLength,panelConfig.atrSmoothing);paintOscillators();}
+      if(nextKey!==oscillatorKey){oscillatorKey=nextKey;oscillatorData=chartOscillators(completed,duration,panelConfig.atrLength,panelConfig.adxLength,panelConfig.atrSmoothing,panelConfig.rsiLength);paintOscillators();}
       const p=data.position,first=data.candles[0]?.time;
       if(p&&stamp!==undefined&&first!==undefined){
         const from=Math.max(first,p.entry_time);
@@ -172,5 +177,5 @@ export default function PaperPriceChart(props:Props) {
   },[props.sessionId,props.showSma,props.timeframe]);
   useEffect(()=>{update.current(props);},[props]);
   useEffect(()=>{changePanels.current(selectedIndicators,indicatorConfig);},[selectedIndicators,indicatorConfig,props.sessionId,props.showSma,props.timeframe]);
-  return <><div className="chart-actions"><ChartTools chartRef={chartRef} onLatest={latest} onNavigate={holdView} onEarlier={()=>loadEarlier.current()} loading={loading} hasMore={hasMore}/><div className="indicator-switch" role="group" aria-label="Chart indicators"><span>Indicators</span>{(['atr','adx'] as const).map(key=><button key={key} type="button" aria-pressed={selectedIndicators[key]} onClick={()=>toggleIndicator(key)}>{key.toUpperCase()}</button>)}<button type="button" aria-expanded={settingsOpen} aria-controls="chart-indicator-settings" onClick={()=>setSettingsOpen(!settingsOpen)}>Settings</button></div><label className="follow-toggle"><input type="checkbox" checked={follow} onChange={e=>{following.current=e.target.checked;setFollow(e.target.checked);if(e.target.checked)latest();}}/> Follow price</label></div>{settingsOpen&&<div id="chart-indicator-settings"><IndicatorSettings value={indicatorConfig} onApply={applyIndicatorConfig} onClose={()=>setSettingsOpen(false)}/></div>}<p className="readout">{readout}</p>{historyError&&<p className="chart-history-status error" role="alert">{historyError} <button type="button" className="text-button" onClick={()=>loadEarlier.current()}>Retry</button></p>}<div className="chart-history-status" role="status">{loading?"Loading earlier candles...":hasMore?"Pan left to load history":"Beginning of available history"}<span>Pan right for newer candles ? Latest returns to the current price</span></div><div className="chart-resize"><div ref={container} onWheelCapture={holdView} onPointerDownCapture={holdView} className="chart-container position-chart" aria-label="Virtual bot price chart with buys, sells, exits and trailing stops"/></div></>;
+  return <><div className="chart-actions"><ChartTools chartRef={chartRef} onLatest={latest} onNavigate={holdView} onEarlier={()=>loadEarlier.current()} loading={loading} hasMore={hasMore}/><div className="indicator-switch" role="group" aria-label="Chart indicators"><span>Indicators</span>{(['atr','adx','rsi'] as const).map(key=><div key={key} className="indicator-control"><button type="button" aria-pressed={selectedIndicators[key]} onClick={()=>toggleIndicator(key)}>{key.toUpperCase()}</button><button type="button" className="indicator-gear" aria-label={`${key.toUpperCase()} settings`} aria-haspopup="dialog" onClick={()=>setSettingsOpen(key)}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 2h4l.5 2 2 .5 1 3-1.5 1.5.5 2-3 2-1.5-1-2 .5-2-3 1-1.5L3 6l3-2z"/><circle cx="8" cy="8" r="2"/></svg></button></div>)}</div><label className="follow-toggle"><input type="checkbox" checked={follow} onChange={e=>{following.current=e.target.checked;setFollow(e.target.checked);if(e.target.checked)latest();}}/> Follow price</label></div>{settingsOpen&&<IndicatorSettings key={settingsOpen} kind={settingsOpen} value={indicatorConfig} onApply={applyIndicatorConfig} onClose={()=>setSettingsOpen(null)}/>}<p className="readout">{readout}</p>{historyError&&<p className="chart-history-status error" role="alert">{historyError} <button type="button" className="text-button" onClick={()=>loadEarlier.current()}>Retry</button></p>}<div className="chart-history-status" role="status">{loading?"Loading earlier candles...":hasMore?"Pan left to load history":"Beginning of available history"}<span>Pan right for newer candles ? Latest returns to the current price</span></div><div className="chart-resize"><div ref={container} onWheelCapture={holdView} onPointerDownCapture={holdView} className="chart-container position-chart" aria-label="Virtual bot price chart with buys, sells, exits and trailing stops"/></div></>;
 }
