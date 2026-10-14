@@ -38,7 +38,7 @@ The chart shows the latest 1,000 revealed candles with buy/sell/exit markers, Bo
 
 The profile **Account** page contains exchange connection and live order controls, plus the choice between live exchange and paper account handling. In live mode, connect OKX, HTX, MEXC or Binance where an active linear XAG/USDT perpetual is available, then use either a manual market ticket with a reduce-only protective trigger stop or BB Outer Band Reversal automation on completed candles. Use API keys with read/trade permissions only, disable withdrawals, and apply IP allowlisting. Credentials stay in backend process memory and are cleared on disconnect or backend restart. Use a dedicated exchange subaccount and verify venue position mode, leverage, order size, fills and stop orders directly at the exchange. Live execution is real and venue trigger semantics and risk limits differ.
 
-Open the profile menu from the S button or account badge in the header. Choose paper or live account mode, then open **Account settings** to manage exchange connections and one shared **Display and trading time zone**. That setting controls chart axes, crosshairs and trade timestamps throughout Trading and Results. Market data and backtest date boundaries stay in UTC.
+The account badge in the header is a status indicator. Open the workspace menu with the S profile button to reach Account, Bot settings or the Trading terminal. In Account, choose paper or live mode, configure an exchange and execution style, or open Display preferences for the shared chart/trade time zone. Market data and backtest date boundaries stay in UTC.
 
 All paper execution is virtual and candle-based. Fees, spread, slippage, funding, tick rounding and margin liquidation are not modeled.
 
