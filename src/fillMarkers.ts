@@ -3,14 +3,15 @@ import type {SeriesMarker,UTCTimestamp,IPrimitivePaneRenderer,ISeriesPrimitive,S
 export const FILL_COLORS={buy:'#38d9ff',sell:'#ffb347'};
 
 /** Preserve execution details for the chart readout and marker selection. */
-export function fillMarker(time:number,price:number,_label:string,kind:'entry'|'close',direction:number,id:string,quantity:number):SeriesMarker<UTCTimestamp> {
+export function fillMarker(time:number,price:number,_label:string,kind:'entry'|'close',direction:number,id:string,quantity:number,pnl?:number):SeriesMarker<UTCTimestamp> {
   const buy=kind==='entry'?direction===1:direction!==1;
   const name=kind==='entry'?(direction===1?'Long':'Short'):`Close ${direction===1?'long':'short'}`;
+  const amount=kind==='entry'?`${buy?'+':'-'}${Number(quantity.toFixed(3))} qty`:pnl===undefined?'P&L unavailable':`${pnl>0?'Profit +':pnl<0?'Loss -':''}$${Math.abs(pnl).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   return {
     time:time as UTCTimestamp,position:buy?'atPriceBottom':'atPriceTop',price,
     shape:buy?'arrowUp':'arrowDown',
     color:buy?FILL_COLORS.buy:FILL_COLORS.sell,
-    id,text:`${name}\n${buy?'+':'-'}${Number(quantity.toFixed(3))}\n@ ${Number(price.toFixed(8))}`,size:1,
+    id,text:`${name}\n${amount}\n@ ${Number(price.toFixed(8))}`,size:1,
   };
 }
 
@@ -62,7 +63,7 @@ export class FillLabels implements ISeriesPrimitive<Time> {
         // A small opaque backing keeps indicator lines from cutting through the text.
         ctx.fillStyle='#080c13';ctx.fillRect(left,start-7,width,28);
         ctx.strokeStyle=marker.color;ctx.lineWidth=1;ctx.strokeRect(left,start-7,width,28);
-        lines.forEach((line,index)=>{ctx.fillStyle=index===1?marker.color:'#ffffff';ctx.fillText(line,labelX,start+index*14);});
+        lines.forEach((line,index)=>{ctx.fillStyle=index===1?(line.startsWith('Profit')?'#43d9a5':line.startsWith('Loss')?'#ff8191':marker.color):'#ffffff';ctx.fillText(line,labelX,start+index*14);});
       }
       ctx.restore();
     });

@@ -72,7 +72,7 @@ export default function BacktestChart({candles,trades,selected,onSelect,indicato
     const markers: SeriesMarker<UTCTimestamp>[] = [];
     for (const t of visibleTrades) {
       if(present.has(t.entryTime)) markers.push(fillMarker(t.entryTime,t.entry,`${t.direction===1?'BUY':'SELL'} #${t.id}`,'entry',t.direction,`entry-${t.id}`,t.quantity));
-      if(present.has(t.exitTime)) markers.push(fillMarker(t.exitTime,t.exit,`CLOSE #${t.id}`,'close',t.direction,`close-${t.id}`,t.quantity));
+      if(present.has(t.exitTime)) markers.push(fillMarker(t.exitTime,t.exit,`CLOSE #${t.id}`,'close',t.direction,`close-${t.id}`,t.quantity,t.netPnl));
     }
     if(selected && present.has(selected.signalTime)) markers.push({time:selected.signalTime as UTCTimestamp,position:selected.direction===1?'belowBar':'aboveBar',shape:'square',color:'#e0c278',text:selected.signalLabel?'SIGNAL':'SWEEP'});
     if(selected?.exitSignal && present.has(selected.exitSignal.time)) markers.push({time:selected.exitSignal.time as UTCTimestamp,position:'aboveBar',shape:'square',color:'#be9bf3',text:'CLOSE SIGNAL'});

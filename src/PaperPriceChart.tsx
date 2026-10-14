@@ -1,21 +1,31 @@
+import IndicatorSettings,{readIndicatorSettings,type IndicatorConfig} from './IndicatorSettings';
+import {AdxDecoration,displayAdx} from './adxDisplay';
+import {chartOscillators} from './chartOscillators';
+import {TIMEFRAMES} from './chartTimeframe';
 import {StopOverlay} from './StopOverlay';
 import {api} from './api';
 import {mergeHistory} from './candleHistory';
 import {candleLogical,captureViewport,restoreViewport} from './chartViewport';
 import {useEffect,useRef,useState} from 'react';
-import {CandlestickSeries,ColorType,createChart,createSeriesMarkers,LineSeries,type IChartApi,type UTCTimestamp,type SeriesMarker} from 'lightweight-charts';
+import {CandlestickSeries,ColorType,createChart,createSeriesMarkers,LineSeries,LineStyle,type ISeriesApi,type IChartApi,type UTCTimestamp,type SeriesMarker} from 'lightweight-charts';
 import {fillMarker,FillLabels} from './fillMarkers';
 import ChartTools,{chartInteraction,resizeChart} from './ChartTools';
 import {fmt,type Analysis} from './types';
 import type {PaperTrade,Position} from './PaperTrading';
 
 type Point={time:number;bbBasis:number|null;bbUpper:number|null;bbLower:number|null;trendSma:number|null};
-type Data={candles:Analysis['candles'];indicators:Point[];stops:{time:number;price:number|null}[];trades:PaperTrade[];position:Position|null};
-type Props=Data&{sessionId:number;showSma:boolean;timeframe:string};
+type Data={candles:Analysis['candles'];indicators:Point[];stops:{time:number;price:number|null}[];trades:PaperTrade[];position:Position|null;indicatorClock:number};
+type Props=Data&{sessionId:number;showSma:boolean;timeframe:string;atrLength:number;adxLength:number};
 
 export default function PaperPriceChart(props:Props) {
   const container=useRef<HTMLDivElement>(null),chartRef=useRef<IChartApi|null>(null);
   const update=useRef<(data:Data)=>void>(()=>{});
+  const [selectedIndicators,setSelectedIndicators]=useState<{atr:boolean;adx:boolean}>(()=>{try{const saved=JSON.parse(localStorage.getItem('silver.chart.oscillators')??'{}');return {atr:saved.atr===true,adx:saved.adx===true};}catch{return {atr:false,adx:false};}});
+  const [indicatorConfig,setIndicatorConfig]=useState(readIndicatorSettings),[settingsOpen,setSettingsOpen]=useState(false);
+  const configRef=useRef(indicatorConfig);configRef.current=indicatorConfig;
+  function applyIndicatorConfig(config:IndicatorConfig){setIndicatorConfig(config);try{localStorage.setItem('silver.chart.indicatorSettings',JSON.stringify(config));}catch{}}
+  const changePanels=useRef<(selection:{atr:boolean;adx:boolean},config:IndicatorConfig)=>void>(()=>{});
+  function toggleIndicator(key:'atr'|'adx'){setSelectedIndicators(old=>{const next={...old,[key]:!old[key]};try{localStorage.setItem('silver.chart.oscillators',JSON.stringify(next));}catch{}return next;});}
   const loadEarlier=useRef<()=>void>(()=>{});
   const [loading,setLoading]=useState(false),[hasMore,setHasMore]=useState(true),[historyError,setHistoryError]=useState('');
   const following=useRef(true),lastTime=useRef<number|undefined>(undefined);
@@ -40,6 +50,41 @@ export default function PaperPriceChart(props:Props) {
     const overlays=([['bbBasis','#63d6d0','BB middle'],['bbUpper','#7d8da5','BB upper'],['bbLower','#7d8da5','BB lower'],['trendSma','#d7ad69','Trend SMA']] as const).filter(([key])=>key!=='trendSma'||props.showSma).map(([key,color,title])=>({key,series:chart.addSeries(LineSeries,{color,lineWidth:1,title,priceLineVisible:false,lastValueVisible:false})}));
     const stopOverlay=new StopOverlay();price.attachPrimitive(stopOverlay);
     const entry=chart.addSeries(LineSeries,{color:'#88bfff',lineWidth:2,title:'Open entry',priceLineVisible:false});
+    let oscillatorData:ReturnType<typeof chartOscillators>=[],oscillatorKey='',panelConfig=configRef.current;
+    const oscillatorSeries=new Map<'atr'|'adx',ISeriesApi<'Line'>>();
+    let adxHalo:ISeriesApi<'Line'>|null=null,adxDecoration:AdxDecoration|null=null;
+    function paintOscillators(){
+      for(const [key,series] of oscillatorSeries){
+        if(key==='atr')series.setData(oscillatorData.map(p=>p.atr===null?{time:p.time as UTCTimestamp}:{time:p.time as UTCTimestamp,value:p.atr}));
+        else{
+          const displayed=displayAdx(oscillatorData,panelConfig.displaySmoothing);
+          series.setData(displayed.map(p=>p.display===null?{time:p.time as UTCTimestamp}:{time:p.time as UTCTimestamp,value:p.display,color:p.color}));
+          adxHalo?.setData(displayed.map(p=>p.display===null?{time:p.time as UTCTimestamp}:{time:p.time as UTCTimestamp,value:p.display,color:p.color+'26'}));
+          adxDecoration?.update(oscillatorData.at(-1)?.adx??null,oscillatorData.at(-2)?.adx??null);
+        }
+      }
+    }
+    changePanels.current=(selection,config)=>{
+      const viewport=captureViewport(chart,lastTime.current);
+      panelConfig=config;oscillatorKey='';
+      if(adxHalo){chart.removeSeries(adxHalo);adxHalo=null;}adxDecoration=null;
+      for(const series of oscillatorSeries.values())chart.removeSeries(series);
+      oscillatorSeries.clear();
+      for(const key of ['atr','adx'] as const)if(selection[key]){
+        const pane=chart.panes().length;
+        if(key==='adx')adxHalo=chart.addSeries(LineSeries,{color:'#90a4ae26',lineWidth:4,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false},pane);
+        const series=chart.addSeries(LineSeries,{color:key==='atr'?'#38d9ff':'#90a4ae',lineWidth:key==='atr'?2:3,title:key==='atr'?`ATR (${config.atrLength}, ${config.atrSmoothing})`:`ADX (${config.adxLength})`,priceLineVisible:false,priceFormat:{type:'price',precision:key==='atr'?3:2,minMove:key==='atr'?.001:.01}},pane);
+        series.priceScale().applyOptions({scaleMargins:{top:.23,bottom:.12}});oscillatorSeries.set(key,series);
+        if(key==='adx'){
+          for(const [value,color,title,style] of [[20,'#90a4aea6','20 Weak',LineStyle.Dotted],[25,'#26a69acc','25 Trend',LineStyle.Dashed],[config.adxThreshold,'#ff40ff','Entry',LineStyle.Dashed]] as const)
+            series.createPriceLine({price:value,color,title,lineStyle:style,lineWidth:1,axisLabelVisible:true});
+          adxDecoration=new AdxDecoration(config.showStatus,config.adxThreshold);series.attachPrimitive(adxDecoration);
+        }
+      }
+      chart.panes().forEach((pane,index)=>pane.setStretchFactor(index===0?3:1));
+      if(latestData)update.current(latestData);else paintOscillators();
+      restoreViewport(chart,viewport,lastTime.current,false);
+    };
     let byTime=new Map<number,Analysis['candles'][number]>(),previousTime:number|undefined,previous:Data|null=null;
     let cached:Data['candles']=[],indicators:Point[]=[],latestData:Data|null=null;
     let pending=false,more=true,failed=false,disposed=false,timer:ReturnType<typeof setTimeout>|undefined;
@@ -83,6 +128,10 @@ export default function PaperPriceChart(props:Props) {
       else price.setData(data.candles.map(c=>({...c,time:c.time as UTCTimestamp})));
       if(!previous||data.indicators.at(-1)!==previous.indicators.at(-1)||data.indicators.length!==previous.indicators.length)
         for(const {key,series} of overlays)series.setData(data.indicators.map(p=>p[key]===null?{time:p.time as UTCTimestamp}:{time:p.time as UTCTimestamp,value:p[key]}));
+      const duration=TIMEFRAMES[props.timeframe as keyof typeof TIMEFRAMES];
+      const completed=data.candles.filter(c=>c.time+duration<=data.indicatorClock);
+      const nextKey=`${completed.length}:${completed[0]?.time}:${completed.at(-1)?.time}`;
+      if(nextKey!==oscillatorKey){oscillatorKey=nextKey;oscillatorData=chartOscillators(completed,duration,panelConfig.atrLength,panelConfig.adxLength,panelConfig.atrSmoothing);paintOscillators();}
       const p=data.position,first=data.candles[0]?.time;
       if(p&&stamp!==undefined&&first!==undefined){
         const from=Math.max(first,p.entry_time);
@@ -98,7 +147,7 @@ export default function PaperPriceChart(props:Props) {
       const addEntry=(position:Position,label:string,id:string)=>{if(byTime.has(position.entry_time))points.push(fillMarker(position.entry_time,position.entry_price,label,'entry',position.direction,id,position.quantity));};
       for(const t of data.trades){
         addEntry(t,`${t.direction===1?'BUY':'SELL'} #${t.id}`,`entry-${t.id}`);
-        if(byTime.has(t.exit_time))points.push(fillMarker(t.exit_time,t.exit_price,`CLOSE #${t.id}`,'close',t.direction,`close-${t.id}`,t.quantity));
+        if(byTime.has(t.exit_time))points.push(fillMarker(t.exit_time,t.exit_price,`CLOSE #${t.id}`,'close',t.direction,`close-${t.id}`,t.quantity,t.pnl));
       }
       if(p)addEntry(p,`${p.direction===1?'BUY':'SELL'} OPEN`,'entry-open');
       fillReadouts=new Map();
@@ -114,11 +163,14 @@ export default function PaperPriceChart(props:Props) {
     };
     chart.subscribeCrosshairMove(event=>{
       const c=typeof event.time==='number'?byTime.get(event.time):undefined;
-      if(c)setReadout(`${new Date(c.time*1000).toISOString()} · O ${fmt(c.open,3)} H ${fmt(c.high,3)} L ${fmt(c.low,3)} C ${fmt(c.close,3)}${fillReadouts.has(c.time)?` | ${fillReadouts.get(c.time)!.join(" | ")}`:""}`);
+      const oscillator=c?oscillatorData.find(p=>p.time===c.time):undefined;
+      const indicatorReadout=oscillator?[...oscillatorSeries.keys()].map(key=>` | ${key.toUpperCase()} ${fmt(oscillator[key],key==='atr'?3:2)}`).join(''):'';
+      if(c)setReadout(`${new Date(c.time*1000).toISOString()} · O ${fmt(c.open,3)} H ${fmt(c.high,3)} L ${fmt(c.low,3)} C ${fmt(c.close,3)}${indicatorReadout}${fillReadouts.has(c.time)?` | ${fillReadouts.get(c.time)!.join(" | ")}`:""}`);
     });
     const stopResize=resizeChart(chart,container.current,()=>{if(following.current)latest();});
-    return ()=>{disposed=true;abort.abort();if(timer)clearTimeout(timer);chart.timeScale().unsubscribeVisibleLogicalRangeChange(scheduleHistory);stopResize();loadEarlier.current=()=>{};update.current=()=>{};chartRef.current=null;chart.remove();};
+    return ()=>{disposed=true;abort.abort();if(timer)clearTimeout(timer);chart.timeScale().unsubscribeVisibleLogicalRangeChange(scheduleHistory);stopResize();changePanels.current=()=>{};loadEarlier.current=()=>{};update.current=()=>{};chartRef.current=null;chart.remove();};
   },[props.sessionId,props.showSma,props.timeframe]);
   useEffect(()=>{update.current(props);},[props]);
-  return <><div className="chart-actions"><ChartTools chartRef={chartRef} onLatest={latest} onNavigate={holdView} onEarlier={()=>loadEarlier.current()} loading={loading} hasMore={hasMore}/><label className="follow-toggle"><input type="checkbox" checked={follow} onChange={e=>{following.current=e.target.checked;setFollow(e.target.checked);if(e.target.checked)latest();}}/> Follow price</label></div><p className="readout">{readout}</p>{historyError&&<p className="chart-history-status error" role="alert">{historyError} <button type="button" className="text-button" onClick={()=>loadEarlier.current()}>Retry</button></p>}<div className="chart-history-status" role="status">{loading?"Loading earlier candles...":hasMore?"Pan left to load history":"Beginning of available history"}<span>Pan right for newer candles ? Latest returns to the current price</span></div><div className="chart-resize"><div ref={container} onWheelCapture={holdView} onPointerDownCapture={holdView} className="chart-container position-chart" aria-label="Virtual bot price chart with buys, sells, exits and trailing stops"/></div></>;
+  useEffect(()=>{changePanels.current(selectedIndicators,indicatorConfig);},[selectedIndicators,indicatorConfig,props.sessionId,props.showSma,props.timeframe]);
+  return <><div className="chart-actions"><ChartTools chartRef={chartRef} onLatest={latest} onNavigate={holdView} onEarlier={()=>loadEarlier.current()} loading={loading} hasMore={hasMore}/><div className="indicator-switch" role="group" aria-label="Chart indicators"><span>Indicators</span>{(['atr','adx'] as const).map(key=><button key={key} type="button" aria-pressed={selectedIndicators[key]} onClick={()=>toggleIndicator(key)}>{key.toUpperCase()}</button>)}<button type="button" aria-expanded={settingsOpen} aria-controls="chart-indicator-settings" onClick={()=>setSettingsOpen(!settingsOpen)}>Settings</button></div><label className="follow-toggle"><input type="checkbox" checked={follow} onChange={e=>{following.current=e.target.checked;setFollow(e.target.checked);if(e.target.checked)latest();}}/> Follow price</label></div>{settingsOpen&&<div id="chart-indicator-settings"><IndicatorSettings value={indicatorConfig} onApply={applyIndicatorConfig} onClose={()=>setSettingsOpen(false)}/></div>}<p className="readout">{readout}</p>{historyError&&<p className="chart-history-status error" role="alert">{historyError} <button type="button" className="text-button" onClick={()=>loadEarlier.current()}>Retry</button></p>}<div className="chart-history-status" role="status">{loading?"Loading earlier candles...":hasMore?"Pan left to load history":"Beginning of available history"}<span>Pan right for newer candles ? Latest returns to the current price</span></div><div className="chart-resize"><div ref={container} onWheelCapture={holdView} onPointerDownCapture={holdView} className="chart-container position-chart" aria-label="Virtual bot price chart with buys, sells, exits and trailing stops"/></div></>;
 }
