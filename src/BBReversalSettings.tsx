@@ -1,13 +1,15 @@
 import type {BacktestSettings} from './types';
 
 export const bbDefaults: BacktestSettings['bb_reversal'] = {
+  dynamic_risk_enabled:false,risk_per_trade_pct:.5,atr_stop_multiplier:2,loss_cooldown_bars:6,
   rsi_exit_enabled:false,rsi_exit_length:14,rsi_exit_move:.3,rsi_exit_short:15,rsi_exit_long:85,
   trade_mode:'Both',bb_length:20,bb_mult:3,min_bb_width_pct:.8,atr_length:14,min_atr:.03,
   adx_length:14,adx_threshold:20,pullback_bars:3,initial_sl:.5,trail_trigger:.6,
   trail_distance:.3,trail_multiplier:2,sma_length:30,sma_slope_bars:3,
   counter_profit_pct:75,counter_sl_pct:75,quantity:1,use_sma_trend_adjustment:true,amount_per_trade:100,amount_unit:'percent',
 };
-const fields: [Exclude<keyof typeof bbDefaults,'trade_mode'|'rsi_exit_enabled'|'use_sma_trend_adjustment'|'amount_unit'|'amount_per_trade'>,string,number,number,number][] = [
+const fields: [Exclude<keyof typeof bbDefaults,'dynamic_risk_enabled'|'trade_mode'|'rsi_exit_enabled'|'use_sma_trend_adjustment'|'amount_unit'|'amount_per_trade'>,string,number,number,number][] = [
+  ['risk_per_trade_pct','Planned risk (% of balance)',.01,100,.01],['atr_stop_multiplier','Stop distance (ATR multiplier)',.1,100,.1],['loss_cooldown_bars','Pause after loss (bars)',0,1000,1],
   ['bb_length','BB length',1,1000,1],['bb_mult','BB multiplier',.1,100,.1],
   ['min_bb_width_pct','Minimum BB width (%)',0,100,.1],['atr_length','ATR length',1,500,1],
   ['min_atr','Minimum ATR',0,100,.01],['adx_length','ADX length',1,500,1],
@@ -31,6 +33,7 @@ export default function BBReversalSettings({settings,onChange}:{settings:Backtes
     <label>Amount per trade ({config.amount_unit==='percent'?'% of balance':'$'})<input aria-label="Amount per trade" type="number" required min={.01} max={config.amount_unit==='percent'?100:settings.capital} step="any" value={config.amount_per_trade} onChange={e=>onChange({...settings,bb_reversal:{...config,amount_per_trade:Number(e.target.value)}})}/></label>
     </div><p className="settings-help">Amount is allocated before leverage and capped at available balance. A depleted balance stops new trades.</p></div>
     <div className="settings-section" id="settings-filters"><h3>Entry filters</h3><div className="settings-grid">{renderFields(['bb_length','bb_mult','min_bb_width_pct','pullback_bars','atr_length','min_atr','adx_length','adx_threshold'])}</div></div>
+    <div className="settings-section"><div className="section-heading"><h3>Dynamic loss protection</h3><label className="stage-switch"><input type="checkbox" role="switch" checked={config.dynamic_risk_enabled} onChange={e=>onChange({...settings,bb_reversal:{...config,dynamic_risk_enabled:e.target.checked}})}/>Enable dynamic risk</label></div><div className="settings-grid">{renderFields(['risk_per_trade_pct','atr_stop_multiplier','loss_cooldown_bars'])}</div><p className="settings-help">Uses completed-candle ATR for stop and trailing distances, sizes each entry to its planned risk cap, follows SMA slope, and pauses after losing exits. Existing stops never loosen. Gaps and execution costs can exceed planned risk.</p><button type="button" className="secondary" onClick={()=>onChange({...settings,max_leverage:1,bb_reversal:{...config,dynamic_risk_enabled:true,risk_per_trade_pct:.5,atr_stop_multiplier:2,loss_cooldown_bars:6,amount_unit:'percent',amount_per_trade:25}})}>Apply defensive settings</button></div>
     <div className="settings-section" id="settings-stops"><h3>Stop loss & trailing</h3><div className="settings-grid">{renderFields(['initial_sl','trail_trigger','trail_distance','trail_multiplier'])}</div><p className="settings-help">The multiplier scales both trailing activation and trailing distance. Price distances are per unit, not total account loss.</p></div>
     <div className="settings-section" id="settings-rsi-exit"><div className="section-heading"><h3>RSI + price exit</h3><label className="stage-switch"><input type="checkbox" role="switch" aria-label="Enable RSI and price exit" checked={config.rsi_exit_enabled??false} onChange={e=>onChange({...settings,bb_reversal:{...config,rsi_exit_enabled:e.target.checked}})}/>Enable optional exit</label></div>
       {config.rsi_exit_enabled?<><div className="settings-grid">{renderFields(['rsi_exit_length','rsi_exit_move','rsi_exit_short','rsi_exit_long'])}</div><p className="settings-help">Both sides: close price − entry price &gt; {config.rsi_exit_move}. Short: RSI &lt; {config.rsi_exit_short}. Long: RSI &gt; {config.rsi_exit_long}. Checked at the execution candle close. This upward price move is against a short position. Existing stop protection remains active.</p></>:<p className="settings-help">Off. Enable to close using your price-difference and RSI conditions.</p>}

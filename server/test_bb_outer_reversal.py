@@ -18,6 +18,35 @@ class BBOuterReversalTests(unittest.TestCase):
         with patch('server.bb_outer_reversal.calculate', return_value=bars):
             return run_backtest(bars, Settings(**kwargs))
 
+    def test_dynamic_risk_caps_quantity_and_adapts_to_atr(self):
+        bars = self.bars([(99.5, 100.5, 98.9, 100.)])
+        for volatility in (1., 2.):
+            bars['atr'] = volatility
+            p = self.run_bars(bars, dynamic_risk_enabled=True,
+                              initial_capital=1000, leverage=10)['open_position']
+            self.assertAlmostEqual(100-p['initial_stop'], volatility*2)
+            self.assertAlmostEqual(p['quantity']*(100-p['initial_stop']), 5.)
+
+    def test_dynamic_risk_blocks_countertrend(self):
+        bars = self.bars([(100.5, 101.2, 99.8, 100.)])
+        self.assertIsNone(self.run_bars(bars, dynamic_risk_enabled=True)['open_position'])
+
+    def test_dynamic_loss_cooldown_blocks_opposite_entry(self):
+        bars = self.bars([(99.5, 100.5, 98.9, 100.),
+                          (97., 101.2, 96., 100.)])
+        bars.loc[1, 'sma_uptrend'] = False
+        bars.loc[1, 'sma_downtrend'] = True
+        result = self.run_bars(bars, dynamic_risk_enabled=True)
+        self.assertEqual(len(result['trades']), 1)
+        self.assertLess(result['trades'].iloc[0].pnl, 0)
+        self.assertIsNone(result['open_position'])
+
+    def test_dynamic_settings_reject_invalid_values(self):
+        for changes in ({'risk_per_trade_pct': 0}, {'atr_stop_multiplier': float('nan')},
+                        {'loss_cooldown_bars': 1.5}):
+            with self.assertRaises(ValueError):
+                Settings(**changes)
+
     def test_wilder_seed_and_population_deviation(self):
         np.testing.assert_allclose(_rma([np.nan, 2, 4, 6], 2), [np.nan, np.nan, 3, 4.5], equal_nan=True)
         frame = pd.DataFrame(dict(open=[1., 3., 5.], high=[2., 4., 6.],

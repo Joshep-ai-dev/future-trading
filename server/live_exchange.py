@@ -374,6 +374,11 @@ class AutomaticLiveBot:
         quantity=allocation*request.max_leverage/close
         side='long' if direction==1 else 'short'
         stop=close+(float(simulated['stop'])-float(simulated['entry_price']))
+        if config.get('dynamic_risk_enabled', False):
+            distance=abs(close-stop)
+            if distance<=0:
+                raise RuntimeError('Dynamic risk requires a positive stop distance')
+            quantity=min(quantity,available*float(config.get('risk_per_trade_pct',.5))/100/distance)
         result=self.service.open_with_stop(venue,side,quantity,stop)
         position=dict(direction=side,quantity=result['quantity'],entryPrice=result.get('entryPrice') or close,
                       stop=stop,stopOrderId=result['protectiveStop'].get('id'))

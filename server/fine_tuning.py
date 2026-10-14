@@ -18,6 +18,7 @@ ADAPTIVE_TRIALS = 16
 SHORTLIST = 5
 ML_HYPERPARAMETER_TRIALS = 6
 PARAMETERS = (
+    'dynamic_risk_enabled', 'risk_per_trade_pct', 'atr_stop_multiplier', 'loss_cooldown_bars',
     'bb_length', 'bb_mult', 'min_bb_width_pct',
     'atr_length', 'min_atr', 'adx_length',
     'adx_threshold', 'pullback_bars', 'initial_sl', 'trail_trigger',
@@ -27,7 +28,7 @@ PARAMETERS = (
     'rsi_exit_move', 'rsi_exit_short', 'rsi_exit_long',
     'amount_per_trade', 'amount_unit', 'leverage',
 )
-INTEGER_PARAMETERS = {'bb_length': 1000, 'atr_length': 500, 'adx_length': 500,
+INTEGER_PARAMETERS = {'loss_cooldown_bars': 1000, 'bb_length': 1000, 'atr_length': 500, 'adx_length': 500,
                       'pullback_bars': 100, 'sma_length': 1000,
                       'sma_slope_bars': 500, 'rsi_exit_length': 500}
 PERCENT_PARAMETERS = {'counter_profit_pct', 'counter_sl_pct'}
@@ -42,7 +43,7 @@ def _candidate_space(base):
             space[name] = list(CATEGORIES[name])
         elif isinstance(value, bool):
             space[name] = [False, True]
-        elif isinstance(value, int):
+        elif name in INTEGER_PARAMETERS:
             maximum = INTEGER_PARAMETERS[name]
             space[name] = sorted({
                 min(maximum, max(1, round(value * factor)))
@@ -64,7 +65,7 @@ def _candidate_space(base):
         else:
             minimum = 1. if name in ('leverage', 'trail_multiplier') else (
                 .1 if name == 'bb_mult' else .01)
-            maximums = {'leverage': 100., 'bb_mult': 100., 'min_bb_width_pct': 100.,
+            maximums = {'risk_per_trade_pct': 100., 'atr_stop_multiplier': 100., 'leverage': 100., 'bb_mult': 100., 'min_bb_width_pct': 100.,
                         'min_atr': 100., 'initial_sl': 100., 'trail_trigger': 100.,
                         'trail_distance': 100., 'trail_multiplier': 100.,
                         'rsi_exit_move': 100., 'amount_per_trade': base.initial_capital}
@@ -193,25 +194,49 @@ def _score(result, capital):
 
 
 MODES = (
-    ('lower_loss', 'Smaller losses', 'Prioritizes average losing trade size and drawdown; may reduce profit.'),
-    ('higher_profit', 'Higher profit', 'Prioritizes net profit; may accept larger losses and drawdown.'),
-    ('higher_win_rate', 'Higher win rate', 'Prioritizes winning trade percentage; losses can still outweigh wins.'),
-    ('more_trades', 'More trades', 'Prioritizes trading frequency; execution costs can reduce returns.'),
+    ('balanced', 'Balanced', 'Equal emphasis on profit, loss size, losing trade count and activity.'),
+    ('defensive', 'Defensive balance', 'More weight on smaller and fewer losses while retaining profit and activity.'),
+    ('growth', 'Growth balance', 'More weight on profit with loss and activity controls.'),
+    ('active', 'Active balance', 'More weight on activity while still rewarding profit and loss control.'),
 )
+MODE_WEIGHTS = {
+    'balanced': (.25, .25, .25, .25),
+    'defensive': (.20, .35, .30, .15),
+    'growth': (.40, .25, .20, .15),
+    'active': (.25, .20, .20, .35),
+}
 
 
-def _mode_key(metrics, mode):
-    """Prefer meaningful samples, then the requested historical objective."""
-    enough = metrics['trades'] >= 20
-    if mode == 'lower_loss':
-        objective = (-metrics['averageLossPct'], metrics['maxDrawdownPct'], metrics['netPnl'])
-    elif mode == 'higher_profit':
-        objective = (metrics['netPnl'], metrics['maxDrawdownPct'])
-    elif mode == 'higher_win_rate':
-        objective = (metrics['winRate'], metrics['netPnl'])
-    else:
-        objective = (metrics['trades'], metrics['netPnl'])
-    return (metrics['trades'] > 0, enough, *objective)
+def _combined_scores(metrics, mode):
+    """Normalize all four objectives within the same period and candidate pool."""
+    weights = MODE_WEIGHTS[mode]
+    columns = ([m['netPnl'] for m in metrics],
+               [-m['averageLossPct'] for m in metrics],
+               [-m['losses'] for m in metrics],
+               [m['trades'] for m in metrics])
+    scores = [0.] * len(metrics)
+    for weight, values in zip(weights, columns):
+        low, high = min(values), max(values)
+        for i, value in enumerate(values):
+            scores[i] += weight * ((value-low)/(high-low) if high > low else .5)
+    return scores
+
+
+def _select_models(rows):
+    """Select distinct validation finalists; never rank on forward-test data."""
+    metrics = [row[0] for row in rows]
+    chosen, results = set(), []
+    for mode, label, description in MODES:
+        scores = _combined_scores(metrics, mode)
+        remaining = [i for i in range(len(rows)) if i not in chosen]
+        if not remaining:
+            break
+        winner = max(remaining, key=lambda i: (
+            metrics[i]['trades'] >= 20 and metrics[i]['netPnl'] > 0,
+            metrics[i]['trades'] > 0, scores[i], metrics[i]['maxDrawdownPct']))
+        chosen.add(winner)
+        results.append((*rows[winner], mode, label, description))
+    return results
 
 
 def fine_tune(frame, request, progress=None):
@@ -308,14 +333,19 @@ def fine_tune(frame, request, progress=None):
         if len(shortlist) == SHORTLIST:
             break
 
-    # Include training finalists for every objective, not just the blended score.
+    # Shortlist on the same combined objectives used for recommendations.
+    training_rows = list(evaluated.values())
     for mode, _, _ in MODES:
-        leaders = sorted(evaluated.values(), key=lambda row: _mode_key(row[1], mode), reverse=True)
-        for params, _ in leaders[:SHORTLIST]:
+        scores = _combined_scores([row[1] for row in training_rows], mode)
+        leaders = sorted(zip(scores, training_rows), key=lambda row: row[0], reverse=True)
+        for _, (params, _) in leaders[:SHORTLIST]:
             key = _parameter_key(params)
             if key not in seen_shortlist:
                 seen_shortlist.add(key)
                 shortlist.append(params)
+    # Always compare against the user's original settings on validation data.
+    if _parameter_key(original) not in seen_shortlist:
+        shortlist.append(original)
 
     report(75, 'Rechecking finalists and validating their settings')
     for index, params in enumerate(shortlist):
@@ -331,10 +361,8 @@ def fine_tune(frame, request, progress=None):
                           evaluated[_parameter_key(params)][1], params))
         report(85 + int(8 * (index + 1) / len(shortlist)),
                f'Validation: checked {index + 1} of {len(shortlist)} finalists')
-    recommendations = []
-    for mode, label, description in MODES:
-        winner = max(validated, key=lambda item: _mode_key(item[0], mode))
-        recommendations.append((*winner, mode, label, description))
+    recommendations = _select_models(validated)
+    baseline_metrics = next(row[0] for row in validated if _parameter_key(row[2]) == _parameter_key(original))
     candidate_results = []
     for index, (validation_metrics, train_metrics, params, mode, label, description) in enumerate(recommendations, start=1):
         config = replace(base, **params)
@@ -342,6 +370,10 @@ def fine_tune(frame, request, progress=None):
         forward_result = run_backtest(forward, config, close_at_end=True, prepared_bars=forward)
         candidate_results.append(dict(
             id=mode, rank=index, mode=mode, label=label, description=description,
+            improvesAll=(validation_metrics['netPnl'] > baseline_metrics['netPnl'] and
+                         validation_metrics['averageLossPct'] < baseline_metrics['averageLossPct'] and
+                         validation_metrics['losses'] < baseline_metrics['losses'] and
+                         validation_metrics['trades'] > baseline_metrics['trades']),
             bestParameters=params,
             bestSettings=request.model_copy(update={
                 'bb_reversal': {**request.bb_reversal, **{key: value for key, value in params.items()
@@ -363,8 +395,8 @@ def fine_tune(frame, request, progress=None):
     return dict(
         bestSettings=best_settings, bestParameters=best_params,
         model='scikit-learn VotingRegressor: RandomForestRegressor + ExtraTreesRegressor + HistGradientBoostingRegressor',
-        objective='Four modes selected on validation data: smaller average losses, higher net profit, higher win rate, and more trades. Prefer at least 20 trades. Forward data is used only for reporting. Modes may select the same settings. Default: smaller losses.',
-        candidates=candidate_results, modelHyperparameters=model_hyperparameters,
+        objective='Every model balances higher net profit, smaller average losses, fewer losing trades and more total trades. Distinct parameter sets selected on validation data; profitable samples with at least 20 trades preferred. All four improvements are measured against your current setup, not guaranteed. Forward data is reporting only.',
+        baselineMetrics=baseline_metrics, candidates=candidate_results, modelHyperparameters=model_hyperparameters,
         modelCrossValidationRmse=model_cv_rmse,
         candidatesEvaluated=len(evaluated), seedCandidates=len(initial_candidates),
         adaptiveCandidatesEvaluated=adaptive_evaluated, shortlisted=len(validated),

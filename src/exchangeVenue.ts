@@ -37,5 +37,5 @@ function subscribe(listener:()=>void){
 }
 
 export function useExchangeVenue(){
-  return useSyncExternalStore(subscribe,readExchangeVenue,()=> 'okx');
+  return useSyncExternalStore<ExchangeVenue>(subscribe,readExchangeVenue,()=> 'okx');
 }

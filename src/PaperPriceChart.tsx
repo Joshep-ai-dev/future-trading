@@ -3,7 +3,7 @@ import IndicatorHeader from './IndicatorHeader';
 import IndicatorSettings,{readIndicatorSettings,type IndicatorConfig,type IndicatorKind} from './IndicatorSettings';
 import {AdxDecoration,displayAdx} from './adxDisplay';
 import {chartOscillators} from './chartOscillators';
-import {chartTimeOptions,formatChartTime,readChartTimeZone,useChartTimeZone} from './chartTimeZone';
+import {chartTimeOptions,formatChartTime,useChartTimeZone} from './chartTimeZone';
 import {TIMEFRAMES} from './chartTimeframe';
 import {StopOverlay} from './StopOverlay';
 import {api} from './api';

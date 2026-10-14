@@ -37,7 +37,7 @@ def run_bb_reversal_backtest(frame, settings):
                 initialRisk=risk, target=None, trigger=None, sweepLevel=None, quantity=trade['quantity'],
                 riskBudget=risk, plannedRisk=risk, netPnl=trade['pnl'], grossPnl=trade['pnl'],
                 fees=0., funding=0., executionCost=0., netR=trade['pnl']/risk, balance=balance,
-                exitReason=trade['exit_reason'], session='continuous', ambiguous=False, obstacle=None,
+                exitReason=('trailing_stop' if trade['exit_reason']=='stop' and trade['trailing_active'] else trade['exit_reason']), session='continuous', ambiguous=False, obstacle=None,
                 signalLabel='BB outer-band rebound', signalCloseTime=entry_time+duration,
                 swingHighs=[], swingLows=[], period=name))
         equity = [dict(time=int(t.timestamp()), value=float(v)) for t, v in result['bars'].equity.items()] if len(result['bars']) else []

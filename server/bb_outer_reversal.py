@@ -19,6 +19,10 @@ from .indicators import atr, rsi
 
 @dataclass(frozen=True)
 class Settings:
+    dynamic_risk_enabled: bool = False
+    risk_per_trade_pct: float = 0.5
+    atr_stop_multiplier: float = 2.0
+    loss_cooldown_bars: int = 6
     trade_mode: str = 'Both'
     bb_length: int = 20
     bb_mult: float = 3.0
@@ -51,6 +55,14 @@ class Settings:
     rsi_exit_long: float = 85.
 
     def __post_init__(self):
+        if not isinstance(self.dynamic_risk_enabled, bool):
+            raise ValueError('Dynamic risk enabled must be boolean')
+        if not np.isfinite(self.risk_per_trade_pct) or not 0 < self.risk_per_trade_pct <= 100:
+            raise ValueError('Risk per trade must be between 0 and 100 percent')
+        if not np.isfinite(self.atr_stop_multiplier) or not .1 <= self.atr_stop_multiplier <= 100:
+            raise ValueError('ATR stop multiplier must be between 0.1 and 100')
+        if isinstance(self.loss_cooldown_bars, bool) or not isinstance(self.loss_cooldown_bars, int) or not 0 <= self.loss_cooldown_bars <= 1000:
+            raise ValueError('Loss cooldown must be an integer between 0 and 1000')
         if not isinstance(self.rsi_exit_enabled, bool):
             raise ValueError('RSI exit enabled must be boolean')
         if isinstance(self.rsi_exit_length, bool) or not isinstance(self.rsi_exit_length, int) or not 1 <= self.rsi_exit_length <= 500:
@@ -155,7 +167,7 @@ def calculate(frame, settings=None, *, bar_seconds=None):
     total = plus_di + minus_di
     dx = np.abs(plus_di-minus_di) / np.where(total == 0, 1, total)
     result['adx'] = 100 * _rma(dx, s.adx_length)
-    result['trend_sma'] = data.close.rolling(s.sma_length).mean() if s.use_sma_trend_adjustment else np.nan
+    result['trend_sma'] = data.close.rolling(s.sma_length).mean() if s.use_sma_trend_adjustment or s.dynamic_risk_enabled else np.nan
     previous = result.trend_sma.shift(s.sma_slope_bars)
     result['sma_ready'] = previous.notna()
     result['sma_uptrend'] = result.trend_sma > previous
@@ -178,11 +190,15 @@ def run_backtest(frame, settings=None, *, start=None, close_at_end=False, bar_se
     position = None
     cash, last_direction = s.initial_capital, 0
     lower_touch = upper_touch = None
+    cooldown_until = -1
 
     def close_position(time, price, reason):
-        nonlocal cash, position
+        nonlocal cash, position, cooldown_until, lower_touch, upper_touch
         pnl = (price-position['entry_price']) * position['direction'] * position['quantity']
         cash += pnl
+        if s.dynamic_risk_enabled and pnl < 0:
+            cooldown_until = i + s.loss_cooldown_bars
+            lower_touch = upper_touch = None
         trades.append(dict(**position, exit_time=time, exit_price=float(price),
                            exit_reason=reason, pnl=float(pnl)))
         position = None
@@ -225,6 +241,10 @@ def run_backtest(frame, settings=None, *, start=None, close_at_end=False, bar_se
             upper_touch = None
         allowed = (cash > 0 and (not s.use_sma_trend_adjustment or bar.sma_ready) and bar.atr >= s.min_atr and
                    bar.bb_width_pct >= s.min_bb_width_pct and bar.adx > s.adx_threshold)
+        if s.dynamic_risk_enabled:
+            allowed = allowed and i > cooldown_until and bar.sma_ready
+            long_rebound = long_rebound and bar.sma_uptrend
+            short_rebound = short_rebound and bar.sma_downtrend
         direction = 0
         if allowed and long_rebound and last_direction != 1 and s.trade_mode != 'Short Only':
             direction = 1
@@ -234,15 +254,21 @@ def run_backtest(frame, settings=None, *, start=None, close_at_end=False, bar_se
         if direction:
             if position is not None:
                 close_position(time, bar.close, 'reversal')
-            if cash <= 0:
+            if cash <= 0 or (s.dynamic_risk_enabled and i <= cooldown_until):
                 direction = 0
         if direction:
             counter = s.use_sma_trend_adjustment and (bar.sma_downtrend if direction == 1 else bar.sma_uptrend)
             minimum = s.min_tick if s.min_tick_unit == 'price' else bar.close*s.min_tick/100
             sl = max(minimum, s.initial_sl * (s.counter_sl_pct/100 if counter else 1))
-            scale = s.counter_profit_pct/100 if counter else 1
+            volatility_scale = 1.
+            if s.dynamic_risk_enabled:
+                sl = max(minimum, float(bar.atr)*s.atr_stop_multiplier)
+                volatility_scale = sl/s.initial_sl
+            scale = (s.counter_profit_pct/100 if counter else 1)*volatility_scale
             amount = cash*s.amount_per_trade/100 if s.amount_unit == 'percent' else min(s.amount_per_trade, cash)
             quantity = s.quantity if s.leverage is None else amount*s.leverage/bar.close
+            if s.dynamic_risk_enabled:
+                quantity = min(quantity, cash*s.risk_per_trade_pct/100/sl)
             position = dict(direction=direction, entry_time=time, entry_price=float(bar.close), quantity=float(quantity),
                             stop=float(bar.close-direction*sl), initial_stop=float(bar.close-direction*sl), extreme=float(bar.close),
                             trailing_active=False, countertrend=bool(counter),

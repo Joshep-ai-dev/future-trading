@@ -7,7 +7,7 @@ import TradingChartHeader from './TradingChartHeader';
 
 const utc=(t:number)=>new Date(t*1000).toISOString().replace('T',' ').slice(0,16);
 const tradeTime=(t:number,zone:TradingTimeZone)=>formatTradingTime(t,zone);
-const reason=(value:string)=>({rsi_price_exit:'RSI + price exit',stop:'Stop loss',reversal:'Direction reversal',period_end:'End of backtest',data_gap:'Data gap',trailing_stop_at_close:'Trailing stop'}[value]??value.replaceAll('_',' '));
+const reason=(value:string)=>({rsi_price_exit:'RSI + price exit',stop:'Stop loss',trailing_stop:'Trailing stop',reversal:'Direction reversal',period_end:'End of backtest',data_gap:'Data gap',trailing_stop_at_close:'Trailing stop'}[value]??value.replaceAll('_',' '));
 
 export default function ResultsWorkspace({result,busy,stale,onRun,onConfigure,onExport}:{result:BacktestResult|null;busy:boolean;stale:boolean;onRun:()=>void;onConfigure:()=>void;onExport:()=>void}){
   const [selectedId,setSelectedId]=useState<number|null>(null),[page,setPage]=useState(0);
