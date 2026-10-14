@@ -8,21 +8,25 @@ export function displayAdx(rows:{time:number;adx:number|null}[],length:number){
 export class AdxDecoration implements ISeriesPrimitive<Time>{
   private host:SeriesAttachedParameter<Time>|null=null;
   private raw:number|null=null;private previous:number|null=null;
+  private visible=true;
+  setVisible(visible:boolean){this.visible=visible;this.host?.requestUpdate();}
   constructor(private showStatus:boolean,private threshold:number){}
   autoscaleInfo(){return {priceRange:{minValue:0,maxValue:Math.max(30,this.threshold)}};}
   private renderer:IPrimitivePaneRenderer={
     drawBackground:target=>target.useMediaCoordinateSpace(({context:ctx,mediaSize})=>{
+      if(!this.visible)return;
       const a=this.host?.series.priceToCoordinate(20),b=this.host?.series.priceToCoordinate(25);
       if(a==null||b==null)return;
       ctx.save();ctx.fillStyle='rgba(255,183,77,.07)';ctx.fillRect(0,Math.min(a,b),mediaSize.width,Math.abs(a-b));ctx.restore();
     }),
-    draw:target=>{if(!this.showStatus)return;target.useMediaCoordinateSpace(({context:ctx,mediaSize})=>{
+    draw:target=>{if(!this.showStatus||!this.visible)return;target.useMediaCoordinateSpace(({context:ctx,mediaSize})=>{
       const raw=this.raw,previous=this.previous;
       const strength=raw===null?'WARMING UP':raw>25?'TREND':raw>=20?'RANGE':'WEAK';
       const arrow=raw===null||previous===null?'':raw>previous?' ↑':raw<previous?' ↓':' →';
       const text=raw===null?strength:`ADX ${raw.toFixed(1)}${arrow} · ${strength}`;
       ctx.save();ctx.font='11px sans-serif';const width=ctx.measureText(text).width+18,x=Math.max(4,mediaSize.width-width-8);
-      ctx.fillStyle='#10141d';ctx.fillRect(x,7,width,24);ctx.fillStyle=strengthColor(raw);ctx.globalAlpha=.1;ctx.fillRect(x,7,width,24);ctx.globalAlpha=1;ctx.fillText(text,x+9,23);ctx.restore();
+      const top=mediaSize.width<650?34:7;
+      ctx.fillStyle='#10141d';ctx.fillRect(x,top,width,24);ctx.fillStyle=strengthColor(raw);ctx.globalAlpha=.1;ctx.fillRect(x,top,width,24);ctx.globalAlpha=1;ctx.fillText(text,x+9,top+16);ctx.restore();
     });},
   };
   private view={renderer:()=>this.renderer};
