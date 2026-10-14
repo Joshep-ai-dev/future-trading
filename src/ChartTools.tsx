@@ -18,8 +18,9 @@ export function resizeChart(chart:IChartApi,element:HTMLDivElement,initialView:(
   return ()=>observer.disconnect();
 }
 
-export default function ChartTools({chartRef,valueLabel='Price',onLatest,onEarlier,onNavigate,loading=false,hasMore=false}: {
+export default function ChartTools({chartRef,valueLabel='Price',endLabel='Latest',onLatest,onEarlier,onNavigate,loading=false,hasMore=false}: {
   chartRef: {current:IChartApi|null}; valueLabel?:string; onLatest?:()=>void;
+  endLabel?:string;
   onEarlier?:()=>void; loading?:boolean; hasMore?:boolean;
   onNavigate?:()=>void;
 }) {
@@ -46,7 +47,7 @@ export default function ChartTools({chartRef,valueLabel='Price',onLatest,onEarli
     <div><span>Time</span><button className="secondary" type="button" aria-label="Zoom in time" onClick={()=>zoomTime(.7)}>+</button><button className="secondary" type="button" aria-label="Zoom out time" onClick={()=>zoomTime(1/.7)}>−</button></div>
     <div><span>{valueLabel}</span><button className="secondary" type="button" aria-label={`Zoom in ${valueLabel.toLowerCase()}`} onClick={()=>zoomValue(.7)}>+</button><button className="secondary" type="button" aria-label={`Zoom out ${valueLabel.toLowerCase()}`} onClick={()=>zoomValue(1/.7)}>−</button></div>
     <button className="secondary" type="button" onClick={reset}>Fit / reset</button>
-    {onLatest&&<button className="secondary" type="button" onClick={onLatest}>Latest</button>}
+    {onLatest&&<button className="secondary" type="button" onClick={onLatest}>{endLabel}</button>}
     {onEarlier&&<button className="secondary" type="button" disabled={loading||!hasMore} onClick={onEarlier}>{loading?'Loading history…':hasMore?'Load earlier':'Start of history'}</button>}
     <small>Scroll / pinch to zoom · drag to pan · drag lower-right corner to resize</small>
   </div>;

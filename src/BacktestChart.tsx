@@ -3,6 +3,7 @@ import {useEffect, useRef, useState} from 'react';
 import {CandlestickSeries, ColorType, createChart, createSeriesMarkers, LineSeries, BaselineSeries, LineStyle, LineType, type IChartApi, type ISeriesApi, type UTCTimestamp, type SeriesMarker} from 'lightweight-charts';
 import {fillMarker,FillLabels} from './fillMarkers';
 import ChartTools,{chartInteraction,resizeChart} from './ChartTools';
+import {captureViewport,restoreViewport} from './chartViewport';
 import {fmt, type Analysis, type PeriodResult, type Trade, type IndicatorPoint, type BacktestSettings} from './types';
 
 export function EquityChart({period}: {period: Pick<PeriodResult,'name'|'equity'>}) {
@@ -30,9 +31,14 @@ export function EquityChart({period}: {period: Pick<PeriodResult,'name'|'equity'
 export default function BacktestChart({candles,trades,selected,onSelect,indicators,barSeconds,timeframe,indicatorSettings}: {indicatorSettings: BacktestSettings; indicators: IndicatorPoint[]; barSeconds: number; timeframe: string; candles: Analysis['candles']; trades: Trade[]; selected: Trade | null; onSelect: (trade: Trade)=>void}) {
   const ref = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi|null>(null);
+  const viewportRef = useRef<{dataKey:string;selectedId:number|null;viewport:ReturnType<typeof captureViewport>}|null>(null);
+  const onSelectRef = useRef(onSelect);onSelectRef.current=onSelect;
   const [readout,setReadout] = useState('Hover for UTC candle prices. Click an entry or exit to select its trade.');
   useEffect(()=>{
     if (!ref.current || !candles.length) return;
+    const dataKey=`${candles.length}:${candles[0]?.time}:${candles.at(-1)?.time}`;
+    const saved=viewportRef.current?.dataKey===dataKey?viewportRef.current:null;
+    const newlySelected=selected!==null&&selected.id!==saved?.selectedId;
     const focus = selected ? candles.findIndex(c=>c.time>=selected.signalTime) : -1;
     const exit = selected ? candles.findIndex(c=>c.time>=selected.exitTime) : -1;
     const view = candles;
@@ -117,13 +123,17 @@ export default function BacktestChart({candles,trades,selected,onSelect,indicato
     });
     chart.subscribeClick(p=>{
       const trade = visibleTrades.find(t=>p.hoveredObjectId===`entry-${t.id}`||p.hoveredObjectId===`close-${t.id}`)??visibleTrades.find(t=>t.entryTime===p.time||t.exitTime===p.time);
-      if(trade) onSelect(trade);
+      if(trade) onSelectRef.current(trade);
     });
     const stopResize=resizeChart(chart,ref.current,()=>{
-    if(selected && focus>=0) chart.timeScale().setVisibleLogicalRange({from:Math.max(0,focus-70),to:Math.min(candles.length+5,Math.max(focus+100,exit+35))});
-    else chart.timeScale().setVisibleLogicalRange({from:Math.max(0,view.length-180),to:view.length+5});
+      if(newlySelected && focus>=0) chart.timeScale().setVisibleLogicalRange({from:Math.max(0,focus-70),to:Math.min(candles.length+5,Math.max(focus+100,exit+35))});
+      else if(saved) restoreViewport(chart,saved.viewport,view.at(-1)?.time,false);
+      else chart.timeScale().setVisibleLogicalRange({from:Math.max(0,view.length-180),to:view.length+5});
     });
-    return ()=>{stopResize();chartRef.current=null;chart.remove();};
-  },[candles,trades,selected,onSelect,indicators,barSeconds,indicatorSettings]);
-  return <><ChartTools chartRef={chartRef} onLatest={()=>chartRef.current?.timeScale().setVisibleLogicalRange({from:Math.max(0,candles.length-180),to:candles.length+5})}/><p className="readout">{readout}</p><div className="chart-resize"><div ref={ref} className="chart-container position-chart" aria-label={`${timeframe} trade positions, indicators, entries, exits, stop and target zones`}/></div></>;
+    return ()=>{
+      viewportRef.current={dataKey,selectedId:selected?.id??null,viewport:captureViewport(chart,view.at(-1)?.time)};
+      stopResize();chartRef.current=null;chart.remove();
+    };
+  },[candles,trades,selected,indicators,barSeconds,indicatorSettings]);
+  return <><ChartTools chartRef={chartRef} endLabel="End" onLatest={()=>chartRef.current?.timeScale().setVisibleLogicalRange({from:Math.max(0,candles.length-180),to:candles.length+5})}/><p className="readout">{readout}</p><div className="chart-resize"><div ref={ref} className="chart-container position-chart" aria-label={`${timeframe} trade positions, indicators, entries, exits, stop and target zones`}/></div></>;
 }
