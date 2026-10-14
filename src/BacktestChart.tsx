@@ -1,3 +1,4 @@
+import {StopOverlay} from './StopOverlay';
 import {useEffect, useRef, useState} from 'react';
 import {CandlestickSeries, ColorType, createChart, createSeriesMarkers, LineSeries, BaselineSeries, LineStyle, LineType, type IChartApi, type ISeriesApi, type UTCTimestamp, type SeriesMarker} from 'lightweight-charts';
 import {fillMarker,FillLabels} from './fillMarkers';
@@ -98,15 +99,10 @@ export default function BacktestChart({candles,trades,selected,onSelect,indicato
       }
     }
     if(selected && selected.target===null && present.has(selected.entryTime)) {
-      if(selected.stop!==null) {
-        const history=selected.stopHistory?.length?selected.stopHistory:[{time:selected.entryTime,price:selected.stop,reason:'initial'}];
-        const points=new Map(history.filter(h=>h.time<=selected.exitTime).map(h=>[h.time,h.price]));
-        points.set(Math.max(selected.exitTime,selected.entryTime+barSeconds),selected.finalStop??selected.stop);
-        chart.addSeries(LineSeries,{color:'#ff8291',lineWidth:2,lineType:LineType.WithSteps,title:'Active stop',priceLineVisible:false}).setData(
-          [...points].sort((a,b)=>a[0]-b[0]).map(([time,value])=>({time:time as UTCTimestamp,value})));
-      }
       chart.addSeries(LineSeries,{color:'#88bfff',lineWidth:2,lineStyle:LineStyle.Dashed,title:'Entry',priceLineVisible:false}).setData([{time:selected.entryTime as UTCTimestamp,value:selected.entry},{time:Math.max(selected.exitTime,selected.entryTime+barSeconds) as UTCTimestamp,value:selected.entry}]);
     }
+    const stopOverlay=new StopOverlay();price.attachPrimitive(stopOverlay);
+    stopOverlay.setPaths(visibleTrades.filter(t=>t.target===null&&t.stop!==null).map(t=>({from:t.entryTime,to:t.exitTime,history:t.stopHistory??[{time:t.entryTime,price:t.stop!,reason:'initial'}]})),view[0]?.time,view.at(-1)?.time);
     const fillReadouts=new Map<number,string[]>();
     for(const marker of markers.filter(m=>m.price!==undefined)){const time=Number(marker.time);fillReadouts.set(time,[...(fillReadouts.get(time)??[]),marker.text!.replaceAll("\n"," ")]);}
     const byTime = new Map(view.map(c=>[c.time,c]));

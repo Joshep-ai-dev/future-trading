@@ -58,6 +58,18 @@ class BBOuterReversalTests(unittest.TestCase):
         self.assertAlmostEqual(p['trail_trigger'], .9)
         self.assertAlmostEqual(p['trail_distance'], .45)
 
+    def test_stop_history_preserves_activation_on_exit_candle(self):
+        bars = self.bars([(99.5, 100.5, 98.9, 100.),
+                          (100., 101.4, 99.8, 100.5)])
+        bars.index = pd.date_range('2026-01-01', periods=2, freq='5min', tz='UTC')
+        result = self.run_bars(bars, trade_mode='Long Only')
+        trade = result['trades'].iloc[0]
+        self.assertEqual(trade.exit_reason, 'trailing_stop_at_close')
+        self.assertEqual([p['reason'] for p in trade.stop_history], ['initial', 'activation'])
+        self.assertEqual(trade.stop_history[-1]['time'], int(bars.index[-1].timestamp()))
+        self.assertAlmostEqual(trade.stop_history[-1]['price'], 100.8)
+        self.assertTrue(np.isnan(result['bars'].stop.iloc[-1]))
+
     def test_sma_disabled_uses_normal_distances_without_sma_warmup(self):
         bars = self.bars([(99.5, 100.5, 98.9, 100.)])
         bars['sma_downtrend'] = True

@@ -54,8 +54,7 @@ export class FillLabels implements ISeriesPrimitive<Time> {
         // At dense zoom levels retain exact fill points; details remain in the readout.
         if(top<4||bottom>mediaSize.height-4)continue;
         occupied.push({left,right,top,bottom});
-        ctx.strokeStyle=marker.color;ctx.globalAlpha=.8;ctx.lineWidth=1;
-        ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(labelX,tip);ctx.stroke();ctx.globalAlpha=1;
+        ctx.strokeStyle=marker.color;
         const tail=tip+(below?16:-16);
         ctx.lineWidth=2.5;ctx.beginPath();ctx.moveTo(labelX,tail);ctx.lineTo(labelX,tip);ctx.stroke();
         ctx.beginPath();ctx.moveTo(labelX,tip);ctx.lineTo(labelX-4,tip+(below?6:-6));ctx.lineTo(labelX+4,tip+(below?6:-6));ctx.closePath();ctx.fill();

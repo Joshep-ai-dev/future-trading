@@ -1,5 +1,6 @@
+import {StopOverlay} from './StopOverlay';
 import {useEffect,useRef,useState} from 'react';
-import {CandlestickSeries,ColorType,createChart,createSeriesMarkers,LineSeries,LineType,type IChartApi,type UTCTimestamp,type SeriesMarker} from 'lightweight-charts';
+import {CandlestickSeries,ColorType,createChart,createSeriesMarkers,LineSeries,type IChartApi,type UTCTimestamp,type SeriesMarker} from 'lightweight-charts';
 import {fillMarker,FillLabels} from './fillMarkers';
 import ChartTools,{chartInteraction,resizeChart} from './ChartTools';
 import {fmt,type Analysis} from './types';
@@ -25,7 +26,7 @@ export default function PaperPriceChart(props:Props) {
     const markers=createSeriesMarkers(price,[]);
     const fillLabels=new FillLabels();price.attachPrimitive(fillLabels);
     const overlays=([['bbBasis','#63d6d0','BB middle'],['bbUpper','#7d8da5','BB upper'],['bbLower','#7d8da5','BB lower'],['trendSma','#d7ad69','Trend SMA']] as const).filter(([key])=>key!=='trendSma'||props.showSma).map(([key,color,title])=>({key,series:chart.addSeries(LineSeries,{color,lineWidth:1,title,priceLineVisible:false,lastValueVisible:false})}));
-    const stops=chart.addSeries(LineSeries,{color:'#ff8291',lineWidth:2,lineType:LineType.WithSteps,title:'Active stop',priceLineVisible:false,lastValueVisible:false});
+    const stopOverlay=new StopOverlay();price.attachPrimitive(stopOverlay);
     const entry=chart.addSeries(LineSeries,{color:'#88bfff',lineWidth:2,title:'Open entry',priceLineVisible:false});
     let byTime=new Map<number,Analysis['candles'][number]>(),previousTime:number|undefined,previous:Data|null=null;
     let fillReadouts=new Map<number,string[]>();
@@ -37,13 +38,17 @@ export default function PaperPriceChart(props:Props) {
       else price.setData(data.candles.map(c=>({...c,time:c.time as UTCTimestamp})));
       if(!previous||data.indicators.at(-1)!==previous.indicators.at(-1)||data.indicators.length!==previous.indicators.length)
         for(const {key,series} of overlays)series.setData(data.indicators.map(p=>p[key]===null?{time:p.time as UTCTimestamp}:{time:p.time as UTCTimestamp,value:p[key]}));
-      if(!previous||data.stops.at(-1)!==previous.stops.at(-1)||data.stops.length!==previous.stops.length)
-        stops.setData(data.stops.map(p=>p.price===null?{time:p.time as UTCTimestamp}:{time:p.time as UTCTimestamp,value:p.price}));
       const p=data.position,first=data.candles[0]?.time;
       if(p&&stamp!==undefined&&first!==undefined){
         const from=Math.max(first,p.entry_time);
         entry.setData((from===stamp?[from]:[from,stamp]).map(time=>({time:time as UTCTimestamp,value:p.entry_price})));
       }else entry.setData([]);
+      stopOverlay.setPaths([...data.trades,...(p?[p]:[])].map(t=>{
+        const to='exit_time' in t?Number(t.exit_time):stamp??t.entry_time;
+        const initial=t.initial_stop??t.stop;
+        const fallback=[{time:t.entry_time,price:initial,reason:'initial'},...data.stops.filter(h=>h.time>t.entry_time&&h.time<to&&h.price!==null).map(h=>({time:h.time,price:h.price!,reason:h.price===initial?'initial':'trailing'}))];
+        return {from:t.entry_time,to,history:t.stop_history??fallback};
+      }),first,stamp);
       const points:SeriesMarker<UTCTimestamp>[]=[];
       const addEntry=(position:Position,label:string,id:string)=>{if(byTime.has(position.entry_time))points.push(fillMarker(position.entry_time,position.entry_price,label,'entry',position.direction,id,position.quantity));};
       for(const t of data.trades){

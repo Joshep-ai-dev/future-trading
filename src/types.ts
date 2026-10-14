@@ -27,6 +27,7 @@ export type Trade = {
   quantity: number; riskBudget: number; plannedRisk: number | null; netPnl: number; grossPnl: number;
   fees: number; funding: number; executionCost: number; netR: number; balance: number;
   initialStop?: number | null; finalStop?: number | null; initialRisk?: number;
+  trailActivationPrice?: number;
   stopHistory?: {time: number; price: number; reason: string; confirmedAt?: number}[];
   exitSignal?: {time: number; closeTime: number; reason: string; ema20: number | null; ema50: number | null; rsi20: number | null};
   exitReason: string; session: string; ambiguous: boolean; obstacle: number | null;

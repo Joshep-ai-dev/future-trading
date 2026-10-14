@@ -224,6 +224,8 @@ def run_backtest(frame, settings=None, *, start=None, close_at_end=False, bar_se
                             trailing_active=False, countertrend=bool(counter),
                             trail_trigger=max(minimum, s.trail_trigger*s.trail_multiplier*scale),
                             trail_distance=max(minimum, s.trail_distance*s.trail_multiplier*scale))
+            position['stop_history'] = [dict(time=int(time.timestamp()) if hasattr(time, 'timestamp') else int(time),
+                                             price=position['stop'], reason='initial')]
             last_direction = direction
         elif position is not None:
             p = position
@@ -232,8 +234,12 @@ def run_backtest(frame, settings=None, *, start=None, close_at_end=False, bar_se
             if not p['trailing_active'] and d*(p['extreme']-p['entry_price']) >= p['trail_trigger']:
                 p['trailing_active'] = activated = True
             if p['trailing_active']:
+                previous_stop = p['stop']
                 candidate = p['extreme']-d*p['trail_distance']
                 p['stop'] = max(p['stop'], candidate) if d == 1 else min(p['stop'], candidate)
+                if activated or p['stop'] != previous_stop:
+                    p['stop_history'].append(dict(time=int(time.timestamp()) if hasattr(time, 'timestamp') else int(time),
+                                                  price=p['stop'], reason='activation' if activated else 'trailing'))
                 if d*(bar.close-p['stop']) <= 0:
                     close_position(time, bar.close, 'trailing_stop_at_close')
         unrealized = 0 if position is None else (bar.close-position['entry_price'])*position['direction']*position['quantity']

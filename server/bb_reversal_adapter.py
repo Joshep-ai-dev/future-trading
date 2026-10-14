@@ -29,15 +29,11 @@ def run_bb_reversal_backtest(frame, settings):
             initial_stop = trade['initial_stop']
             risk = abs(trade['entry_price']-initial_stop)*trade['quantity']
             entry_time, exit_time = int(trade['entry_time'].timestamp()), int(trade['exit_time'].timestamp())
-            history = [dict(time=entry_time, price=initial_stop, reason='initial')]
-            previous = initial_stop
-            for stamp, bar in result['bars'].loc[trade['entry_time']:trade['exit_time']].iterrows():
-                if bar.position == trade['direction'] and np.isfinite(bar.stop) and bar.stop != previous:
-                    history.append(dict(time=int(stamp.timestamp()), price=float(bar.stop), reason='trailing'))
-                    previous = float(bar.stop)
+            history = trade['stop_history']
             trades.append(dict(id=i+1, direction=trade['direction'], signalTime=entry_time,
                 entryTime=entry_time, exitTime=exit_time, entry=trade['entry_price'], exit=trade['exit_price'],
                 stop=initial_stop, initialStop=initial_stop, finalStop=trade['stop'], stopHistory=history,
+                trailActivationPrice=trade['entry_price']+trade['direction']*trade['trail_trigger'],
                 initialRisk=risk, target=None, trigger=None, sweepLevel=None, quantity=trade['quantity'],
                 riskBudget=risk, plannedRisk=risk, netPnl=trade['pnl'], grossPnl=trade['pnl'],
                 fees=0., funding=0., executionCost=0., netR=trade['pnl']/risk, balance=balance,
