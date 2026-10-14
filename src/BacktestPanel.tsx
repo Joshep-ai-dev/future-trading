@@ -38,12 +38,12 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
   const [selectedProfile,setSelectedProfile]=useState('');
   const [profileBusy,setProfileBusy]=useState(false),[profileMessage,setProfileMessage]=useState('');
   useEffect(()=>{let active=true;api<SavedProfile[]>('/api/profiles').then(value=>{if(active)setProfiles(value.map(profile=>({...profile,settings:restoreSettings(profile.settings,range)})));}).catch(error=>{if(active)setProfileMessage(String(error));});return()=>{active=false;};},[range]);
-  async function saveProfile(){
+  async function saveProfile(settingsToSave=settings){
     const name=profileName.trim();
-    if(!name)return;
+    if(!name){setProfileMessage('Enter a setup name above before saving.');document.querySelector<HTMLInputElement>('[aria-label="Setup name"]')?.focus();return;}
     setProfileBusy(true);setProfileMessage('');
     try{
-      const profile=await api<SavedProfile>('/api/profiles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,settings})});
+      const profile=await api<SavedProfile>('/api/profiles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,settings:settingsToSave})});
       setProfiles(old=>{const existing=old.some(item=>item.name.toLocaleLowerCase()===profile.name.toLocaleLowerCase());return existing?old.map(item=>item.name.toLocaleLowerCase()===profile.name.toLocaleLowerCase()?profile:item):[...old,profile].sort((a,b)=>a.name.localeCompare(b.name));});
       setSelectedProfile(profile.name);setProfileName(profile.name);setProfileMessage(`Saved to backend database: ${profile.name}`);
     }catch(error){setProfileMessage(String(error));}finally{setProfileBusy(false);}
@@ -65,6 +65,7 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
   const [busy,setBusy]=useState(false),[error,setError]=useState('');
   const [tuning,setTuning]=useState(false),[tuneError,setTuneError]=useState('');
   const [tuneResult,setTuneResult]=useState<FineTuneResult|null>(null);
+  const [tuneProgress,setTuneProgress]=useState({percent:0,message:''});
   const [section,setSection]=useState('execution');
   const [runId,setRunId]=useState(0);
   async function run(e?:FormEvent){
@@ -73,14 +74,31 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
     catch(e){setError(String(e));}finally{setBusy(false);}
   }
   async function runFineTune(){
-    setTuning(true);setTuneError('');setTuneResult(null);
-    try{setTuneResult(await api<FineTuneResult>('/api/backtest/fine-tune',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({settings})}));}
+    setTuning(true);setTuneError('');setTuneResult(null);setTuneProgress({percent:0,message:'Connecting to the tuning worker'});
+    try{
+      const response=await fetch('/api/backtest/fine-tune',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({settings})});
+      if(!response.ok)throw new Error(`Fine tuning request failed (${response.status})`);
+      if(!response.body)throw new Error('Fine tuning progress stream is unavailable.');
+      const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='',finalResult:FineTuneResult|null=null;
+      while(true){
+        const {done,value}=await reader.read();buffer+=decoder.decode(value??new Uint8Array(),{stream:!done});
+        const lines=buffer.split('\n');buffer=lines.pop()??'';
+        for(const line of lines){if(!line.trim())continue;const update=JSON.parse(line);
+          if(update.type==='progress')setTuneProgress({percent:update.percent,message:update.message});
+          else if(update.type==='result')finalResult=update.result as FineTuneResult;
+          else if(update.type==='error')throw new Error(update.detail);
+        }
+        if(done)break;
+      }
+      if(!finalResult)throw new Error('Fine tuning ended before returning a result.');
+      setTuneResult(finalResult);
+    }
     catch(error){setTuneError(String(error));}finally{setTuning(false);}
   }
   function renderTuneMetrics(label:string,metrics:TuneMetrics){
     return <div className="tune-period" key={label}><strong>{label}</strong><span>Win rate <b>{fmt(metrics.winRate)}%</b></span><span>Net P&amp;L <b className={metrics.netPnl>=0?'positive':'negative'}>{metrics.netPnl>=0?'+':''}${fmt(metrics.netPnl)}</b></span><span>Max drawdown <b className="negative">{fmt(Math.abs(metrics.maxDrawdownPct))}%</b></span><span>Average loss <b>{fmt(metrics.averageLossPct)}% of start</b></span><span>Trades <b>{metrics.trades}</b></span></div>;
   }
-  const tuneLabels:Record<string,string>={initial_sl:'Initial stop',trail_trigger:'Trail activation',trail_distance:'Trail distance',adx_threshold:'ADX threshold',min_bb_width_pct:'Minimum BB width'};
+  const tuneLabels:Record<string,string>={bb_length:'BB length',bb_mult:'BB multiplier',min_bb_width_pct:'Minimum BB width',atr_length:'ATR length',min_atr:'Minimum ATR',adx_length:'ADX length',adx_threshold:'ADX threshold',pullback_bars:'Rebound window',initial_sl:'Initial stop',trail_trigger:'Trail activation',trail_distance:'Trail distance',trail_multiplier:'Trail multiplier',sma_length:'Trend SMA length',use_sma_trend_adjustment:'SMA adjustment',sma_slope_bars:'SMA slope lookback',counter_profit_pct:'Countertrend profit (%)',counter_sl_pct:'Countertrend stop (%)',rsi_exit_enabled:'RSI exit enabled',rsi_exit_length:'Exit RSI length',rsi_exit_move:'RSI exit price move',rsi_exit_short:'Short RSI threshold',rsi_exit_long:'Long RSI threshold',amount_per_trade:'Amount per trade',amount_unit:'Amount unit',leverage:'Leverage'};
   const stale=!!result&&Object.keys(settings).some(k=>JSON.stringify(settings[k as keyof BacktestSettings])!==JSON.stringify(result.settings[k as keyof BacktestSettings]));
   function download(){if(!result)return;const url=URL.createObjectURL(new Blob([JSON.stringify(result,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download='bb-reversal-backtest.json';link.click();URL.revokeObjectURL(url);}
   const chapters=[['execution','Execution & allocation'],['filters','Entry filters'],['stops','Stops & trailing'],['rsi-exit','RSI + price exit'],['trend','Trend adjustment'],['range','Backtest range']];
@@ -100,7 +118,7 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
         </div><p className="settings-help">Available: {range.startDate} to {range.endDate}. One account balance runs through the full range. Live and replay dates are configured separately in the terminal.</p></section>
         <div className="configuration-runbar"><div><strong>Ready to test your setup?</strong><small>Changes apply to the next run or new bot session.</small></div><div className="configuration-run-actions"><button type="button" className="secondary" disabled={busy||tuning} onClick={()=>void runFineTune()}>{tuning?'Searching candidates…':'Fine tune settings'}</button><button type="submit" disabled={busy||tuning}>{busy?'Running backtest...':'Run full backtest'}</button></div></div>
       </fieldset>
-      {(tuneError||tuneResult)&&<section className="fine-tune-panel" aria-live="polite">{tuneError?<p className="error" role="alert">{tuneError}</p>:tuneResult&&<><div className="fine-tune-heading"><div><h3>Fine tuning results</h3><p>Model: {tuneResult.model}. Evaluated {tuneResult.candidatesEvaluated} candidates, including {tuneResult.seedCandidates} initial and {tuneResult.adaptiveCandidatesEvaluated} ML guided settings. The top {tuneResult.shortlisted} were checked on validation data; the forward test is held out from selection.</p></div><button type="button" onClick={()=>setSettings(tuneResult.bestSettings)}>Apply best settings</button></div><div className="tune-parameters"><strong>Recommended values</strong>{Object.entries(tuneResult.bestParameters).map(([key,value])=><span key={key}>{tuneLabels[key]??key}<b>{typeof value==='number'?fmt(value,3):String(value)}</b></span>)}</div><div className="tune-scorecards">{renderTuneMetrics('Training',tuneResult.periods.train.metrics)}{renderTuneMetrics('Validation',tuneResult.periods.validation.metrics)}{renderTuneMetrics('Forward test',tuneResult.periods.forwardTest.metrics)}</div><small className="settings-help">Ranking objective: {tuneResult.objective} The forward test is historical evidence, not a guarantee of future performance. Consider requiring more trades before using a candidate.</small></>}</section>}
+      {(tuning||tuneError||tuneResult)&&<section className="fine-tune-panel" aria-live="polite">{tuning&&<div className="tune-progress"><div className="tune-progress-heading"><strong>{tuneProgress.message||'Preparing fine tuning'}</strong><span>{tuneProgress.percent}%</span></div><div className="tune-progress-track"><span style={{width:`${tuneProgress.percent}%`}}/></div><small>Testing all strategy and allocation parameters across historical candles.</small></div>}{tuneError&&<p className="error" role="alert">{tuneError}</p>}{tuneResult&&<><div className="fine-tune-heading"><div><h3>Fine tuning results</h3><p>Model: {tuneResult.model}. Evaluated {tuneResult.candidatesEvaluated} candidates, including {tuneResult.seedCandidates} initial and {tuneResult.adaptiveCandidatesEvaluated} ML guided settings. The top {tuneResult.shortlisted} were checked on validation data; the forward test is held out from selection.</p></div><div className="tune-result-actions"><button type="button" className="secondary" onClick={()=>setSettings(tuneResult.bestSettings)}>Apply best settings</button><button type="button" disabled={profileBusy||!profileName.trim()} onClick={()=>void saveProfile(tuneResult.bestSettings)}>Save recommended setup</button></div></div><div className="tune-parameters"><strong>Recommended values</strong>{Object.entries(tuneResult.bestParameters).map(([key,value])=><span key={key}>{tuneLabels[key]??key}<b>{typeof value==='number'?fmt(value,3):String(value)}</b></span>)}</div><div className="tune-scorecards">{renderTuneMetrics('Training',tuneResult.periods.train.metrics)}{renderTuneMetrics('Validation',tuneResult.periods.validation.metrics)}{renderTuneMetrics('Forward test',tuneResult.periods.forwardTest.metrics)}</div><small className="settings-help">Ranking objective: {tuneResult.objective} The forward test is historical evidence, not a guarantee of future performance. The setup name above is used when saving this recommendation.</small></>}</section>}
       <details className="execution-notes"><summary>Execution assumptions</summary><p>Signals use completed candles and fill at close. Stops include adverse gaps; trailing stops never loosen. Position notional is allocated amount times leverage. A depleted balance blocks new trades. Costs, session filters and liquidation are not modeled.</p></details></form></div>
     </div>
     {error&&view!=='paper'&&<p className="error" role="alert">{error}</p>}

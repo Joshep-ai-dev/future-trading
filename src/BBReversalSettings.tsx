@@ -21,7 +21,7 @@ const fields: [Exclude<keyof typeof bbDefaults,'trade_mode'|'rsi_exit_enabled'|'
 ];
 export default function BBReversalSettings({settings,onChange}:{settings:BacktestSettings;onChange:(s:BacktestSettings)=>void}) {
   const config=settings.bb_reversal;
-  const renderFields=(keys:string[])=>fields.filter(([key])=>keys.includes(key)).map(([key,label,min,max,step])=><label key={key}>{label}<input type="number" required min={min} max={max} step={step} value={config[key]} onChange={e=>onChange({...settings,bb_reversal:{...config,[key]:Number(e.target.value)}})}/></label>);
+  const renderFields=(keys:string[])=>fields.filter(([key])=>keys.includes(key)).map(([key,label,min,max])=><label key={key}>{label}<input type="number" required min={min} max={max} step="any" value={config[key]} onChange={e=>onChange({...settings,bb_reversal:{...config,[key]:Number(e.target.value)}})}/></label>);
   return <div className="exit-settings"><h3>BB Outer Band Reversal + Trailing SL</h3>
     <p>BB Outer Band Reversal + Trailing SL. Both directions, alternating entries, with ATR and ADX confirmation. Changes apply to your next backtest or new virtual session.</p>
     <div className="settings-section" id="settings-execution"><h3>Execution & allocation</h3>

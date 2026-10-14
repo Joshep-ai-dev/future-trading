@@ -1,9 +1,13 @@
 """Local CSV price API."""
 from typing import Literal
 from contextlib import asynccontextmanager
+from queue import Queue
+from threading import Thread
+import json
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from .data import load_bars
 from .strategy import BacktestRequest
@@ -306,11 +310,33 @@ def backtest(parameters: BBBacktestRequest):
 
 @app.post('/api/backtest/fine-tune')
 def fine_tune_backtest(parameters: FineTuneRequest):
-    try:
-        frame, _ = load_bars(parameters.settings.entry_timeframe)
-        return fine_tune(frame, parameters.settings)
-    except (ValueError, OSError) as error:
-        raise HTTPException(status_code=400, detail=str(error)) from error
+    updates = Queue()
+
+    def work():
+        try:
+            frame, _ = load_bars(parameters.settings.entry_timeframe)
+            result = fine_tune(frame, parameters.settings,
+                               progress=lambda percent, message: updates.put(
+                                   {'type': 'progress', 'percent': percent, 'message': message}))
+            updates.put({'type': 'result', 'result': result})
+        except (ValueError, OSError) as error:
+            updates.put({'type': 'error', 'detail': str(error)})
+        except Exception:
+            updates.put({'type': 'error', 'detail': 'Fine tuning failed. Check the backend log for details.'})
+        finally:
+            updates.put(None)
+
+    Thread(target=work, daemon=True).start()
+
+    def events():
+        while True:
+            update = updates.get()
+            if update is None:
+                break
+            yield json.dumps(update, allow_nan=False) + '\n'
+
+    return StreamingResponse(events(), media_type='application/x-ndjson',
+                             headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
 
 
 class CandleRequest(Parameters):
