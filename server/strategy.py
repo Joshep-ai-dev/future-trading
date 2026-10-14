@@ -66,7 +66,9 @@ class BacktestRequest(BaseModel):
         elif self.strategy == 'bb_outer_reversal':
             from .bb_outer_reversal import Settings
             try:
-                Settings(**self.bb_reversal)
+                bb_config = Settings(**self.bb_reversal)
+                if bb_config.amount_unit == 'price' and bb_config.amount_per_trade > self.capital:
+                    raise ValueError('Amount per trade cannot exceed the starting account balance')
                 self.bb_reversal = {**self.bb_reversal, 'trade_mode': 'Both'}
             except (TypeError, ValueError) as error:
                 raise ValueError(str(error)) from error

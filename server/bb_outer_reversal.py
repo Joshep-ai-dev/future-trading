@@ -42,8 +42,16 @@ class Settings:
     initial_capital: float = 10000.0
     quantity: float = 1.0
     leverage: float | None = None
+    amount_per_trade: float = 100.0
+    amount_unit: str = 'percent'
 
     def __post_init__(self):
+        if self.amount_unit not in ('price', 'percent'):
+            raise ValueError('amount_unit must be price ($) or percent')
+        if not np.isfinite(self.amount_per_trade) or self.amount_per_trade <= 0:
+            raise ValueError('Amount per trade must be positive and finite')
+        if self.amount_unit == 'percent' and self.amount_per_trade > 100:
+            raise ValueError('Amount per trade cannot exceed 100% of balance')
         if self.min_tick_unit not in ('price', 'percent'):
             raise ValueError('min_tick_unit must be price or percent')
         if self.leverage is not None and (not np.isfinite(self.leverage) or not 1 <= self.leverage <= 100):
@@ -209,7 +217,8 @@ def run_backtest(frame, settings=None, *, start=None, close_at_end=False, bar_se
             minimum = s.min_tick if s.min_tick_unit == 'price' else bar.close*s.min_tick/100
             sl = max(minimum, s.initial_sl * (s.counter_sl_pct/100 if counter else 1))
             scale = s.counter_profit_pct/100 if counter else 1
-            quantity = s.quantity if s.leverage is None else cash*s.leverage/bar.close
+            amount = cash*s.amount_per_trade/100 if s.amount_unit == 'percent' else min(s.amount_per_trade, cash)
+            quantity = s.quantity if s.leverage is None else amount*s.leverage/bar.close
             position = dict(direction=direction, entry_time=time, entry_price=float(bar.close), quantity=float(quantity),
                             stop=float(bar.close-direction*sl), initial_stop=float(bar.close-direction*sl), extreme=float(bar.close),
                             trailing_active=False, countertrend=bool(counter),

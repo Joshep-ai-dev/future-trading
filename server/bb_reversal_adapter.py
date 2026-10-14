@@ -13,7 +13,7 @@ from .strategy import metrics, seconds
 def run_bb_reversal_backtest(frame, settings):
     duration = TIMEFRAMES[settings.entry_timeframe]
     config = replace(Settings(**settings.bb_reversal), initial_capital=settings.capital,
-                     min_tick=settings.tick_size, trade_mode='Both', leverage=settings.max_leverage)
+                     min_tick=settings.tick_size, min_tick_unit='price', trade_mode='Both', leverage=settings.max_leverage)
     start, split, end = (seconds(settings.start_date), seconds(settings.validation_date),
                          seconds(settings.end_date+timedelta(days=1)))
     clean = frame.dropna(subset=['open', 'high', 'low', 'close'])

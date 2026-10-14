@@ -100,6 +100,39 @@ class BBOuterReversalTests(unittest.TestCase):
         self.assertEqual(absolute['initial_stop'], 198.)
         self.assertEqual(percent['initial_stop'], 196.)
 
+    def test_amount_per_trade_percent_and_dollars_before_leverage(self):
+        bars = self.bars([(99.5, 100.5, 98.9, 100.)])
+        for unit, amount in [('percent', 50), ('price', 1000)]:
+            result = self.run_bars(bars, initial_capital=2000, leverage=3,
+                                   amount_unit=unit, amount_per_trade=amount)
+            self.assertEqual(result['open_position']['quantity'], 30)
+
+    def test_fixed_dollar_allocation_is_capped_after_loss(self):
+        bars = self.bars([(99.5,100.5,98.9,100.),(99.,100.5,98.8,100.),
+                          (100.5,101.2,99.8,100.)])
+        result = self.run_bars(bars, initial_capital=1000, leverage=3,
+                               amount_unit='price', amount_per_trade=1000)
+        self.assertEqual(result['cash'],970)
+        self.assertEqual(result['open_position']['quantity'],29.1)
+
+    def test_no_new_trade_after_zero_or_negative_balance_including_reversal(self):
+        for exit_price in (50., 40.):
+            bars = self.bars([(99.5,100.5,98.9,100.),
+                              (exit_price,101.2,exit_price,100.)])
+            # Intrabar gap stop followed by a short rebound on the same candle.
+            stopped = self.run_bars(bars, initial_capital=1000, leverage=2)
+            self.assertLessEqual(stopped['cash'],0)
+            self.assertIsNone(stopped['open_position'])
+            self.assertFalse(stopped['bars'].short_signal.any())
+            # Reversal closes the long first, then rechecks the balance.
+            bars.iloc[1] = self.bars([(100.,101.2,exit_price,exit_price)]).iloc[0]
+            bars.loc[1,'bb_lower'] = 1.
+            reversed_result = self.run_bars(bars, initial_capital=1000, leverage=2,
+                                            initial_sl=90)
+            self.assertLessEqual(reversed_result['cash'],0)
+            self.assertIsNone(reversed_result['open_position'])
+            self.assertFalse(reversed_result['bars'].short_signal.any())
+
 
 if __name__ == '__main__':
     unittest.main()
