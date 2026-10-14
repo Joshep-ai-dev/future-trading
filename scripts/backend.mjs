@@ -1,5 +1,5 @@
 import {spawn} from 'node:child_process';
-import {existsSync, mkdirSync, writeFileSync, rmSync} from 'node:fs';
+import {existsSync, mkdirSync, writeFileSync, rmSync, readdirSync, statSync} from 'node:fs';
 import {randomUUID} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {createConnection} from 'node:net';
@@ -20,6 +20,14 @@ if (occupied) {
 }
 // A shared-file heartbeat works across WSL/Windows, including abrupt exits.
 mkdirSync('.runtime',{recursive:true});
+// Remove markers left behind if a terminal or Node process was killed abruptly.
+for (const name of readdirSync('.runtime')) {
+  if (!/^backend-[0-9a-f-]+$/i.test(name)) continue;
+  const path = `.runtime/${name}`;
+  try {
+    if (Date.now() - statSync(path).mtimeMs > 10000) rmSync(path,{force:true});
+  } catch {}
+}
 const heartbeat = `.runtime/backend-${randomUUID()}`;
 const pulse = () => writeFileSync(heartbeat,String(Date.now()));
 pulse();
@@ -28,9 +36,18 @@ const cleanup = () => {clearInterval(timer);rmSync(heartbeat,{force:true});};
 process.on('exit',cleanup);
 const child = spawn(python,['-m','server.dev',heartbeat],{stdio:'inherit'});
 let stopping = false;
-child.on('error',error=>{console.error(error.message);process.exit(1);});
-child.on('exit',code=>process.exit(stopping ? 0 : (code??1)));
+let finished = false;
+const finish = code => {
+  if (finished) return;
+  finished = true;
+  cleanup();
+  process.exitCode = code;
+};
+child.on('error',error=>{console.error(error.message);finish(1);});
+child.on('exit',(code,signal)=>finish(stopping ? 0 : (code??(signal ? 1 : 0))));
 for (const signal of ['SIGINT','SIGTERM']) process.on(signal,()=>{
+  if (stopping) return;
   stopping = true;
   cleanup();
+  if (child.exitCode === null && child.signalCode === null) child.kill(signal);
 });
