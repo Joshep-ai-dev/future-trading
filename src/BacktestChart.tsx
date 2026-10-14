@@ -13,7 +13,7 @@ export function EquityChart({period}: {period: Pick<PeriodResult,'name'|'equity'
   const seriesName = useRef(period.name);
   useEffect(() => {
     if (!ref.current) return;
-    const chart = createChart(ref.current, {autoSize:false, ...chartInteraction, layout:{background:{type:ColorType.Solid,color:'#10141d'},textColor:'#7d8da5'},timeScale:{timeVisible:true,minBarSpacing:.001,lockVisibleTimeRangeOnResize:true},grid:{vertLines:{visible:false},horzLines:{color:'#202836'}}});
+    const chart = createChart(ref.current, {autoSize:false, ...chartInteraction, layout:{background:{type:ColorType.Solid,color:'#10141d'},textColor:'#7d8da5'},timeScale:{timeVisible:true,minBarSpacing:2,lockVisibleTimeRangeOnResize:true},grid:{vertLines:{visible:false},horzLines:{color:'#202836'}}});
     chartRef.current=chart;
     lineRef.current=chart.addSeries(LineSeries,{color:'#6ce4bc',priceLineVisible:false,title:'Net equity'});
     const stopResize=resizeChart(chart,ref.current,()=>chart.timeScale().fitContent());
@@ -36,7 +36,7 @@ export default function BacktestChart({candles,trades,selected,onSelect,indicato
     const focus = selected ? candles.findIndex(c=>c.time>=selected.signalTime) : -1;
     const exit = selected ? candles.findIndex(c=>c.time>=selected.exitTime) : -1;
     const view = candles;
-    const chart = createChart(ref.current,{autoSize:false,...chartInteraction,layout:{background:{type:ColorType.Solid,color:'#10141d'},textColor:'#7d8da5'},timeScale:{timeVisible:true,minBarSpacing:.001,lockVisibleTimeRangeOnResize:true},grid:{vertLines:{visible:false},horzLines:{color:'#202836'}}});
+    const chart = createChart(ref.current,{autoSize:false,...chartInteraction,layout:{background:{type:ColorType.Solid,color:'#10141d'},textColor:'#7d8da5'},timeScale:{timeVisible:true,minBarSpacing:2,lockVisibleTimeRangeOnResize:true},grid:{vertLines:{visible:false},horzLines:{color:'#202836'}}});
     chartRef.current=chart;
     const price = chart.addSeries(CandlestickSeries,{borderVisible:false,upColor:'#26a69a',downColor:'#ef5350',wickUpColor:'#26a69a',wickDownColor:'#ef5350',priceFormat:{type:'price',precision:3,minMove:.001}});
     price.priceScale().applyOptions({scaleMargins:{top:.18,bottom:.22}});
