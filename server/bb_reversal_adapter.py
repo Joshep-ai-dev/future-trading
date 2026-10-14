@@ -26,8 +26,7 @@ def run_bb_reversal_backtest(frame, settings):
         trades, balance = [], settings.capital
         for i, trade in enumerate(result['trades'].to_dict('records')):
             balance += trade['pnl']
-            initial_stop = trade['entry_price']-trade['direction']*max(config.min_tick,
-                config.initial_sl*(config.counter_sl_pct/100 if trade['countertrend'] else 1))
+            initial_stop = trade['initial_stop']
             risk = abs(trade['entry_price']-initial_stop)*trade['quantity']
             entry_time, exit_time = int(trade['entry_time'].timestamp()), int(trade['exit_time'].timestamp())
             history = [dict(time=entry_time, price=initial_stop, reason='initial')]

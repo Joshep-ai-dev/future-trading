@@ -86,6 +86,20 @@ class BBOuterReversalTests(unittest.TestCase):
         self.assertEqual(result['open_position']['quantity'], 29.1)
         self.assertEqual(result['open_position']['direction'], -1)
 
+    def test_tick_size_supports_price_and_percent_of_entry(self):
+        bars = self.bars([(99.5, 100.5, 98.9, 100.)])
+        absolute = self.run_bars(bars, min_tick=2)['open_position']
+        percent = self.run_bars(bars, min_tick=2, min_tick_unit='percent')['open_position']
+        self.assertEqual(absolute['initial_stop'], 98.)
+        self.assertEqual(percent['initial_stop'], 98.)
+        self.assertEqual(percent['trail_trigger'], 2.)
+        self.assertEqual(percent['trail_distance'], 2.)
+        bars[['open','high','low','close','bb_lower','bb_upper']] *= 2
+        absolute = self.run_bars(bars, min_tick=2)['open_position']
+        percent = self.run_bars(bars, min_tick=2, min_tick_unit='percent')['open_position']
+        self.assertEqual(absolute['initial_stop'], 198.)
+        self.assertEqual(percent['initial_stop'], 196.)
+
 
 if __name__ == '__main__':
     unittest.main()

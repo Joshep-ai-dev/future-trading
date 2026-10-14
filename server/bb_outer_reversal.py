@@ -38,11 +38,14 @@ class Settings:
     counter_profit_pct: float = 75.0
     counter_sl_pct: float = 75.0
     min_tick: float = 0.01
+    min_tick_unit: str = 'price'
     initial_capital: float = 10000.0
     quantity: float = 1.0
     leverage: float | None = None
 
     def __post_init__(self):
+        if self.min_tick_unit not in ('price', 'percent'):
+            raise ValueError('min_tick_unit must be price or percent')
         if self.leverage is not None and (not np.isfinite(self.leverage) or not 1 <= self.leverage <= 100):
             raise ValueError('leverage must be between 1 and 100')
         if not isinstance(self.use_sma_trend_adjustment, bool):
@@ -203,14 +206,15 @@ def run_backtest(frame, settings=None, *, start=None, close_at_end=False, bar_se
                 direction = 0
         if direction:
             counter = s.use_sma_trend_adjustment and (bar.sma_downtrend if direction == 1 else bar.sma_uptrend)
-            sl = max(s.min_tick, s.initial_sl * (s.counter_sl_pct/100 if counter else 1))
+            minimum = s.min_tick if s.min_tick_unit == 'price' else bar.close*s.min_tick/100
+            sl = max(minimum, s.initial_sl * (s.counter_sl_pct/100 if counter else 1))
             scale = s.counter_profit_pct/100 if counter else 1
             quantity = s.quantity if s.leverage is None else cash*s.leverage/bar.close
             position = dict(direction=direction, entry_time=time, entry_price=float(bar.close), quantity=float(quantity),
-                            stop=float(bar.close-direction*sl), extreme=float(bar.close),
+                            stop=float(bar.close-direction*sl), initial_stop=float(bar.close-direction*sl), extreme=float(bar.close),
                             trailing_active=False, countertrend=bool(counter),
-                            trail_trigger=max(s.min_tick, s.trail_trigger*s.trail_multiplier*scale),
-                            trail_distance=max(s.min_tick, s.trail_distance*s.trail_multiplier*scale))
+                            trail_trigger=max(minimum, s.trail_trigger*s.trail_multiplier*scale),
+                            trail_distance=max(minimum, s.trail_distance*s.trail_multiplier*scale))
             last_direction = direction
         elif position is not None:
             p = position
