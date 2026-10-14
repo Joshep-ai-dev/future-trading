@@ -18,23 +18,27 @@ export function resizeChart(chart:IChartApi,element:HTMLDivElement,initialView:(
   return ()=>observer.disconnect();
 }
 
-export default function ChartTools({chartRef,valueLabel='Price',onLatest,onEarlier,loading=false,hasMore=false}: {
+export default function ChartTools({chartRef,valueLabel='Price',onLatest,onEarlier,onNavigate,loading=false,hasMore=false}: {
   chartRef: {current:IChartApi|null}; valueLabel?:string; onLatest?:()=>void;
   onEarlier?:()=>void; loading?:boolean; hasMore?:boolean;
+  onNavigate?:()=>void;
 }) {
   function zoomTime(factor:number) {
+    onNavigate?.();
     const scale=chartRef.current?.timeScale(), range=scale?.getVisibleLogicalRange();
     if(!scale||!range)return;
     const middle=(range.from+range.to)/2, span=Math.max(8,(range.to-range.from)*factor);
     scale.setVisibleLogicalRange({from:middle-span/2,to:middle+span/2});
   }
   function zoomValue(factor:number) {
+    onNavigate?.();
     const scale=chartRef.current?.priceScale('right'),range=scale?.getVisibleRange();
     if(!scale||!range)return;
     const middle=(range.from+range.to)/2,span=Math.max(.00001,(range.to-range.from)*factor);
     scale.setAutoScale(false);scale.setVisibleRange({from:middle-span/2,to:middle+span/2});
   }
   function reset() {
+    onNavigate?.();
     chartRef.current?.priceScale('right').setAutoScale(true);
     chartRef.current?.timeScale().fitContent();
   }

@@ -1,4 +1,5 @@
 import {StopOverlay} from './StopOverlay';
+import {candleLogical,captureViewport,restoreViewport} from './chartViewport';
 import {useEffect,useRef,useState} from 'react';
 import {CandlestickSeries,ColorType,createChart,createSeriesMarkers,LineSeries,type IChartApi,type UTCTimestamp,type SeriesMarker} from 'lightweight-charts';
 import {fillMarker,FillLabels} from './fillMarkers';
@@ -13,13 +14,20 @@ type Props=Data&{sessionId:number;showSma:boolean};
 export default function PaperPriceChart(props:Props) {
   const container=useRef<HTMLDivElement>(null),chartRef=useRef<IChartApi|null>(null);
   const update=useRef<(data:Data)=>void>(()=>{});
-  const following=useRef(true),count=useRef(0);
+  const following=useRef(true),lastTime=useRef<number|undefined>(undefined);
   const [follow,setFollow]=useState(true),[readout,setReadout]=useState('Hover for candle time and prices.');
-  function latest(){following.current=true;setFollow(true);chartRef.current?.timeScale().setVisibleLogicalRange({from:Math.max(0,count.current-150),to:count.current+5});}
+  function holdView(){following.current=false;setFollow(false);}
+  function latest(){
+    following.current=true;setFollow(true);
+    const chart=chartRef.current;if(!chart)return;
+    const index=candleLogical(chart,lastTime.current);if(index===null)return;
+    const range=chart.timeScale().getVisibleLogicalRange(),span=range?range.to-range.from:155;
+    chart.timeScale().setVisibleLogicalRange({from:index+6-span,to:index+6});
+  }
   useEffect(()=>{
     if(!container.current)return;
     following.current=true;setFollow(true);
-    const chart=createChart(container.current,{autoSize:false,...chartInteraction,layout:{background:{type:ColorType.Solid,color:'#10141d'},textColor:'#7d8da5'},timeScale:{timeVisible:true,minBarSpacing:.001,lockVisibleTimeRangeOnResize:true},grid:{vertLines:{visible:false},horzLines:{color:'#202836'}}});
+    const chart=createChart(container.current,{autoSize:false,...chartInteraction,layout:{background:{type:ColorType.Solid,color:'#10141d'},textColor:'#7d8da5'},timeScale:{timeVisible:true,minBarSpacing:.001,lockVisibleTimeRangeOnResize:true,shiftVisibleRangeOnNewBar:false,allowShiftVisibleRangeOnWhitespaceReplacement:false},grid:{vertLines:{visible:false},horzLines:{color:'#202836'}}});
     chartRef.current=chart;
     const price=chart.addSeries(CandlestickSeries,{borderVisible:false,upColor:'#26a69a',downColor:'#ef5350',wickUpColor:'#26a69a',wickDownColor:'#ef5350',priceFormat:{type:'price',precision:3,minMove:.001}});
     price.priceScale().applyOptions({scaleMargins:{top:.18,bottom:.22}});
@@ -31,8 +39,8 @@ export default function PaperPriceChart(props:Props) {
     let byTime=new Map<number,Analysis['candles'][number]>(),previousTime:number|undefined,previous:Data|null=null;
     let fillReadouts=new Map<number,string[]>();
     update.current=data=>{
-      const visible=chart.timeScale().getVisibleRange();
-      byTime=new Map(data.candles.map(c=>[c.time,c]));count.current=data.candles.length;
+      const viewport=captureViewport(chart,previousTime);
+      byTime=new Map(data.candles.map(c=>[c.time,c]));
       const stamp=data.candles.at(-1)?.time;
       if(previous&&stamp===previousTime&&data.candles.length===previous.candles.length&&data.candles.length){const last=data.candles.at(-1)!;price.update({...last,time:last.time as UTCTimestamp});}
       else price.setData(data.candles.map(c=>({...c,time:c.time as UTCTimestamp})));
@@ -60,8 +68,11 @@ export default function PaperPriceChart(props:Props) {
       for(const point of points){const time=Number(point.time);fillReadouts.set(time,[...(fillReadouts.get(time)??[]),point.text!.replaceAll("\n"," ")]);}
       fillLabels.setMarkers(points,data.candles);
       markers.setMarkers(points.sort((a,b)=>Number(a.time)-Number(b.time)).map(m=>({...m,text:undefined,size:0})));
-      if(following.current&&(stamp!==previousTime||previousTime===undefined))chart.timeScale().setVisibleLogicalRange({from:Math.max(0,count.current-150),to:count.current+5});
-      else if(!following.current&&visible)chart.timeScale().setVisibleRange(visible);
+      lastTime.current=stamp;
+      if(previousTime===undefined&&stamp!==undefined){
+        const index=candleLogical(chart,stamp);
+        if(index!==null)chart.timeScale().setVisibleLogicalRange({from:Math.max(0,index-149),to:index+6});
+      }else restoreViewport(chart,viewport,stamp,following.current);
       previousTime=stamp;previous=data;
     };
     chart.subscribeCrosshairMove(event=>{
@@ -72,5 +83,5 @@ export default function PaperPriceChart(props:Props) {
     return ()=>{stopResize();update.current=()=>{};chartRef.current=null;chart.remove();};
   },[props.sessionId,props.showSma]);
   useEffect(()=>{update.current(props);},[props]);
-  return <><div className="chart-actions"><ChartTools chartRef={chartRef} onLatest={latest}/><label className="follow-toggle"><input type="checkbox" checked={follow} onChange={e=>{following.current=e.target.checked;setFollow(e.target.checked);if(e.target.checked)latest();}}/> Follow price</label></div><p className="readout">{readout}</p><div className="chart-resize"><div ref={container} className="chart-container position-chart" aria-label="Virtual bot price chart with buys, sells, exits and trailing stops"/></div></>;
+  return <><div className="chart-actions"><ChartTools chartRef={chartRef} onLatest={latest} onNavigate={holdView}/><label className="follow-toggle"><input type="checkbox" checked={follow} onChange={e=>{following.current=e.target.checked;setFollow(e.target.checked);if(e.target.checked)latest();}}/> Follow price</label></div><p className="readout">{readout}</p><div className="chart-resize"><div ref={container} onWheelCapture={holdView} onPointerDownCapture={holdView} className="chart-container position-chart" aria-label="Virtual bot price chart with buys, sells, exits and trailing stops"/></div></>;
 }
