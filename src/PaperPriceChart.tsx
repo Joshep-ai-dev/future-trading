@@ -17,21 +17,24 @@ export default function PaperPriceChart(props:Props) {
   useEffect(()=>{
     if(!container.current)return;
     following.current=true;setFollow(true);
-    const chart=createChart(container.current,{autoSize:false,...chartInteraction,layout:{background:{type:ColorType.Solid,color:'#111e29'},textColor:'#aebfcb'},timeScale:{timeVisible:true,minBarSpacing:.001,lockVisibleTimeRangeOnResize:true},grid:{vertLines:{visible:false},horzLines:{color:'#22323f'}}});
+    const chart=createChart(container.current,{autoSize:false,...chartInteraction,layout:{background:{type:ColorType.Solid,color:'#10141d'},textColor:'#7d8da5'},timeScale:{timeVisible:true,minBarSpacing:.001,lockVisibleTimeRangeOnResize:true},grid:{vertLines:{visible:false},horzLines:{color:'#202836'}}});
     chartRef.current=chart;
-    const price=chart.addSeries(CandlestickSeries,{borderVisible:false,upColor:'#84bba1',downColor:'#c57f86',wickUpColor:'#84bba1',wickDownColor:'#c57f86',priceFormat:{type:'price',precision:3,minMove:.001}});
+    const price=chart.addSeries(CandlestickSeries,{borderVisible:false,upColor:'#26a69a',downColor:'#ef5350',wickUpColor:'#26a69a',wickDownColor:'#ef5350',priceFormat:{type:'price',precision:3,minMove:.001}});
     const markers=createSeriesMarkers(price,[]);
-    const overlays=([['bbBasis','#63d6d0','BB middle'],['bbUpper','#aebfcb','BB upper'],['bbLower','#aebfcb','BB lower'],['trendSma','#d7ad69','Trend SMA']] as const).filter(([key])=>key!=='trendSma'||props.showSma).map(([key,color,title])=>({key,series:chart.addSeries(LineSeries,{color,lineWidth:1,title,priceLineVisible:false,lastValueVisible:false})}));
+    const overlays=([['bbBasis','#63d6d0','BB middle'],['bbUpper','#7d8da5','BB upper'],['bbLower','#7d8da5','BB lower'],['trendSma','#d7ad69','Trend SMA']] as const).filter(([key])=>key!=='trendSma'||props.showSma).map(([key,color,title])=>({key,series:chart.addSeries(LineSeries,{color,lineWidth:1,title,priceLineVisible:false,lastValueVisible:false})}));
     const stops=chart.addSeries(LineSeries,{color:'#ff8291',lineWidth:2,lineType:LineType.WithSteps,title:'Active stop',priceLineVisible:false,lastValueVisible:false});
     const entry=chart.addSeries(LineSeries,{color:'#88bfff',lineWidth:2,title:'Open entry',priceLineVisible:false});
-    let byTime=new Map<number,Analysis['candles'][number]>(),previousTime:number|undefined;
+    let byTime=new Map<number,Analysis['candles'][number]>(),previousTime:number|undefined,previous:Data|null=null;
     update.current=data=>{
       const visible=chart.timeScale().getVisibleRange();
       byTime=new Map(data.candles.map(c=>[c.time,c]));count.current=data.candles.length;
       const stamp=data.candles.at(-1)?.time;
-      price.setData(data.candles.map(c=>({...c,time:c.time as UTCTimestamp})));
-      for(const {key,series} of overlays)series.setData(data.indicators.map(p=>p[key]===null?{time:p.time as UTCTimestamp}:{time:p.time as UTCTimestamp,value:p[key]}));
-      stops.setData(data.stops.map(p=>p.price===null?{time:p.time as UTCTimestamp}:{time:p.time as UTCTimestamp,value:p.price}));
+      if(previous&&stamp===previousTime&&data.candles.length===previous.candles.length&&data.candles.length){const last=data.candles.at(-1)!;price.update({...last,time:last.time as UTCTimestamp});}
+      else price.setData(data.candles.map(c=>({...c,time:c.time as UTCTimestamp})));
+      if(!previous||data.indicators.at(-1)!==previous.indicators.at(-1)||data.indicators.length!==previous.indicators.length)
+        for(const {key,series} of overlays)series.setData(data.indicators.map(p=>p[key]===null?{time:p.time as UTCTimestamp}:{time:p.time as UTCTimestamp,value:p[key]}));
+      if(!previous||data.stops.at(-1)!==previous.stops.at(-1)||data.stops.length!==previous.stops.length)
+        stops.setData(data.stops.map(p=>p.price===null?{time:p.time as UTCTimestamp}:{time:p.time as UTCTimestamp,value:p.price}));
       const p=data.position,first=data.candles[0]?.time;
       if(p&&stamp!==undefined&&first!==undefined){
         const from=Math.max(first,p.entry_time);
@@ -47,7 +50,7 @@ export default function PaperPriceChart(props:Props) {
       markers.setMarkers(points.sort((a,b)=>Number(a.time)-Number(b.time)));
       if(following.current&&(stamp!==previousTime||previousTime===undefined))chart.timeScale().setVisibleLogicalRange({from:Math.max(0,count.current-150),to:count.current+5});
       else if(!following.current&&visible)chart.timeScale().setVisibleRange(visible);
-      previousTime=stamp;
+      previousTime=stamp;previous=data;
     };
     chart.subscribeCrosshairMove(event=>{
       const c=typeof event.time==='number'?byTime.get(event.time):undefined;
@@ -57,5 +60,5 @@ export default function PaperPriceChart(props:Props) {
     return ()=>{stopResize();update.current=()=>{};chartRef.current=null;chart.remove();};
   },[props.sessionId,props.showSma]);
   useEffect(()=>{update.current(props);},[props]);
-  return <><div className="form-actions"><label><input type="checkbox" checked={follow} onChange={e=>{following.current=e.target.checked;setFollow(e.target.checked);if(e.target.checked)latest();}}/> Follow bot clock</label></div><ChartTools chartRef={chartRef} onLatest={latest}/><p className="readout">{readout}</p><div className="chart-resize"><div ref={container} className="chart-container position-chart" aria-label="Virtual bot price chart with buys, sells, exits and trailing stops"/></div></>;
+  return <><div className="chart-actions"><ChartTools chartRef={chartRef} onLatest={latest}/><label className="follow-toggle"><input type="checkbox" checked={follow} onChange={e=>{following.current=e.target.checked;setFollow(e.target.checked);if(e.target.checked)latest();}}/> Follow price</label></div><p className="readout">{readout}</p><div className="chart-resize"><div ref={container} className="chart-container position-chart" aria-label="Virtual bot price chart with buys, sells, exits and trailing stops"/></div></>;
 }

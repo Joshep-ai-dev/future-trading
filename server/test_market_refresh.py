@@ -55,6 +55,27 @@ class MarketRefreshTests(unittest.TestCase):
 
 
 class BBIntegrationTests(unittest.TestCase):
+    def test_full_period_keeps_position_across_old_validation_boundary(self):
+        from .bb_reversal_adapter import run_bb_reversal_backtest
+        from .strategy import BacktestRequest, seconds
+        cfg=BacktestRequest(start_date='2026-01-01',end_date='2026-01-03',
+            validation_date='2026-01-02',bb_reversal={'use_sma_trend_adjustment':False})
+        index=pd.date_range('2026-01-01T23:55Z',periods=3,freq='5min')
+        frame=pd.DataFrame(dict(open=[99.5,100.,100.],high=[100.5]*3,
+            low=[98.9,99.8,99.8],close=[100.]*3),index=index)
+        def calculated(data,*args,**kwargs):
+            return data.assign(bb_basis=100.,bb_lower=99.,bb_upper=101.,atr=1.,
+                bb_width_pct=2.,adx=30.,trend_sma=100.,sma_ready=True,
+                sma_uptrend=False,sma_downtrend=False)
+        with patch('server.bb_outer_reversal.calculate',side_effect=calculated):
+            result=run_bb_reversal_backtest(frame,cfg)
+        trades=result['backtest']['trades']
+        self.assertEqual(len(trades),1)
+        self.assertLess(trades[0]['entryTime'],seconds(cfg.validation_date))
+        self.assertGreater(trades[0]['exitTime'],seconds(cfg.validation_date))
+        self.assertEqual(trades[0]['exitReason'],'period_end')
+        self.assertIsNone(BacktestRequest(start_date='2026-01-01',end_date='2026-01-01').validation_date)
+
     def test_active_api_only_accepts_bb_strategy(self):
         from .app import BBBacktestRequest, PaperStartRequest
         from pydantic import ValidationError
@@ -89,10 +110,12 @@ class BBIntegrationTests(unittest.TestCase):
             result=backtest(cfg)
         json.dumps(result,allow_nan=False)
         self.assertEqual(result['executionTimeframe'],'5m')
-        self.assertEqual(result['research']['end'],result['validation']['start'])
+        self.assertNotIn('research',result)
+        self.assertNotIn('validation',result)
+        self.assertEqual(result['backtest']['name'],'Backtest')
         self.assertIn('bbUpper',result['indicators'][0])
         self.assertIn('trendSma',result['indicators'][0])
-        self.assertEqual(result['research']['summary']['fees'],0)
+        self.assertEqual(result['backtest']['summary']['fees'],0)
 
     def test_unknown_or_invalid_strategy_parameters_are_rejected(self):
         from .strategy import BacktestRequest

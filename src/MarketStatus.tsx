@@ -28,9 +28,8 @@ export default function MarketStatus({onUpdated}:{onUpdated:()=>void}) {
     try {accept(await api<Status>('/api/market-refresh',{method:'POST'}));}
     catch(e){setError(String(e));}finally{setBusy(false);}
   }
-  return <section aria-label="Market data refresh"><p>OKX candle downloads run on startup and every hour while the backend is running. {status?.running?'Downloading missing candles…':status?.lastSuccess?`Last successful check: ${date(status.lastSuccess)}. Added ${status.addedRows.toLocaleString()} minutes.`:'Waiting for the first download.'} {status?.latestCandle?`Latest downloaded candle: ${date(status.latestCandle)}.`:''} {status?.nextRefresh&&!status.running?`Next check: ${date(status.nextRefresh)}.`:''}</p>
-    {status?.running&&<p role="status">Fetched {status.pages??0} pages; {(status.pendingRows??0).toLocaleString()} completed minutes pending save.</p>}
-    <button type="button" className="secondary" disabled={busy||status?.running} onClick={()=>void refresh()}>{busy?'Downloading…':'Download latest prices now'}</button>
-    {(error||status?.error)&&<p role="alert" className="error">Download failed: {error||status?.error}. Existing prices remain available; the hourly job will retry.</p>}
-  </section>;
+  return <div className="data-strip" aria-label="Market data refresh"><div className="data-status"><i className={`status-dot ${error||status?.error?'dot-error':status?.running?'dot-busy':''}`}/><span>{error||status?.error?'Data sync needs attention':status?.running?'Syncing market history':'OKX market data'}</span><span className="data-muted">{status?.lastSuccess?`Checked ${date(status.lastSuccess)}`:'Hourly sync enabled'}</span></div>
+    <div className="data-actions"><details><summary>Data details</summary><div className="data-popover"><p>Confirmed candles download on startup and hourly. The running live bot adds 30-second checks.</p><p>Latest downloaded candle: {status?.latestCandle?date(status.latestCandle):'Waiting'}<br/>Next scheduled check: {status?.nextRefresh?date(status.nextRefresh):'Waiting'}</p>{status?.running&&<p>Fetched {status.pages??0} pages; {(status.pendingRows??0).toLocaleString()} minutes pending save.</p>}</div></details><button type="button" className="text-button" disabled={busy||status?.running} onClick={()=>void refresh()}>{busy||status?.running?'Syncing…':'↻ Sync data'}</button></div>
+    {(error||status?.error)&&<p role="alert" className="data-error">{error||status?.error}. Existing data is available; automatic sync will retry.</p>}
+  </div>;
 }

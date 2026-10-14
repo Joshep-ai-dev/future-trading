@@ -14,7 +14,7 @@ def run_bb_reversal_backtest(frame, settings):
     duration = TIMEFRAMES[settings.entry_timeframe]
     config = replace(Settings(**settings.bb_reversal), initial_capital=settings.capital,
                      min_tick=settings.tick_size, min_tick_unit='price', trade_mode='Both', leverage=settings.max_leverage)
-    start, split, end = (seconds(settings.start_date), seconds(settings.validation_date),
+    start, end = (seconds(settings.start_date),
                          seconds(settings.end_date+timedelta(days=1)))
     clean = frame.dropna(subset=['open', 'high', 'low', 'close'])
     clean = clean.loc[clean.index + pd.Timedelta(seconds=duration) <= pd.Timestamp(end, unit='s', tz='UTC')]
@@ -67,5 +67,5 @@ def run_bb_reversal_backtest(frame, settings):
             point[key] = float(bar[source]) if np.isfinite(bar[source]) else None
         points.append(point)
     return dict(settings=settings.model_dump(mode='json'), strategyName='BB Outer Band Reversal + Trailing SL',
-        executionTimeframe=settings.entry_timeframe, barSeconds=duration, research=period(start,split,'Research'),
-        validation=period(split,end,'Validation'), candles=candles, indicators=points)
+        executionTimeframe=settings.entry_timeframe, barSeconds=duration,
+        backtest=period(start,end,'Backtest'), candles=candles, indicators=points)

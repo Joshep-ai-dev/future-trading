@@ -11,7 +11,7 @@ class BacktestRequest(BaseModel):
     model_config = ConfigDict(extra='forbid', allow_inf_nan=False)
     start_date: date
     end_date: date
-    validation_date: date
+    validation_date: date | None = None  # Accepted only for older saved settings.
     strategy: Literal['bb_outer_reversal'] = 'bb_outer_reversal'
     bb_reversal: dict = Field(default_factory=dict)
     direction_active: bool = True
@@ -45,8 +45,8 @@ class BacktestRequest(BaseModel):
 
     @model_validator(mode='after')
     def check_ranges(self):
-        if not self.start_date < self.validation_date <= self.end_date:
-            raise ValueError('Validation date must be after the start date and on or before the end date.')
+        if self.end_date < self.start_date:
+            raise ValueError('End date must be on or after the start date.')
         from .bb_outer_reversal import Settings
         try:
             config = Settings(**self.bb_reversal)

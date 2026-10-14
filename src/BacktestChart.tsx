@@ -1,19 +1,27 @@
 import {useEffect, useRef, useState} from 'react';
-import {CandlestickSeries, ColorType, createChart, createSeriesMarkers, LineSeries, BaselineSeries, LineStyle, LineType, type IChartApi, type UTCTimestamp, type SeriesMarker} from 'lightweight-charts';
+import {CandlestickSeries, ColorType, createChart, createSeriesMarkers, LineSeries, BaselineSeries, LineStyle, LineType, type IChartApi, type ISeriesApi, type UTCTimestamp, type SeriesMarker} from 'lightweight-charts';
 import ChartTools,{chartInteraction,resizeChart} from './ChartTools';
 import {fmt, type Analysis, type PeriodResult, type Trade, type IndicatorPoint, type BacktestSettings} from './types';
 
 export function EquityChart({period}: {period: Pick<PeriodResult,'name'|'equity'>}) {
   const ref = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi|null>(null);
+  const lineRef = useRef<ISeriesApi<'Line'>|null>(null);
+  const hasData = useRef(false);
+  const seriesName = useRef(period.name);
   useEffect(() => {
     if (!ref.current) return;
-    const chart = createChart(ref.current, {autoSize:false, ...chartInteraction, layout:{background:{type:ColorType.Solid,color:'#111e29'},textColor:'#aebfcb'},timeScale:{timeVisible:true,minBarSpacing:.001,lockVisibleTimeRangeOnResize:true},grid:{vertLines:{visible:false},horzLines:{color:'#22323f'}}});
+    const chart = createChart(ref.current, {autoSize:false, ...chartInteraction, layout:{background:{type:ColorType.Solid,color:'#10141d'},textColor:'#7d8da5'},timeScale:{timeVisible:true,minBarSpacing:.001,lockVisibleTimeRangeOnResize:true},grid:{vertLines:{visible:false},horzLines:{color:'#202836'}}});
     chartRef.current=chart;
-    chart.addSeries(LineSeries,{color:'#6ce4bc',priceLineVisible:false,title:'Net equity'}).setData(period.equity.map(p=>({...p,time:p.time as UTCTimestamp})));
+    lineRef.current=chart.addSeries(LineSeries,{color:'#6ce4bc',priceLineVisible:false,title:'Net equity'});
     const stopResize=resizeChart(chart,ref.current,()=>chart.timeScale().fitContent());
-    return ()=>{stopResize();chartRef.current=null;chart.remove();};
-  },[period]);
+    return ()=>{stopResize();lineRef.current=null;chartRef.current=null;hasData.current=false;chart.remove();};
+  },[]);
+  useEffect(()=>{
+    lineRef.current?.setData(period.equity.map(p=>({...p,time:p.time as UTCTimestamp})));
+    if((!hasData.current||seriesName.current!==period.name)&&period.equity.length){chartRef.current?.timeScale().fitContent();hasData.current=true;}
+    seriesName.current=period.name;
+  },[period.equity,period.name]);
   return <><ChartTools chartRef={chartRef} valueLabel="Amount"/><div className="chart-resize equity-resize"><div ref={ref} className="chart-container equity-chart" aria-label={`${period.name} equity after trading costs`}/></div></>;
 }
 
@@ -26,13 +34,13 @@ export default function BacktestChart({candles,trades,selected,onSelect,indicato
     const focus = selected ? candles.findIndex(c=>c.time>=selected.signalTime) : -1;
     const exit = selected ? candles.findIndex(c=>c.time>=selected.exitTime) : -1;
     const view = candles;
-    const chart = createChart(ref.current,{autoSize:false,...chartInteraction,layout:{background:{type:ColorType.Solid,color:'#111e29'},textColor:'#aebfcb'},timeScale:{timeVisible:true,minBarSpacing:.001,lockVisibleTimeRangeOnResize:true},grid:{vertLines:{visible:false},horzLines:{color:'#22323f'}}});
+    const chart = createChart(ref.current,{autoSize:false,...chartInteraction,layout:{background:{type:ColorType.Solid,color:'#10141d'},textColor:'#7d8da5'},timeScale:{timeVisible:true,minBarSpacing:.001,lockVisibleTimeRangeOnResize:true},grid:{vertLines:{visible:false},horzLines:{color:'#202836'}}});
     chartRef.current=chart;
-    const price = chart.addSeries(CandlestickSeries,{borderVisible:false,upColor:'#84bba1',downColor:'#c57f86',wickUpColor:'#84bba1',wickDownColor:'#c57f86',priceFormat:{type:'price',precision:3,minMove:.001}});
+    const price = chart.addSeries(CandlestickSeries,{borderVisible:false,upColor:'#26a69a',downColor:'#ef5350',wickUpColor:'#26a69a',wickDownColor:'#ef5350',priceFormat:{type:'price',precision:3,minMove:.001}});
     price.setData(view.map(c=>({...c,time:c.time as UTCTimestamp})));
     if(indicators.length) {
       if(indicatorSettings.strategy==='chartart_v12'||indicatorSettings.strategy==='bb_outer_reversal') {
-        for(const [key,color,title] of [['bbBasis','#63d6d0','BB basis'],['bbUpper','#aebfcb','BB upper'],['bbLower','#aebfcb','BB lower']] as const) {
+        for(const [key,color,title] of [['bbBasis','#63d6d0','BB basis'],['bbUpper','#7d8da5','BB upper'],['bbLower','#7d8da5','BB lower']] as const) {
           chart.addSeries(LineSeries,{color,lineWidth:1,title,priceLineVisible:false,lastValueVisible:false}).setData(
             indicators.map(p=>p[key]==null?{time:p.time as UTCTimestamp}:{time:p.time as UTCTimestamp,value:p[key]}));
         }

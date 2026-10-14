@@ -17,7 +17,7 @@ export type BacktestSettings = {
   direction_active: boolean; direction_timeframe: '15m'|'30m'|'1h'|'4h';
   setup_active: boolean; setup_timeframe: '5m'|'15m'|'30m'|'1h';
   entry_active: boolean; entry_timeframe: '1m'|'3m'|'5m'|'10m'|'15m'|'30m'|'1h'|'4h'|'1d';
-  start_date: string; end_date: string; validation_date: string; capital: number;
+  start_date: string; end_date: string; validation_date?: string; capital: number;
   tick_size: number; fee_bps: number; spread: number; slippage: number; funding_bps: number;
   max_leverage: number; session_start: number; session_end: number; session_timezone: string;
 };
@@ -45,6 +45,6 @@ export type PeriodResult = {
 };
 export type Confirmation = {stage: string; timeframe: string; closeTime: number; ema20: number; ema50: number; rsi20: number | null};
 export type IndicatorPoint = {time: number; ema20: number | null; ema50: number | null; rsi20: number | null; bbBasis?: number | null; bbUpper?: number | null; bbLower?: number | null; trendSma?:number|null; adx?:number|null; atr?:number|null; bbWidthPct?:number|null};
-export type BacktestResult = {strategyName: string; executionTimeframe: string; barSeconds: number; indicators: IndicatorPoint[]; settings: BacktestSettings; research: PeriodResult; validation: PeriodResult; candles: Analysis['candles']};
+export type BacktestResult = {strategyName: string; executionTimeframe: string; barSeconds: number; indicators: IndicatorPoint[]; settings: BacktestSettings; backtest: PeriodResult; candles: Analysis['candles']};
 
 export type CandlePage = {candles: Analysis["candles"]; hasMore: boolean; nextBefore: number | null};

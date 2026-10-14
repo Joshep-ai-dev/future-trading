@@ -49,6 +49,12 @@ class PaperTrading:
             session['formingCandle'] = None if self.state.get('completed') else forming_candle(
                 self.state.get('minuteCandles',[]),clock,TIMEFRAMES[self.state['settings']['entry_timeframe']],synthetic=replay)
             session['displayPrice'] = session['formingCandle']['close'] if session['formingCandle'] else self.state['latestPrice']
+            if replay:
+                duration = TIMEFRAMES[self.state['settings']['entry_timeframe']]
+                window = max(duration, self.state.get('speed',300)*3,120)
+                left = (int(max(0,clock-window))//duration)*duration
+                session['animationMinutes'] = [row for row in self.state.get('minuteCandles',[])
+                                               if left <= row['time'] <= clock]
             position = self.state['openPosition']
             session['displayEquity'] = (self.state['balance']+(session['displayPrice']-position['entry_price'])*position['direction']*position['quantity']
                 if position and session['displayPrice'] is not None else self.state['equity'])
