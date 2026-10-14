@@ -16,7 +16,7 @@ import {fmt,type Analysis} from './types';
 import type {PaperTrade,Position} from './PaperTrading';
 
 type Point={time:number;bbBasis:number|null;bbUpper:number|null;bbLower:number|null;trendSma:number|null};
-type Data={candles:Analysis['candles'];indicators:Point[];stops:{time:number;price:number|null}[];trades:PaperTrade[];position:Position|null;indicatorClock:number};
+type Data={candles:Analysis['candles'];indicators:Point[];stops:{time:number;price:number|null}[];trades:PaperTrade[];positions:Position[];indicatorClock:number};
 type Props=Data&{sessionId:number;showSma:boolean;timeframe:string;atrLength:number;adxLength:number};
 
 export default function PaperPriceChart(props:Props) {
@@ -56,7 +56,7 @@ export default function PaperPriceChart(props:Props) {
     const fillLabels=new FillLabels();price.attachPrimitive(fillLabels);
     const overlays=([['bbBasis','#63d6d0','BB middle'],['bbUpper','#7d8da5','BB upper'],['bbLower','#7d8da5','BB lower'],['trendSma','#d7ad69','Trend SMA']] as const).filter(([key])=>key!=='trendSma'||props.showSma).map(([key,color,title])=>({key,series:chart.addSeries(LineSeries,{color,lineWidth:1,title,priceLineVisible:false,lastValueVisible:false})}));
     const stopOverlay=new StopOverlay();price.attachPrimitive(stopOverlay);
-    const entry=chart.addSeries(LineSeries,{color:'#88bfff',lineWidth:2,title:'Open entry',priceLineVisible:false});
+    const entries=[1,-1].map(side=>({side,series:chart.addSeries(LineSeries,{color:side===1?'#38d9ff':'#ff8191',lineWidth:1,title:side===1?'Long entry':'Short entry',priceLineVisible:false})}));
     let oscillatorData:ReturnType<typeof chartOscillators>=[],oscillatorKey='',panelConfig=configRef.current;
     const oscillatorSeries=new Map<IndicatorKind,ISeriesApi<'Line'>>();
     let adxDecoration:AdxDecoration|null=null;
@@ -161,12 +161,15 @@ export default function PaperPriceChart(props:Props) {
       const completed=data.candles.filter(c=>c.time+duration<=data.indicatorClock);
       const nextKey=`${completed.length}:${completed[0]?.time}:${completed.at(-1)?.time}`;
       if(nextKey!==oscillatorKey){oscillatorKey=nextKey;oscillatorData=chartOscillators(completed,duration,panelConfig.atrLength,panelConfig.adxLength,panelConfig.atrSmoothing,panelConfig.rsiLength);paintOscillators();}
-      const p=data.position,first=data.candles[0]?.time;
+      const first=data.candles[0]?.time;
+      for(const {side,series:entry} of entries){
+      const p=data.positions.find(p=>p.direction===side);
       if(p&&stamp!==undefined&&first!==undefined){
         const from=Math.max(first,p.entry_time);
         entry.setData((from===stamp?[from]:[from,stamp]).map(time=>({time:time as UTCTimestamp,value:p.entry_price})));
       }else entry.setData([]);
-      stopOverlay.setPaths([...data.trades,...(p?[p]:[])].map(t=>{
+      }
+      stopOverlay.setPaths([...data.trades,...data.positions].map(t=>{
         const to='exit_time' in t?Number(t.exit_time):stamp??t.entry_time;
         const initial=t.initial_stop??t.stop;
         const fallback=[{time:t.entry_time,price:initial,reason:'initial'},...data.stops.filter(h=>h.time>t.entry_time&&h.time<to&&h.price!==null).map(h=>({time:h.time,price:h.price!,reason:h.price===initial?'initial':'trailing'}))];
@@ -178,7 +181,7 @@ export default function PaperPriceChart(props:Props) {
         addEntry(t,`${t.direction===1?'BUY':'SELL'} #${t.id}`,`entry-${t.id}`);
         if(byTime.has(t.exit_time))points.push(fillMarker(t.exit_time,t.exit_price,`CLOSE #${t.id}`,'close',t.direction,`close-${t.id}`,t.quantity,t.pnl));
       }
-      if(p)addEntry(p,`${p.direction===1?'BUY':'SELL'} OPEN`,'entry-open');
+      for(const p of data.positions)addEntry(p,`${p.direction===1?'BUY':'SELL'} OPEN`,`entry-open-${p.direction}`);
       fillReadouts=new Map();
       for(const point of points){const time=Number(point.time);fillReadouts.set(time,[...(fillReadouts.get(time)??[]),point.text!.replaceAll("\n"," ")]);}
       fillLabels.setMarkers(points,data.candles);
