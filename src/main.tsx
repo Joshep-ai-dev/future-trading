@@ -4,6 +4,7 @@ import {api} from './api';
 import Chart from './Chart';
 import Tabs,{type Page} from './Tabs';
 import BacktestPanel from './BacktestPanel';
+import MarketStatus from './MarketStatus';
 import {type Analysis,type Parameters} from './types';
 import './style.css';
 
@@ -22,10 +23,15 @@ function App() {
   }
   useEffect(()=>{void run();},[]);
   const dirty = data && JSON.stringify(settings)!==JSON.stringify(data.params);
+  async function reloadDownloadedPrices() {
+    try {setData(await api<Analysis>('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({timeframe:data?.params.timeframe??defaults.timeframe})}));}
+    catch(e){setError(String(e));}
+  }
   // Compare values rather than object insertion order from the API.
   const changed = dirty && Object.keys(settings).some(k=>settings[k as keyof Parameters]!==data.params[k as keyof Parameters]);
   return <main><header><div><small>OKX · XAG-USDT-SWAP · LOCAL CSV</small><h1>Silver research</h1><p>Explore prices, test your strategy, and inspect each trade.</p></div><span className="badge">Historical research</span></header>
     <Tabs value={page} onChange={navigate}/>
+    <MarketStatus onUpdated={()=>void reloadDownloadedPrices()}/>
     <div id="page-price" role="tabpanel" aria-labelledby="tab-price" hidden={page!=='price'}>
     <form className="price-form" onSubmit={run}><fieldset disabled={busy}><div className="settings-grid">
       <label>Bar size<select value={settings.timeframe} onChange={e=>setSettings({...settings,timeframe:e.target.value as Parameters['timeframe']})}>{['1m','3m','5m','10m','15m','30m','1h','4h','1d'].map(t=><option key={t}>{t}</option>)}</select></label>
@@ -34,7 +40,7 @@ function App() {
     {busy && <p role="status">Reading CSV…</p>}
     {data && <><p className="caption">Results: {data.params.timeframe} bars · latest bar {new Date(data.asOf*1000).toISOString()}.</p>
       <section><h2>Price · {data.params.timeframe}</h2><Chart data={data}/></section>
-      <footer>{data.quality.minuteBars.toLocaleString()} source minutes · {data.quality.missingMinutes.toLocaleString()} missing minutes · {data.quality.excludedBars} incomplete {data.params.timeframe} bars excluded.<p>Source: data/OKX_XAG-USDT-SWAP_1m.csv. CSV is read-only.</p></footer></>}
+      <footer>{data.quality.minuteBars.toLocaleString()} source minutes · {data.quality.missingMinutes.toLocaleString()} missing minutes · {data.quality.excludedBars} incomplete {data.params.timeframe} bars excluded.<p>Source: original OKX CSV plus hourly downloaded candle cache.</p></footer></>}
     </div>
     {data?<BacktestPanel range={data.dataRange} view={page} onViewChange={navigate}/>:page!=='price'&&<p role="status">{error||'Loading market data…'}</p>}
   </main>;

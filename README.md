@@ -1,6 +1,22 @@
 # Silver / Price research
 
-Local historical price dashboard using `data/OKX_XAG-USDT-SWAP_1m.csv`. No exchange calls or orders.
+Price research dashboard using the original OKX CSV plus hourly public candle downloads. No exchange orders are placed.
+
+## Hourly price downloads
+
+The backend catches up missing **1-minute XAG-USDT-SWAP candles** on startup and checks again 3,600 seconds after each refresh completes. Chart timeframes aggregate these minutes. The original CSV stays untouched; new confirmed candles are saved atomically to `data/OKX_XAG-USDT-SWAP_1m_updates.csv`. Downloads paginate from the latest available candle back to the local history boundary, skipping unfinished candles. No API key is required; internet access to `www.okx.com` is required.
+
+The dashboard shows download status, latest downloaded candle, errors and next check. **Download latest prices now** triggers an immediate check. The price chart reloads after a successful download. Backtests retain their last result until **Run backtest** is clicked; date selections are preserved as available history grows. Downloads run only while the backend is running and catch up on restart. Failures preserve existing data and retry on the next hourly run.
+
+API: `GET /api/market-status`, `POST /api/market-refresh`. One-off catch-up: `.venv/Scripts/python.exe -m server.market_refresh` (stop the backend first to avoid two cache writers).
+
+## BB Outer Band Reversal + Trailing SL
+
+Select **BB Outer Band Reversal + Trailing SL** in Strategy settings. Editable inputs include trading direction, BB/ATR/ADX filters, rebound window, absolute stop and trailing distances, trend SMA, countertrend percentages and fixed quantity. Charts show Bollinger bands, trend SMA, trade markers and selected-trade stop history. Exports include ADX, ATR and BB width.
+
+This strategy uses Pine's fixed quantity, close-price entries, continuous calendar trading and zero modeled costs. The other strategies' risk sizing, fees, spread, funding, session and weekend filters do not apply. Filled entries alternate direction, including after stop-outs; Long Only and Short Only therefore allow one entry per independently reset period. Trailing stops only tighten. Existing stops fill at the stop or adverse gap open; a newly calculated stop already crossed at close fills at close. Missing data closes the trade at the preceding candle and resets indicator warmup. Research and validation start flat, use earlier indicator history and close remaining positions at period end. Tick rounding, margin liquidation and TradingView bar magnifier are not modeled.
+
+API: `strategy: bb_outer_reversal`, `entry_timeframe: 1m|3m|5m|15m`, and optional `bb_reversal` fields from `Settings` in `server/bb_outer_reversal.py`. Top-level `capital` and `tick_size` set account balance and minimum distance. Tests: `python -m unittest server.test_bb_outer_reversal server.test_market_refresh`.
 
 ## Start
 
@@ -43,6 +59,12 @@ python -m unittest server.test_data server.test_strategy server.test_mtf server.
 npm run build
 ```
 
+## ChartArt RSI + Bollinger v1.2 long-only
+
+Select **ChartArt RSI + Bollinger v1.2 long-only** in Strategy settings. It implements the Pine v3 rules supplied by the user. Defaults are RSI 6, Bollinger length 200, and two population standard deviations. A long signal requires RSI crossing above 50 and close crossing above the lower band on the same completed candle. The buy stop is placed at the lower band for the next candle and canceled if unfilled. A long closes when RSI crosses below 50 and close crosses below the upper band on the same completed candle; the close fills at the next open. There are no short trades or profit targets. Stop loss is enabled by default at 1% below the filled entry price. The percentage is editable in Strategy settings, and the stop can be disabled.
+
+The app applies its selected session and weekend filter, modeled trading costs, 0.5% sizing reference, notional cap, and research/validation split. Weekend bars are omitted from this strategy's indicators and position chart. The price viewer hides UTC weekend candles. API: set `strategy` to `chartart_v12`, with optional `entry_timeframe`, `rsi_period`, and `bb_period`. Set `stop_mode` to `fixed` (default) or `none`, and `chartart_stop_pct` to a percentage greater than 0 and less than 100 (default 1).
+
 ## Multi-timeframe EMA + RSI strategy
 
 In **Strategy settings**, select **Multi-timeframe EMA + RSI** (the new UI default). The original **Structure / liquidity sweep** strategy remains separately selectable.
@@ -59,7 +81,7 @@ Each stage has an independent **Active / Disabled** switch. Disabled stages reta
 
 Use only completed candles. An unfinished hourly candle cannot confirm a 5-minute signal. Candles that close at the same instant may confirm each other. EMA20/50 are seeded with the first 20/50 closes' simple average, then updated with `2/(period+1)`. RSI20 uses Wilder smoothing, seeded with the first 20 price changes; a flat market has RSI 50. Warmup restarts after gaps. Each active stage needs at least 50 completed candles.
 
-Confirmed signals enter at the **next execution candle's open**, plus the configured adverse spread/slippage. There is no profit target. An optional ATR stop loss can be activated alongside EMA reversal exits. Longs close when EMA20 crosses below EMA50; shorts close on the reverse crossover, using a completed execution candle and filling at the next open. RSI remains an entry filter only. The signal candle low/high is retained only as a sizing reference; 0.5% is not a maximum loss. Session, period and data-gap exits still apply. This strategy has no sweep or swing-resistance filter. It retains the existing 0.5% sizing reference, notional cap, costs/funding, independent research/validation balances, with no daily trade-count or loss-count limit. At most one buy and one sell may be open together. Fresh signals matching an already open direction are skipped, not queued for later; after that position closes, a fresh signal may open that direction again. The notional/equity cap applies to total open exposure, and equity includes all open positions. Each position retains its own fees, funding, and exit record. A persistent signal does not add a trade on every candle. Only execution candles fully contained in the selected session are tradable; a 4H candle crossing a session boundary is excluded from execution, and positions close at the prior usable candle's close. Drawdown is measured on the selected execution timeframe's closing equity.
+Confirmed signals enter at the **next execution candle's open**, plus the configured adverse spread/slippage. There is no profit target. An optional ATR stop loss can be activated alongside EMA reversal exits. Longs close when EMA20 crosses below EMA50; shorts close on the reverse crossover, using a completed execution candle and filling at the next open. RSI remains an entry filter only. The signal candle low/high is retained only as a sizing reference; 0.5% is not a maximum loss. Period-end and data-gap exits still apply. This strategy has no sweep or swing-resistance filter. It retains the existing 0.5% sizing reference, notional cap, costs/funding, independent research/validation balances, with no daily trade-count or loss-count limit. At most one buy and one sell may be open together. Fresh signals matching an already open direction are skipped, not queued for later; after that position closes, a fresh signal may open that direction again. The notional/equity cap applies to total open exposure, and equity includes all open positions. Each position retains its own fees, funding, and exit record. A persistent signal does not add a trade on every candle. Only execution candles fully contained in the selected session are tradable; a 4H candle crossing a session boundary is excluded from execution, while existing positions remain open. Drawdown is measured on the selected execution timeframe's closing equity.
 
 The position chart follows the effective execution timeframe and displays EMA20/50, an RSI20 pane with its 50 reference, signals, entries/exits, and stop/target zones. Selecting a trade shows each active stage's indicator values and the completed candle timestamp used for confirmation. Exports include these snapshots, the exact switch settings, `executionTimeframe`, `barSeconds`, and indicator series.
 
@@ -83,7 +105,7 @@ The initial default run is recorded in [reports/mtf-backtest-summary.md](reports
 
 In **Strategy settings → Indicator settings**, edit the fast EMA period (default 20), slow EMA period (50), RSI period (20), and RSI threshold (50). These values apply across all active timeframes and indicator exits. Fast EMA must be shorter than slow EMA. The EMA + RSI **RSI Active / Disabled** switch controls the Setup and Entry RSI filter; Direction remains EMA-only. Disabled RSI does not block entry or require RSI warmup, and its chart pane is hidden. EMA reversal remains the only indicator exit for this strategy.
 
-Both strategies exclude Saturday and Sunday according to the selected **session timezone**. Positions close at the last usable candle before the weekend, and pending orders cannot fill over the weekend. This is a weekday filter, not an exchange holiday calendar. Existing historical reports predate this filter and should be rerun.
+The sweep, EMA + RSI and ChartArt strategies exclude Saturday and Sunday according to the selected **session timezone**. Positions can remain open over the weekend, and pending orders cannot fill over the weekend. ChartArt v1.2 also omits weekend candles from its indicator calculations and position chart. The price viewer hides UTC weekend candles. This is a weekday filter, not an exchange holiday calendar. Existing historical reports predate this filter and should be rerun.
 
 API fields: `ema_fast`, `ema_slow`, `rsi_period`, `rsi_threshold`, `rsi_active`. Chart labels and confirmation values use the chosen settings. Exported `ema20`, `ema50`, and `rsi20` field names are retained for compatibility; they contain the configured fast EMA, slow EMA and RSI values, with periods recorded in `settings`.
 
@@ -108,7 +130,7 @@ The sweep strategy exposes **Close conditions & stop loss** in Strategy settings
 - **Trailing:** move a long stop one tick below the last completed candle’s low, or a short stop one tick above its high.
 - **Breakeven + trailing:** apply whichever gives the tighter stop. Stops never loosen. Position size, original risk and the 2R target stay unchanged.
 
-Conditions use the execution timeframe: 5M for sweep, or the effective active timeframe for EMA + RSI. A completed candle’s close signal fills at the next open; stop adjustments also take effect on the next candle. Existing stop/target fills take precedence during the signal candle, and protective stop/target gaps take precedence at the next open. Session, period and data-gap exits still apply. Breakeven means entry price before costs, so net P&L can still be negative.
+Conditions use the execution timeframe: 5M for sweep, or the effective active timeframe for EMA + RSI. A completed candle’s close signal fills at the next open; stop adjustments also take effect on the next candle. Existing stop/target fills take precedence during the signal candle, and protective stop/target gaps take precedence at the next open. Period-end and data-gap exits still apply. Breakeven means entry price before costs, so net P&L can still be negative.
 
 Results show counts by exit reason. Select a position to see its initial/final stop, stop-adjustment history and indicator close signal. The chart displays the moving stop and close-signal marker; the shaded risk zone retains the original stop. JSON exports include `initialStop`, `finalStop`, `initialRisk`, `stopHistory` and, where applicable, `exitSignal`.
 

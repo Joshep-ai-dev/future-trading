@@ -50,6 +50,11 @@ class HistoryTests(unittest.TestCase):
             with self.assertRaises(ValidationError):
                 CandleRequest(**values)
 
+    def test_weekend_prices_are_not_returned(self):
+        index = pd.date_range('2026-04-03 23:55', periods=3, freq='5min', tz='UTC')
+        frame = pd.DataFrame({k: [70., 70., 70.] for k in ['open','high','low','close']}, index=index)
+        self.assertEqual([c['time'] for c in candle_page(frame)['candles']], [int(index[0].timestamp())])
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -52,7 +52,7 @@ class IndicatorSettingsTests(unittest.TestCase):
         self.assertIsNone(session_at(stamp('2026-09-27T15:55Z'), cfg))
         self.assertIsNotNone(session_at(stamp('2026-09-27T16:00Z'), cfg))
 
-    def test_friday_position_closes_and_weekend_orders_cannot_fill(self):
+    def test_friday_position_remains_open_and_weekend_orders_cannot_fill(self):
         for strategy in ['mtf', 'sweep']:
             cfg = settings(strategy=strategy, start_date='2026-09-25', validation_date='2026-09-28', end_date='2026-09-29')
             data = frame(count=580)
@@ -63,5 +63,5 @@ class IndicatorSettingsTests(unittest.TestCase):
             result = simulate(data, [], cfg, seconds(cfg.start_date), seconds(cfg.validation_date), 'Test', 300, orders)
             self.assertEqual(len(result['trades']), 1)
             trade = result['trades'][0]
-            self.assertEqual(trade['exitReason'], 'session_end')
-            self.assertEqual(pd.Timestamp(trade['exitTime'], unit='s', tz='UTC').isoformat(), '2026-09-25T23:55:00+00:00')
+            self.assertEqual(trade['exitReason'], 'period_end')
+            self.assertEqual(trade['exitTime'], int(data.index[-2].timestamp()))

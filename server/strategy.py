@@ -17,7 +17,8 @@ class BacktestRequest(BaseModel):
     start_date: date
     end_date: date
     validation_date: date
-    strategy: Literal['sweep', 'mtf'] = 'sweep'
+    strategy: Literal['sweep', 'mtf', 'chartart_v12', 'bb_outer_reversal'] = 'sweep'
+    bb_reversal: dict = Field(default_factory=dict)
     direction_active: bool = True
     direction_timeframe: Literal['15m', '30m', '1h', '4h'] = '1h'
     setup_active: bool = True
@@ -34,6 +35,8 @@ class BacktestRequest(BaseModel):
     rsi_period: int = Field(default=20, ge=1, le=500)
     rsi_threshold: float = Field(default=50, gt=0, lt=100)
     rsi_active: bool = True
+    bb_period: int = Field(default=200, ge=1, le=1000)
+    chartart_stop_pct: float = Field(default=1., gt=0, lt=100)
     capital: float = Field(default=2000, gt=0, le=1e9)
     tick_size: float = Field(default=.01, gt=0, le=10)
     fee_bps: float = Field(default=5, ge=0, le=100)
@@ -47,7 +50,7 @@ class BacktestRequest(BaseModel):
 
     @model_validator(mode='after')
     def check_ranges(self):
-        if self.ema_fast >= self.ema_slow:
+        if self.strategy not in ('bb_outer_reversal', 'chartart_v12') and self.ema_fast >= self.ema_slow:
             raise ValueError('Fast EMA period must be less than slow EMA period.')
         if not self.start_date < self.validation_date <= self.end_date:
             raise ValueError('Validation date must be after the start date and on or before the end date.')
@@ -58,6 +61,20 @@ class BacktestRequest(BaseModel):
         if self.strategy == 'mtf':
             self.exit_condition = 'ema'
             self.stop_mode = 'none'
+        elif self.strategy == 'bb_outer_reversal':
+            from .bb_outer_reversal import Settings
+            try:
+                Settings(**self.bb_reversal)
+            except (TypeError, ValueError) as error:
+                raise ValueError(str(error)) from error
+            self.exit_condition = 'none'
+            self.stop_mode = 'trailing'
+        elif self.strategy == 'chartart_v12':
+            if 'rsi_period' not in self.model_fields_set:
+                self.rsi_period = 6
+            self.exit_condition = 'none'
+            if self.stop_mode not in ('none', 'fixed'):
+                raise ValueError('ChartArt stop mode must be none or fixed.')
         elif self.stop_mode == 'none':
             raise ValueError('Sweep requires a stop-loss mode.')
         return self
@@ -70,7 +87,7 @@ def seconds(day):
 def structure_events(frame):
     """A pivot at i becomes visible at the close of i+2, never at i."""
     values = frame[['open', 'high', 'low', 'close']].to_numpy()
-    times = frame.index.asi8 // 10**9
+    times = frame.index.as_unit('ns').asi8 // 10**9
     highs, lows, resistance, support = [], [], [], []
     events = []
     for j, row in enumerate(values):
@@ -191,10 +208,10 @@ def metrics(trades, equity, capital):
                 meets100Trades=len(trades) >= 100)
 
 
-def simulate(frame, events, settings, start, end, name, bar_seconds=300, orders=None, exit_values=None):
+def simulate(frame, events, settings, start, end, name, bar_seconds=300, orders=None, exit_values=None, excluded=None):
     atr_enabled = settings.strategy == 'mtf' and settings.atr_active
-    protected = settings.strategy != 'mtf' or atr_enabled
-    times = frame.index.asi8 // 10**9
+    protected = settings.strategy == 'sweep' or atr_enabled or (settings.strategy == 'chartart_v12' and settings.stop_mode == 'fixed')
+    times = frame.index.as_unit('ns').asi8 // 10**9
     rows = frame[['open', 'high', 'low', 'close']].to_numpy()
     balance = settings.capital
     pending = position = None
@@ -250,6 +267,11 @@ def simulate(frame, events, settings, start, end, name, bar_seconds=300, orders=
             session = None
         # Gaps flatten at the last known close; unknown prices cannot be simulated.
         if not np.isfinite(row).all():
+            if excluded is not None and excluded[i]:
+                if pending is not None:
+                    diagnostics['cancelledOrders'] += 1
+                pending = None
+                continue
             for position in positions.copy():
                 close_trade(prior_close-position['direction']*friction, prior_time, 'data_gap')
                 equity[-1]['value'] = balance
@@ -259,8 +281,6 @@ def simulate(frame, events, settings, start, end, name, bar_seconds=300, orders=
             prior_time = prior_close = None
             continue
         if session != current_session:
-            for position in positions.copy():
-                close_trade(prior_close-position['direction']*friction, prior_time, 'session_end')
             if pending is not None:
                 diagnostics['cancelledOrders'] += 1
             pending = None
@@ -282,10 +302,12 @@ def simulate(frame, events, settings, start, end, name, bar_seconds=300, orders=
                 entry = raw_entry+d*friction
                 if atr_enabled:
                     pending['stop'] = entry-d*pending['atrDistance']
+                elif settings.strategy == 'chartart_v12' and protected:
+                    pending['stop'] = entry*(1-settings.chartart_stop_pct/100)
                 risk = d*(entry-pending['stop']) if protected else max(abs(entry-pending['stop']), settings.tick_size)
                 obstacle = pending['obstacle']
                 blocked = obstacle is not None and d*(obstacle-entry) < 2*risk
-                if blocked or risk <= 0 or balance <= 0 or (protected and pending['stop'] <= 0) or (settings.strategy != 'mtf' and entry+d*2*risk <= 0):
+                if blocked or risk <= 0 or balance <= 0 or (protected and pending['stop'] <= 0) or (settings.strategy == 'sweep' and entry+d*2*risk <= 0):
                     diagnostics['blockedByLevel' if blocked else 'invalidEntries'] += 1
                 else:
                     account_equity = balance + sum(p['direction']*(row[0]-p['entry'])*p['quantity'] for p in positions)
@@ -301,7 +323,7 @@ def simulate(frame, events, settings, start, end, name, bar_seconds=300, orders=
                         # Existing positions must still be processed on this candle.
                     else:
                         position = {k:v for k,v in pending.items() if k not in ('expires', 'blocked')}
-                        position.update(entryTime=t, entry=entry, rawEntry=raw_entry, target=None if settings.strategy == 'mtf' else entry+d*2*risk,
+                        position.update(entryTime=t, entry=entry, rawEntry=raw_entry, target=entry+d*2*risk if settings.strategy == 'sweep' else None,
                                         quantity=quantity, riskBudget=risk_budget, plannedRisk=quantity*unit_loss,
                                         entryFee=entry*quantity*fee, funding=0., lastFunding=t,
                                         initialStop=pending['stop'], initialRisk=risk,
@@ -336,18 +358,22 @@ def simulate(frame, events, settings, start, end, name, bar_seconds=300, orders=
                 if outcome is not None:
                     price, reason, ambiguous = outcome
                     close_trade(price, t, reason, ambiguous or (just_entered and position.get('orderType') != 'market' and reason == 'stop'))
-                elif closing_session or i == last_index:
-                    close_trade(row[3]-position['direction']*friction, t,
-                                'session_end' if closing_session else 'period_end')
+                elif i == last_index:
+                    close_trade(row[3]-position['direction']*friction, t, 'period_end')
             if position is not None:
                 # Observe this candle only after price stops/targets have been evaluated.
                 if exit_values is not None and i > 0:
-                    reason = indicator_exit(position['direction'], exit_values[i-1], exit_values[i], settings.exit_condition, settings.rsi_threshold)
+                    if settings.strategy == 'chartart_v12':
+                        previous, current = exit_values[i-1], exit_values[i]
+                        reason = 'rsi_bb_close' if (np.isfinite(previous).all() and np.isfinite(current).all() and
+                            previous[2] >= 50 > current[2] and previous[3] >= previous[1] and current[3] < current[1]) else None
+                    else:
+                        reason = indicator_exit(position['direction'], exit_values[i-1], exit_values[i], settings.exit_condition, settings.rsi_threshold)
                     if reason:
                         values = exit_values[i]
                         position['pendingExit'] = dict(time=t, closeTime=t+bar_seconds, reason=reason,
-                            ema20=float(values[0]) if np.isfinite(values[0]) else None,
-                            ema50=float(values[1]) if np.isfinite(values[1]) else None,
+                            ema20=float(values[0]) if settings.strategy != 'chartart_v12' and np.isfinite(values[0]) else None,
+                            ema50=float(values[1]) if settings.strategy != 'chartart_v12' and np.isfinite(values[1]) else None,
                             rsi20=float(values[2]) if np.isfinite(values[2]) else None)
                 update = updated_stop(position, row, settings.stop_mode, settings.tick_size)
                 if update:
@@ -357,7 +383,7 @@ def simulate(frame, events, settings, start, end, name, bar_seconds=300, orders=
             event_index += 1
         if (session is not None and not closing_session and i < last_index and
                 (not positions or settings.strategy == 'mtf') and pending is None and balance > 0 and
-                (settings.strategy == 'mtf' or (session_trades < 2 and session_losses < 2))):
+                (settings.strategy != 'sweep' or (session_trades < 2 and session_losses < 2))):
             order = setup_order(rows, i, state, settings) if orders is None else orders.get(i)
             if order is not None:
                 diagnostics['signals'] += 1
@@ -367,7 +393,7 @@ def simulate(frame, events, settings, start, end, name, bar_seconds=300, orders=
                 elif any(p['direction'] == order['direction'] for p in positions):
                     diagnostics['cancelledOrders'] += 1
                 else:
-                    pending = dict(order, signalTime=t, expires=i+(1 if order.get('orderType') == 'market' else 3), session=session)
+                    pending = dict(order, signalTime=t, expires=i+(1 if order.get('orderType') == 'market' or settings.strategy == 'chartart_v12' else 3), session=session)
         if (closing_session or i == last_index) and pending is not None:
             diagnostics['cancelledOrders'] += 1
             pending = None
@@ -396,5 +422,5 @@ def run_backtest(five, fifteen, settings):
                 strategyName='Structure / liquidity sweep', executionTimeframe='5m', barSeconds=300,
                 indicators=[] if calculated is None else [dict(time=int(t.timestamp()),
                     **{k:float(v) if np.isfinite(v) else None for k,v in row.items()})
-                    for t,row in calculated.loc[five.index[(five.index.asi8//10**9 >= start) &
-                        (five.index.asi8//10**9 < end) & five.close.notna().to_numpy()]].iterrows()])
+                    for t,row in calculated.loc[five.index[(five.index.as_unit('ns').asi8//10**9 >= start) &
+                        (five.index.as_unit('ns').asi8//10**9 < end) & five.close.notna().to_numpy()]].iterrows()])

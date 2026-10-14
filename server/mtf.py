@@ -40,9 +40,9 @@ def build_orders(frames, settings, calculated=None):
     frame = frames[timeframe]
     atr_values = atr(frame, settings.atr_period) if settings.atr_active else None
     bar_seconds = TIMEFRAMES[timeframe]
-    closes = frame.index.asi8//10**9 + bar_seconds
+    closes = frame.index.as_unit('ns').asi8//10**9 + bar_seconds
     arrays = {tf: calculated[tf].to_numpy() for _, tf in stages}
-    times = {tf: frames[tf].index.asi8//10**9 + TIMEFRAMES[tf] for _, tf in stages}
+    times = {tf: frames[tf].index.as_unit('ns').asi8//10**9 + TIMEFRAMES[tf] for _, tf in stages}
     aligned_indices = {tf: np.searchsorted(times[tf], closes, side='right')-1 for _, tf in stages}
     orders, previous_signal = {}, 0
     prices = frame[['open','high','low','close']].to_numpy()
@@ -88,7 +88,7 @@ def run_mtf_backtest(frames, settings):
     exit_values = calculated[timeframe].to_numpy()
     research = simulate(frame, [], settings, start, split, 'Research', bar_seconds, orders, exit_values)
     validation = simulate(frame, [], settings, split, end, 'Validation', bar_seconds, orders, exit_values)
-    mask = (frame.index.asi8//10**9 >= start) & (frame.index.asi8//10**9+bar_seconds <= end)
+    mask = (frame.index.as_unit('ns').asi8//10**9 >= start) & (frame.index.as_unit('ns').asi8//10**9+bar_seconds <= end)
     mask &= frame[['open','high','low','close']].notna().all(axis=1).to_numpy()
     candles = [dict(time=int(t.timestamp()), open=float(r.open), high=float(r.high), low=float(r.low), close=float(r.close))
                for t, r in frame.loc[mask].dropna(subset=['open','high','low','close']).iterrows()]

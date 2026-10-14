@@ -135,14 +135,14 @@ class StrategyTests(unittest.TestCase):
         self.assertEqual(len(r['trades']),2)
         self.assertTrue(all(t['netPnl']<0 for t in r['trades']))
 
-    def test_session_timezone_overnight_and_forced_close(self):
+    def test_session_timezone_overnight_and_position_carries_past_close(self):
         cfg=settings(session_start=22,session_end=2,session_timezone='Asia/Shanghai')
         self.assertEqual(session_at(int(pd.Timestamp('2020-01-02T17:00Z').timestamp()),cfg),'2020-01-02')
         self.assertIsNone(session_at(int(pd.Timestamp('2020-01-02T19:00Z').timestamp()),cfg))
         rows=sample()[:8]+[[101,102,100,101]]*10
         r=run(rows,settings(session_start=0,session_end=1))
-        self.assertEqual(r['trades'][0]['exitReason'],'session_end')
-        self.assertEqual(r['trades'][0]['exitTime'],int(pd.Timestamp('2020-01-01T00:55Z').timestamp()))
+        self.assertEqual(r['trades'][0]['exitReason'],'period_end')
+        self.assertEqual(r['trades'][0]['exitTime'],int(pd.Timestamp('2020-01-01T01:25Z').timestamp()))
 
     def test_funding_charges_long_and_credits_short_at_boundary(self):
         rows=sample()[:8]+[[101,102,100,101]]*90

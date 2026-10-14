@@ -1,5 +1,6 @@
 """Local CSV price API."""
 from typing import Literal
+from contextlib import asynccontextmanager
 import pandas as pd
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.gzip import GZipMiddleware
@@ -7,8 +8,20 @@ from pydantic import BaseModel, ConfigDict, Field
 from .data import load_bars
 from .strategy import BacktestRequest, run_backtest
 from .mtf import active_stages, run_mtf_backtest
+from .chartart_v12 import run_chartart_v12_backtest
+from .bb_reversal_adapter import run_bb_reversal_backtest
+from .market_refresh import refresh_service
 
-app = FastAPI(title='Silver Price Research')
+@asynccontextmanager
+async def lifespan(app):
+    refresh_service.start()
+    try:
+        yield
+    finally:
+        refresh_service.shutdown()
+
+
+app = FastAPI(title='Silver Price Research', lifespan=lifespan)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 class Parameters(BaseModel):
@@ -18,6 +31,16 @@ class Parameters(BaseModel):
 @app.get('/api/health')
 def health():
     return {'application': 'silver-price', 'version': 3}
+
+
+@app.get('/api/market-status')
+def market_status():
+    return refresh_service.status()
+
+
+@app.post('/api/market-refresh')
+def market_refresh():
+    return refresh_service.refresh()
 
 @app.post('/api/analyze')
 def run(parameters: Parameters):
@@ -42,6 +65,12 @@ def backtest(parameters: BacktestRequest):
         if parameters.strategy == 'mtf':
             frames = {timeframe: load_bars(timeframe)[0] for timeframe in {tf for _, tf in active_stages(parameters)}}
             return run_mtf_backtest(frames, parameters)
+        if parameters.strategy == 'chartart_v12':
+            frame, _ = load_bars(parameters.entry_timeframe)
+            return run_chartart_v12_backtest(frame, parameters)
+        if parameters.strategy == 'bb_outer_reversal':
+            frame, _ = load_bars(parameters.entry_timeframe)
+            return run_bb_reversal_backtest(frame, parameters)
         five, _ = load_bars('5m')
         fifteen, _ = load_bars('15m')
         return run_backtest(five, fifteen, parameters)
@@ -56,6 +85,7 @@ class CandleRequest(Parameters):
 
 def candle_page(frame, before=None, limit=5000):
     complete = frame.dropna(subset=['open', 'high', 'low', 'close'])
+    complete = complete.loc[complete.index.dayofweek < 5]
     if before is not None:
         complete = complete.loc[complete.index < pd.Timestamp(before, unit='s', tz='UTC')]
     selected = complete.tail(limit)

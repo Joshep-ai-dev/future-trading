@@ -7,6 +7,7 @@ const stages: {key:Stage;label:string;options:string[];description:string}[] = [
 ];
 export function effectiveTimeframe(s:BacktestSettings) {
   if(s.strategy==='sweep')return '5m';
+  if(s.strategy==='chartart_v12'||s.strategy==='bb_outer_reversal')return s.entry_timeframe;
   return s.entry_active?s.entry_timeframe:s.setup_active?s.setup_timeframe:s.direction_active?s.direction_timeframe:null;
 }
 export default function TimeframeSettings({settings,onChange}:{settings:BacktestSettings;onChange:(s:BacktestSettings)=>void}) {

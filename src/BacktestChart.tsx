@@ -31,11 +31,22 @@ export default function BacktestChart({candles,trades,selected,onSelect,indicato
     const price = chart.addSeries(CandlestickSeries,{borderVisible:false,upColor:'#84bba1',downColor:'#c57f86',wickUpColor:'#84bba1',wickDownColor:'#c57f86',priceFormat:{type:'price',precision:3,minMove:.001}});
     price.setData(view.map(c=>({...c,time:c.time as UTCTimestamp})));
     if(indicators.length) {
+      if(indicatorSettings.strategy==='chartart_v12'||indicatorSettings.strategy==='bb_outer_reversal') {
+        for(const [key,color,title] of [['bbBasis','#63d6d0','BB basis'],['bbUpper','#aebfcb','BB upper'],['bbLower','#aebfcb','BB lower']] as const) {
+          chart.addSeries(LineSeries,{color,lineWidth:1,title,priceLineVisible:false,lastValueVisible:false}).setData(
+            indicators.map(p=>p[key]==null?{time:p.time as UTCTimestamp}:{time:p.time as UTCTimestamp,value:p[key]}));
+        }
+      } else {
       for(const [key,color,title] of [['ema20','#e0c278',`EMA ${indicatorSettings.ema_fast}`],['ema50','#88bfff',`EMA ${indicatorSettings.ema_slow}`]] as const) {
         chart.addSeries(LineSeries,{color,lineWidth:1,title,priceLineVisible:false,lastValueVisible:false}).setData(
           indicators.map(p=>p[key]===null?{time:p.time as UTCTimestamp}:{time:p.time as UTCTimestamp,value:p[key]}));
       }
-      if(indicatorSettings.strategy!=='mtf'||indicatorSettings.rsi_active) {
+      }
+      if(indicatorSettings.strategy==='bb_outer_reversal') {
+        chart.addSeries(LineSeries,{color:'#d7ad69',lineWidth:2,title:'Trend SMA',priceLineVisible:false,lastValueVisible:false}).setData(
+          indicators.map(p=>p.trendSma==null?{time:p.time as UTCTimestamp}:{time:p.time as UTCTimestamp,value:p.trendSma}));
+      }
+      if(indicatorSettings.strategy!=='bb_outer_reversal'&&(indicatorSettings.strategy!=='mtf'||indicatorSettings.rsi_active)) {
       const rsi=chart.addSeries(LineSeries,{color:'#be9bf3',lineWidth:1,title:`RSI ${indicatorSettings.rsi_period}`,priceLineVisible:false,
         autoscaleInfoProvider:()=>({priceRange:{minValue:0,maxValue:100}})},1);
       rsi.setData(indicators.map(p=>p.rsi20===null?{time:p.time as UTCTimestamp}:{time:p.time as UTCTimestamp,value:p.rsi20}));
@@ -76,13 +87,24 @@ export default function BacktestChart({candles,trades,selected,onSelect,indicato
       }
     }
     if(selected && selected.target===null && present.has(selected.entryTime)) {
-      if(selected.stop!==null) chart.addSeries(LineSeries,{color:'#ff8291',lineWidth:2,title:'ATR stop',priceLineVisible:false}).setData([{time:selected.entryTime as UTCTimestamp,value:selected.stop},{time:Math.max(selected.exitTime,selected.entryTime+barSeconds) as UTCTimestamp,value:selected.stop}]);
+      if(selected.stop!==null) {
+        const history=selected.stopHistory?.length?selected.stopHistory:[{time:selected.entryTime,price:selected.stop,reason:'initial'}];
+        const points=new Map(history.filter(h=>h.time<=selected.exitTime).map(h=>[h.time,h.price]));
+        points.set(Math.max(selected.exitTime,selected.entryTime+barSeconds),selected.finalStop??selected.stop);
+        chart.addSeries(LineSeries,{color:'#ff8291',lineWidth:2,lineType:LineType.WithSteps,title:'Active stop',priceLineVisible:false}).setData(
+          [...points].sort((a,b)=>a[0]-b[0]).map(([time,value])=>({time:time as UTCTimestamp,value})));
+      }
       chart.addSeries(LineSeries,{color:'#88bfff',lineWidth:2,lineStyle:LineStyle.Dashed,title:'Entry',priceLineVisible:false}).setData([{time:selected.entryTime as UTCTimestamp,value:selected.entry},{time:Math.max(selected.exitTime,selected.entryTime+barSeconds) as UTCTimestamp,value:selected.entry}]);
     }
     const byTime = new Map(view.map(c=>[c.time,c]));
+    const indicatorByTime = new Map(indicators.map(p=>[p.time,p]));
     chart.subscribeCrosshairMove(p=>{
       const c = typeof p.time==='number' ? byTime.get(p.time) : undefined;
-      if(c) setReadout(`${new Date(c.time*1000).toISOString()} · O ${fmt(c.open,3)} H ${fmt(c.high,3)} L ${fmt(c.low,3)} C ${fmt(c.close,3)}`);
+      if(c) {
+        const indicator=indicatorByTime.get(c.time);
+        const extra=indicatorSettings.strategy==='bb_outer_reversal'&&indicator?` · ADX ${fmt(indicator.adx??null)} · ATR ${fmt(indicator.atr??null,3)} · BB width ${fmt(indicator.bbWidthPct??null)}%`:'';
+        setReadout(`${new Date(c.time*1000).toISOString()} · O ${fmt(c.open,3)} H ${fmt(c.high,3)} L ${fmt(c.low,3)} C ${fmt(c.close,3)}${extra}`);
+      }
     });
     chart.subscribeClick(p=>{
       const trade = visibleTrades.find(t=>t.entryTime===p.time||t.exitTime===p.time);
