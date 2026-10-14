@@ -10,7 +10,9 @@ import {readIndicatorSettings} from './IndicatorSettings';
 import {useChartIndicatorSelection,toggleChartIndicator} from './chartIndicatorSelection';
 import {fmt, type Analysis, type PeriodResult, type Trade, type IndicatorPoint, type BacktestSettings} from './types';
 
-export function EquityChart({period}: {period: Pick<PeriodResult,'name'|'equity'>}) {
+export function EquityChart({period,initialValue,intervalSeconds=60}: {
+  period: Pick<PeriodResult,'name'|'equity'>; initialValue?:number; intervalSeconds?:number;
+}) {
   const timeZone=useChartTimeZone();
   const ref = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi|null>(null);
@@ -19,18 +21,23 @@ export function EquityChart({period}: {period: Pick<PeriodResult,'name'|'equity'
   const seriesName = useRef(period.name);
   useEffect(() => {
     if (!ref.current) return;
-    const chart = createChart(ref.current, {autoSize:false, ...chartInteraction, localization:chartTimeOptions(readChartTimeZone()).localization, layout:{background:{type:ColorType.Solid,color:'#10141d'},textColor:'#7d8da5'},timeScale:{timeVisible:true,minBarSpacing:2,lockVisibleTimeRangeOnResize:true,...chartTimeOptions(readChartTimeZone()).timeScale},grid:{vertLines:{visible:false},horzLines:{color:'#202836'}}});
+    const chart = createChart(ref.current, {autoSize:false, ...chartInteraction, localization:chartTimeOptions(readChartTimeZone()).localization, layout:{background:{type:ColorType.Solid,color:'#10141d'},textColor:'#7d8da5'},rightPriceScale:{scaleMargins:{top:.16,bottom:.16},borderColor:'#263246'},timeScale:{timeVisible:true,minBarSpacing:2,lockVisibleTimeRangeOnResize:true,...chartTimeOptions(readChartTimeZone()).timeScale},grid:{vertLines:{visible:false},horzLines:{color:'#202836'}}});
     chartRef.current=chart;
-    lineRef.current=chart.addSeries(LineSeries,{color:'#6ce4bc',priceLineVisible:false,title:'Net equity'});
+    lineRef.current=chart.addSeries(LineSeries,{color:'#6ce4bc',lineWidth:2,priceLineVisible:false,lastValueVisible:false,
+      crosshairMarkerVisible:true,priceFormat:{type:'price',precision:2,minMove:.01},title:'Net equity'});
     const stopResize=resizeChart(chart,ref.current,()=>chart.timeScale().fitContent());
     return ()=>{stopResize();lineRef.current=null;chartRef.current=null;hasData.current=false;chart.remove();};
   },[]);
   useEffect(()=>{const options=chartTimeOptions(timeZone);chartRef.current?.applyOptions({localization:options.localization,timeScale:options.timeScale});},[timeZone]);
   useEffect(()=>{
-    lineRef.current?.setData(period.equity.map(p=>({...p,time:p.time as UTCTimestamp})));
+    const points=period.equity.map(p=>({...p,time:p.time as UTCTimestamp}));
+    if(points.length&&initialValue!==undefined&&Math.abs(points[0].value-initialValue)>.000001){
+      points.unshift({time:(points[0].time-intervalSeconds) as UTCTimestamp,value:initialValue});
+    }
+    lineRef.current?.setData(points);
     if((!hasData.current||seriesName.current!==period.name)&&period.equity.length){chartRef.current?.timeScale().fitContent();hasData.current=true;}
     seriesName.current=period.name;
-  },[period.equity,period.name]);
+  },[period.equity,period.name,initialValue,intervalSeconds]);
   return <><ChartTools chartRef={chartRef} valueLabel="Amount"/><div className="chart-resize equity-resize"><div ref={ref} className="chart-container equity-chart" aria-label={`${period.name} equity after trading costs`}/></div></>;
 }
 
