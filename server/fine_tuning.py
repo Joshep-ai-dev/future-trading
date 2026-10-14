@@ -192,6 +192,28 @@ def _score(result, capital):
                 maxDrawdownPct=round(drawdown, 3), averageLossPct=round(average_loss_pct, 3))
 
 
+MODES = (
+    ('lower_loss', 'Smaller losses', 'Prioritizes average losing trade size and drawdown; may reduce profit.'),
+    ('higher_profit', 'Higher profit', 'Prioritizes net profit; may accept larger losses and drawdown.'),
+    ('higher_win_rate', 'Higher win rate', 'Prioritizes winning trade percentage; losses can still outweigh wins.'),
+    ('more_trades', 'More trades', 'Prioritizes trading frequency; execution costs can reduce returns.'),
+)
+
+
+def _mode_key(metrics, mode):
+    """Prefer meaningful samples, then the requested historical objective."""
+    enough = metrics['trades'] >= 20
+    if mode == 'lower_loss':
+        objective = (-metrics['averageLossPct'], metrics['maxDrawdownPct'], metrics['netPnl'])
+    elif mode == 'higher_profit':
+        objective = (metrics['netPnl'], metrics['maxDrawdownPct'])
+    elif mode == 'higher_win_rate':
+        objective = (metrics['winRate'], metrics['netPnl'])
+    else:
+        objective = (metrics['trades'], metrics['netPnl'])
+    return (metrics['trades'] > 0, enough, *objective)
+
+
 def fine_tune(frame, request, progress=None):
     """Search strategy and allocation settings; validate before reporting holdout."""
     report = progress or (lambda percent, message: None)
@@ -239,6 +261,14 @@ def fine_tune(frame, request, progress=None):
                f'{phase}: evaluated {phase_counts[phase]} settings')
 
     initial_candidates = _candidate_set(base, TRIALS, seed=1729)
+    # Search substantially smaller allocations as well as nearby settings.
+    # Stops alone cannot control dollar losses when position exposure is large.
+    original = {name: getattr(base, name) for name in PARAMETERS}
+    for allocation in (5., 10., 25.):
+        defensive = {**original, 'amount_unit': 'percent',
+                     'amount_per_trade': allocation, 'leverage': 1.}
+        if _parameter_key(defensive) not in {_parameter_key(p) for p in initial_candidates}:
+            initial_candidates.append(defensive)
     report(3, f'Testing {len(initial_candidates)} starting settings')
     for params in initial_candidates:
         evaluate(params, 'Initial search', 3, 44, len(initial_candidates))
@@ -278,10 +308,19 @@ def fine_tune(frame, request, progress=None):
         if len(shortlist) == SHORTLIST:
             break
 
+    # Include training finalists for every objective, not just the blended score.
+    for mode, _, _ in MODES:
+        leaders = sorted(evaluated.values(), key=lambda row: _mode_key(row[1], mode), reverse=True)
+        for params, _ in leaders[:SHORTLIST]:
+            key = _parameter_key(params)
+            if key not in seen_shortlist:
+                seen_shortlist.add(key)
+                shortlist.append(params)
+
     report(75, 'Rechecking finalists and validating their settings')
     for index, params in enumerate(shortlist):
         if _parameter_key(params) not in evaluated:
-            evaluate(params, 'Finalist check', 75 + index * 2, 2, 1)
+            evaluate(params, 'Finalist check', 75, 9, len(shortlist))
 
     validated = []
     for index, params in enumerate(shortlist):
@@ -292,15 +331,17 @@ def fine_tune(frame, request, progress=None):
                           evaluated[_parameter_key(params)][1], params))
         report(85 + int(8 * (index + 1) / len(shortlist)),
                f'Validation: checked {index + 1} of {len(shortlist)} finalists')
-    validated.sort(key=lambda item: (item[0]['score'], item[0]['netPnl'],
-                                     item[0]['maxDrawdownPct']), reverse=True)
+    recommendations = []
+    for mode, label, description in MODES:
+        winner = max(validated, key=lambda item: _mode_key(item[0], mode))
+        recommendations.append((*winner, mode, label, description))
     candidate_results = []
-    for index, (validation_metrics, train_metrics, params) in enumerate(validated, start=1):
+    for index, (validation_metrics, train_metrics, params, mode, label, description) in enumerate(recommendations, start=1):
         config = replace(base, **params)
         _, _, forward = candidate_segments(config)
         forward_result = run_backtest(forward, config, close_at_end=True, prepared_bars=forward)
         candidate_results.append(dict(
-            id=f'case-{index}', rank=index,
+            id=mode, rank=index, mode=mode, label=label, description=description,
             bestParameters=params,
             bestSettings=request.model_copy(update={
                 'bb_reversal': {**request.bb_reversal, **{key: value for key, value in params.items()
@@ -311,8 +352,8 @@ def fine_tune(frame, request, progress=None):
                          validation=dict(metrics=validation_metrics),
                          forwardTest=dict(metrics=_score(forward_result, request.capital))),
         ))
-        report(95 + index, f'Forward-tested selected candidate {index} of {len(validated)}')
-    validation_metrics, train_metrics, best_params = validated[0]
+        report(95 + index, f'Forward-tested recommendation {index} of {len(recommendations)}')
+    validation_metrics, train_metrics, best_params = recommendations[0][:3]
     forward_metrics = candidate_results[0]['periods']['forwardTest']['metrics']
     timestamps = [int(reference.index[0].timestamp()), int(reference.index[train_end].timestamp()),
                   int(reference.index[validation_end].timestamp()),
@@ -322,7 +363,7 @@ def fine_tune(frame, request, progress=None):
     return dict(
         bestSettings=best_settings, bestParameters=best_params,
         model='scikit-learn VotingRegressor: RandomForestRegressor + ExtraTreesRegressor + HistGradientBoostingRegressor',
-        objective='35% win rate, 35% profit, 20% drawdown control, 10% average loss control; small samples are discounted.',
+        objective='Four modes selected on validation data: smaller average losses, higher net profit, higher win rate, and more trades. Prefer at least 20 trades. Forward data is used only for reporting. Modes may select the same settings. Default: smaller losses.',
         candidates=candidate_results, modelHyperparameters=model_hyperparameters,
         modelCrossValidationRmse=model_cv_rmse,
         candidatesEvaluated=len(evaluated), seedCandidates=len(initial_candidates),
