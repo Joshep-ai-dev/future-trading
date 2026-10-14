@@ -163,14 +163,15 @@ def calculate(frame, settings=None, *, bar_seconds=None):
     return result
 
 
-def run_backtest(frame, settings=None, *, start=None, close_at_end=False, bar_seconds=None):
+def run_backtest(frame, settings=None, *, start=None, close_at_end=False, bar_seconds=None,
+                prepared_bars=None):
     """Run completed bars; retain open positions at the end (as Pine does).
 
     Does not reproduce TradingView margin liquidation, bar magnifier, or tick
     rounding. Set min_tick to the instrument's syminfo.mintick equivalent.
     """
     s = settings or Settings()
-    bars = calculate(frame, s, bar_seconds=bar_seconds)
+    bars = prepared_bars if prepared_bars is not None else calculate(frame, s, bar_seconds=bar_seconds)
     if start is not None:
         bars = bars.loc[bars.index >= start]
     trades, records = [], []

@@ -6,7 +6,7 @@ import ResultsWorkspace from './ResultsWorkspace';
 import AccountPage from './AccountPage';
 import LiveExecution from './LiveExecution';
 import type {Page} from './Tabs';
-import {fmt,type BacktestSettings,type BacktestResult} from './types';
+import {fmt,type BacktestSettings,type BacktestResult,type FineTuneResult,type TuneMetrics} from './types';
 
 function initial(range:{startDate:string;endDate:string}):BacktestSettings {
   return {bb_reversal:{...bbDefaults},atr_active:false,atr_period:14,atr_multiplier:2,ema_fast:20,ema_slow:50,rsi_period:20,rsi_threshold:50,rsi_active:true,bb_period:20,chartart_stop_pct:1,exit_condition:'none',stop_mode:'trailing',strategy:'bb_outer_reversal',direction_active:true,direction_timeframe:'1h',setup_active:true,setup_timeframe:'15m',entry_active:true,entry_timeframe:'5m',start_date:range.startDate,end_date:range.endDate,capital:2000,tick_size:.01,fee_bps:0,spread:0,slippage:0,funding_bps:0,max_leverage:1,session_start:0,session_end:24,session_timezone:'UTC'};
@@ -63,6 +63,8 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
   }
   const [result,setResult]=useState<BacktestResult|null>(null);
   const [busy,setBusy]=useState(false),[error,setError]=useState('');
+  const [tuning,setTuning]=useState(false),[tuneError,setTuneError]=useState('');
+  const [tuneResult,setTuneResult]=useState<FineTuneResult|null>(null);
   const [section,setSection]=useState('execution');
   const [runId,setRunId]=useState(0);
   async function run(e?:FormEvent){
@@ -70,6 +72,15 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
     try{setResult(await api<BacktestResult>('/api/backtest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(settings)}));setRunId(value=>value+1);}
     catch(e){setError(String(e));}finally{setBusy(false);}
   }
+  async function runFineTune(){
+    setTuning(true);setTuneError('');setTuneResult(null);
+    try{setTuneResult(await api<FineTuneResult>('/api/backtest/fine-tune',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({settings})}));}
+    catch(error){setTuneError(String(error));}finally{setTuning(false);}
+  }
+  function renderTuneMetrics(label:string,metrics:TuneMetrics){
+    return <div className="tune-period" key={label}><strong>{label}</strong><span>Win rate <b>{fmt(metrics.winRate)}%</b></span><span>Net P&amp;L <b className={metrics.netPnl>=0?'positive':'negative'}>{metrics.netPnl>=0?'+':''}${fmt(metrics.netPnl)}</b></span><span>Max drawdown <b className="negative">{fmt(Math.abs(metrics.maxDrawdownPct))}%</b></span><span>Average loss <b>{fmt(metrics.averageLossPct)}% of start</b></span><span>Trades <b>{metrics.trades}</b></span></div>;
+  }
+  const tuneLabels:Record<string,string>={initial_sl:'Initial stop',trail_trigger:'Trail activation',trail_distance:'Trail distance',adx_threshold:'ADX threshold',min_bb_width_pct:'Minimum BB width'};
   const stale=!!result&&Object.keys(settings).some(k=>JSON.stringify(settings[k as keyof BacktestSettings])!==JSON.stringify(result.settings[k as keyof BacktestSettings]));
   function download(){if(!result)return;const url=URL.createObjectURL(new Blob([JSON.stringify(result,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download='bb-reversal-backtest.json';link.click();URL.revokeObjectURL(url);}
   const chapters=[['execution','Execution & allocation'],['filters','Entry filters'],['stops','Stops & trailing'],['rsi-exit','RSI + price exit'],['trend','Trend adjustment'],['range','Backtest range']];
@@ -82,13 +93,15 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
       <div className="settings-layout"><aside className="settings-navigation"><div className="configuration-profile"><span className="strategy-icon">BB</span><h2>Outer Band Reversal</h2><p>Trailing stop loss</p><span className="paper-badge">BOTH DIRECTIONS</span></div>
         <nav aria-label="Settings sections">{chapters.map(([key,label],i)=><button key={key} className={section===key?'current':''} onClick={()=>{setSection(key);document.getElementById(`settings-${key}`)?.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});}}><span>0{i+1}</span>{label}</button>)}</nav>
         <div className="configuration-summary"><span className="eyebrow">YOUR CONFIGURATION</span><dl><div><dt>Timeframe</dt><dd>{settings.entry_timeframe.toUpperCase()}</dd></div><div><dt>Leverage</dt><dd>{settings.max_leverage}x</dd></div><div><dt>Trade amount</dt><dd>{settings.bb_reversal.amount_unit==='percent'?`${settings.bb_reversal.amount_per_trade}%`:`$${fmt(settings.bb_reversal.amount_per_trade)}`}</dd></div><div><dt>SMA adjustment</dt><dd>{settings.bb_reversal.use_sma_trend_adjustment?'On':'Off'}</dd></div></dl></div>
-      </aside><form className="configuration-form" onSubmit={run}><fieldset disabled={busy}>
+      </aside><form className="configuration-form" onSubmit={run}><fieldset disabled={busy||tuning}>
         <BBReversalSettings settings={settings} onChange={setSettings}/>
         <section className="settings-section" id="settings-range"><div className="section-heading"><h3>Backtest range & account</h3><span className="paper-badge">SINGLE PERIOD</span></div><div className="settings-grid"><label>Starting balance ($)<input type="number" required min={1} max={1e9} step="any" value={settings.capital} onChange={e=>setSettings({...settings,capital:Number(e.target.value)})}/></label>
           {(['start_date','end_date'] as const).map((key,i)=><label key={key}>{['Start date (UTC)','End date (UTC, inclusive)'][i]}<input type="date" required min={key==='end_date'?settings.start_date:range.startDate} max={range.endDate} value={settings[key]} onChange={e=>setSettings({...settings,[key]:e.target.value})}/></label>)}
         </div><p className="settings-help">Available: {range.startDate} to {range.endDate}. One account balance runs through the full range. Live and replay dates are configured separately in the terminal.</p></section>
-        <div className="configuration-runbar"><div><strong>Ready to test your setup?</strong><small>Changes apply to the next run or new bot session.</small></div><button type="submit" disabled={busy}>{busy?'Running backtest...':'Run full backtest'}</button></div>
-      </fieldset><details className="execution-notes"><summary>Execution assumptions</summary><p>Signals use completed candles and fill at close. Stops include adverse gaps; trailing stops never loosen. Position notional is allocated amount times leverage. A depleted balance blocks new trades. Costs, session filters and liquidation are not modeled.</p></details></form></div>
+        <div className="configuration-runbar"><div><strong>Ready to test your setup?</strong><small>Changes apply to the next run or new bot session.</small></div><div className="configuration-run-actions"><button type="button" className="secondary" disabled={busy||tuning} onClick={()=>void runFineTune()}>{tuning?'Searching candidates…':'Fine tune settings'}</button><button type="submit" disabled={busy||tuning}>{busy?'Running backtest...':'Run full backtest'}</button></div></div>
+      </fieldset>
+      {(tuneError||tuneResult)&&<section className="fine-tune-panel" aria-live="polite">{tuneError?<p className="error" role="alert">{tuneError}</p>:tuneResult&&<><div className="fine-tune-heading"><div><h3>Fine tuning results</h3><p>Model: {tuneResult.model}. Evaluated {tuneResult.candidatesEvaluated} candidates, including {tuneResult.seedCandidates} initial and {tuneResult.adaptiveCandidatesEvaluated} ML guided settings. The top {tuneResult.shortlisted} were checked on validation data; the forward test is held out from selection.</p></div><button type="button" onClick={()=>setSettings(tuneResult.bestSettings)}>Apply best settings</button></div><div className="tune-parameters"><strong>Recommended values</strong>{Object.entries(tuneResult.bestParameters).map(([key,value])=><span key={key}>{tuneLabels[key]??key}<b>{typeof value==='number'?fmt(value,3):String(value)}</b></span>)}</div><div className="tune-scorecards">{renderTuneMetrics('Training',tuneResult.periods.train.metrics)}{renderTuneMetrics('Validation',tuneResult.periods.validation.metrics)}{renderTuneMetrics('Forward test',tuneResult.periods.forwardTest.metrics)}</div><small className="settings-help">Ranking objective: {tuneResult.objective} The forward test is historical evidence, not a guarantee of future performance. Consider requiring more trades before using a candidate.</small></>}</section>}
+      <details className="execution-notes"><summary>Execution assumptions</summary><p>Signals use completed candles and fill at close. Stops include adverse gaps; trailing stops never loosen. Position notional is allocated amount times leverage. A depleted balance blocks new trades. Costs, session filters and liquidation are not modeled.</p></details></form></div>
     </div>
     {error&&view!=='paper'&&<p className="error" role="alert">{error}</p>}
     <div id="page-results" role="tabpanel" aria-labelledby="tab-results" hidden={view!=='results'}><ResultsWorkspace key={runId} result={result} busy={busy} stale={stale} onRun={()=>void run()} onConfigure={()=>onViewChange('strategy')} onExport={download}/></div>

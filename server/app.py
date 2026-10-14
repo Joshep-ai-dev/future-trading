@@ -12,6 +12,7 @@ from .market_refresh import refresh_service
 from .paper_trading import paper_service
 from .live_exchange import live_exchange, live_bot
 from .profile_store import profile_store
+from .fine_tuning import fine_tune
 
 @asynccontextmanager
 async def lifespan(app):
@@ -53,6 +54,11 @@ class ProfileSaveRequest(BaseModel):
         if not value:
             raise ValueError('Setup name cannot be blank')
         return value
+
+
+class FineTuneRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    settings: BBBacktestRequest
 
 
 class LiveBotStartRequest(BBBacktestRequest):
@@ -294,6 +300,15 @@ def backtest(parameters: BBBacktestRequest):
             raise ValueError('Only BB Outer Band Reversal + Trailing SL is supported')
         frame, _ = load_bars(parameters.entry_timeframe)
         return run_bb_reversal_backtest(frame, parameters)
+    except (ValueError, OSError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.post('/api/backtest/fine-tune')
+def fine_tune_backtest(parameters: FineTuneRequest):
+    try:
+        frame, _ = load_bars(parameters.settings.entry_timeframe)
+        return fine_tune(frame, parameters.settings)
     except (ValueError, OSError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
