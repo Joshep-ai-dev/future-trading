@@ -117,3 +117,83 @@ input,select{display:block;width:100%;margin-top:7px;background:#0d131e;color:#d
 .account-page{max-width:1280px}.account-settings-layout{display:grid;grid-template-columns:230px minmax(0,1fr);align-items:start;gap:18px}.account-settings-nav{position:sticky;top:14px;display:flex;flex-direction:column;gap:5px;padding:12px;background:#111722;border:1px solid #273449;border-radius:8px}.account-settings-nav-title{padding:8px 10px;color:#7286a3;font-size:10px;letter-spacing:.9px}.account-settings-nav button{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:5px;width:100%;padding:12px 11px;text-align:left;background:transparent;border:1px solid transparent;color:#a8b7cb}.account-settings-nav button strong{font-size:12px}.account-settings-nav button small{font-size:10px;color:#7789a3}.account-settings-nav button.selected{background:#1b2b41;border-color:#304766;color:#e2edfc}.account-settings-nav button.selected small{color:#9bb2d2}.account-settings-nav button>span{position:absolute;right:12px;top:12px;color:#7589a4}.account-settings-nav-divider{height:1px;margin:5px 4px;background:#293548}.account-settings-content{min-width:0}.account-settings-content>.account-preference-card{min-height:220px}.profile-menu-mode{display:flex;flex-direction:column;gap:6px;padding:10px;border-radius:5px;background:#151e2c}.profile-menu-mode span{font-size:9px;color:#788ca8;letter-spacing:.6px}.profile-menu-mode strong{font-size:12px;color:#d2dff1}
 @media(max-width:800px){.account-settings-layout{grid-template-columns:190px minmax(0,1fr);gap:12px}.account-settings-nav{padding:8px}}
 @media(max-width:600px){.account-page{max-width:none}.account-settings-layout{grid-template-columns:1fr}.account-settings-nav{position:static;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;padding:7px}.account-settings-nav-title{grid-column:1/-1;padding:5px 6px}.account-settings-nav button{min-height:57px;padding:8px 7px}.account-settings-nav button:nth-of-type(3){grid-column:1/-1;min-height:46px}.account-settings-nav button strong{font-size:10px}.account-settings-nav button small{font-size:9px}.account-settings-nav button>span{display:none}.account-settings-nav-divider{display:none}.account-settings-content>.account-preference-card{min-height:0}}
+
+/* Account page: show account-wide choices as clear, stacked sections. */
+.account-page{max-width:1120px;margin:28px auto 44px;gap:16px}
+.account-page-heading{margin-bottom:4px}
+.account-mode-card .account-switch{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));max-width:620px;padding:4px;background:#0c111b;border:1px solid #29364b;border-radius:6px}
+.account-mode-card .account-switch label{display:grid;grid-template-columns:18px minmax(0,1fr);align-items:center;column-gap:10px;padding:13px;border:1px solid transparent;border-radius:4px}
+.account-mode-card .account-switch label input{grid-column:1;grid-row:1/3}
+.account-mode-card .account-switch label span{grid-column:2;grid-row:1;font-weight:600}
+.account-mode-card .account-switch label small{grid-column:2;grid-row:2;margin-top:3px;color:#8293ab;font-size:10px}
+.account-mode-card .account-switch label.selected small{color:#a9c2e4}
+.account-display-card .account-preference-heading,.account-exchange-card .account-preference-heading{margin-bottom:16px}
+.account-exchange-card .live-connect-section{padding:0;border:0}
+.account-exchange-card .live-section-heading{margin-bottom:14px}
+.exchange-radio-list{grid-template-columns:repeat(4,minmax(0,1fr));margin:0 0 14px;padding:12px;background:#0d131d;border:1px solid #273449;border-radius:6px}
+.exchange-radio-heading{margin-bottom:2px;color:#8193ad}
+.exchange-radio-list label{min-height:58px;padding:9px 10px;background:#121a26}
+.live-connect-form{grid-template-columns:repeat(3,minmax(0,1fr)) auto;gap:13px}
+.live-connect-form label{min-width:0}
+.live-connect-form .connect-button{align-self:end}
+.live-connect-form .credential-note{grid-column:1/-1;margin-top:0;padding-top:2px}
+.account-risk-note{display:block;margin:14px 0 0}
+.account-exchange-card .connected-account-row{grid-template-columns:minmax(0,1fr) minmax(0,1.5fr) auto auto}
+.live-terminal-controls{overflow:hidden;padding:0}
+.live-terminal-controls .live-account-content{min-width:0}
+.live-terminal-controls .live-method-section{padding:16px}
+.live-position-strip{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 16px 12px;padding:10px 12px;background:#0d1718;border:1px solid #294744;border-radius:5px;color:#9eb8b2;font-size:9px;line-height:1.45}
+.live-position-strip.has-position{background:#191d22;border-color:#4b4140}
+.live-position-strip>div{display:flex;flex-direction:column;gap:4px;min-width:0}
+.live-position-strip strong{font-size:10px}
+.live-position-strip span{overflow-wrap:anywhere}
+.live-position-strip button{flex:none;font-size:9px}
+.live-terminal-controls .live-section-heading{align-items:center;margin:0 0 14px}
+.live-terminal-controls .live-section-heading h2{margin:0 0 4px;font-size:14px}
+.live-terminal-controls .live-section-heading p{margin:0;color:#8394ad;font-size:10px;line-height:1.45}
+.live-terminal-heading-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.live-terminal-controls .execution-mode-switch{max-width:none}
+.live-terminal-controls .execution-mode-panel{padding:12px}
+.live-bot-settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 10px}
+.live-bot-settings-grid>label{display:block;min-width:0;color:#899bb5;font-size:10px}
+.live-bot-settings-grid>label:first-child,.live-bot-settings-grid>label:last-child{grid-column:1/-1}
+.live-bot-settings-grid input,.live-bot-settings-grid select{display:block;width:100%;height:36px;margin-top:6px;padding:8px 9px;background:#0c111b;border:1px solid #29364b;border-radius:4px;color:#d8e2f1;font-size:11px}
+.live-bot-settings-grid .input-with-unit{margin-top:6px}
+.live-bot-settings-grid .input-with-unit input{margin-top:0;border-radius:4px 0 0 4px}
+.live-bot-settings-grid .input-with-unit select{width:70px;flex:none;margin-top:0;border-radius:0 4px 4px 0}
+.live-sizing-note{margin:10px 0 0;color:#7588a2;font-size:9px;line-height:1.45}
+.live-bot-start{display:flex;flex-direction:column;gap:9px;margin-top:14px}
+.live-bot-start .live-danger{width:100%;max-width:none}
+.live-bot-start>small{font-size:9px;line-height:1.45}
+.live-strategy-card{margin:14px 0 0;padding:12px 0 0;border-top:1px solid #29364b}
+.live-strategy-card>div{display:flex;align-items:center;gap:9px}
+.live-strategy-card strong,.live-strategy-card small{display:block}
+.live-strategy-card strong{font-size:10px}
+.live-strategy-card small{margin-top:4px;font-size:9px}
+.live-strategy-card button{margin:8px 0 0 38px}
+.live-session-note{margin:10px 0 0;color:#71839d;font-size:9px;line-height:1.5}
+.live-terminal-controls .manual-order-inputs{grid-template-columns:1fr 1fr;gap:10px}
+.live-terminal-controls .direction-control{grid-column:1/-1}
+.live-terminal-controls .manual-order-inputs>label:last-child{grid-column:1/-1}
+.live-terminal-controls .execution-confirm-row{align-items:stretch;flex-direction:column;gap:10px}
+.live-terminal-controls .execution-confirm-row .live-danger{width:100%;max-width:none}
+.live-terminal-controls .live-account-footer{display:none}
+.live-risk-note{margin:0;padding:10px 14px;border-top:1px solid #29364b;color:#8899b1;font-size:9px;line-height:1.5}
+.live-risk-note strong{color:#dfb96f}
+.paper-running-notice{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;padding:10px 12px;background:#2a2319;border:1px solid #72552e;border-radius:6px}
+.paper-running-notice>div{display:flex;flex-direction:column;gap:4px;min-width:0}
+.paper-running-notice strong{color:#e8c585;font-size:10px}
+.paper-running-notice span{color:#b89b6b;font-size:9px;line-height:1.4}
+.paper-running-notice button{flex:none;font-size:9px}
+@media(max-width:600px){.paper-running-notice{align-items:flex-start;flex-direction:column}.paper-running-notice button{width:100%}}
+.header-account{gap:10px}
+.header-exchange-picker,.header-mode-picker{display:flex;align-items:center;gap:6px;min-width:0}
+.header-exchange-picker>span{color:#7286a3;font-size:8px;letter-spacing:.7px}
+.header-exchange-picker select,.header-mode-picker select{display:block;width:auto;flex:none;height:30px;margin:0;padding:5px 24px 5px 8px;background-color:#111722;border:1px solid #31415a;border-radius:4px;color:#c7d5ea;font-size:9px;letter-spacing:.35px}
+.header-exchange-picker select{min-width:106px;max-width:142px}
+.header-mode-picker select{min-width:115px;background-color:#182338;border-color:#385477;color:#a9c8f4;font-size:8px;letter-spacing:.65px}
+@media(max-width:500px){.header-account{gap:7px}.header-exchange-picker>span{display:none}.header-exchange-picker select{min-width:82px;max-width:100px}.header-mode-picker select{min-width:104px}}
+@media(max-width:950px){.live-connect-form{grid-template-columns:repeat(2,minmax(0,1fr))}.live-connect-form .connect-button{grid-column:1/-1;width:100%}}
+@media(max-width:760px){.exchange-radio-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.account-page{max-width:none;margin:18px 12px 28px}.account-preference-card{padding:18px 15px}.account-mode-card .account-switch{max-width:none}.account-mode-card .account-switch label{padding:10px 7px}.exchange-radio-list{grid-template-columns:1fr 1fr;padding:9px}.live-connect-form{grid-template-columns:1fr}.live-connect-form .connect-button,.live-connect-form .credential-note{grid-column:auto}.live-terminal-controls .live-method-section{padding:13px}.live-terminal-controls .live-section-heading{align-items:flex-start}.live-position-strip{align-items:flex-start;flex-direction:column;margin:0 13px 10px}.live-position-strip button{width:100%}}
+.trading-chart-heading{min-height:52px}.trading-chart-heading-meta{display:flex;align-items:center;justify-content:flex-end;gap:12px;min-width:0}.trading-chart-heading .chart-title{gap:10px}.trading-chart-heading .chart-caption{white-space:nowrap}.chart-timeframe-select:disabled{cursor:default;opacity:1}

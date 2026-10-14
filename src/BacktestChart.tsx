@@ -1,10 +1,13 @@
 import {StopOverlay} from './StopOverlay';
-import {useEffect, useRef, useState} from 'react';
+import {useEffect, useMemo, useRef, useState} from 'react';
 import {CandlestickSeries, ColorType, createChart, createSeriesMarkers, LineSeries, BaselineSeries, LineStyle, LineType, type IChartApi, type ISeriesApi, type UTCTimestamp, type SeriesMarker} from 'lightweight-charts';
 import {fillMarker,FillLabels} from './fillMarkers';
 import ChartTools,{chartInteraction,resizeChart} from './ChartTools';
 import {captureViewport,restoreViewport} from './chartViewport';
 import {chartTimeOptions,formatChartTime,readChartTimeZone,useChartTimeZone} from './chartTimeZone';
+import {chartOscillators} from './chartOscillators';
+import {readIndicatorSettings} from './IndicatorSettings';
+import {useChartIndicatorSelection,toggleChartIndicator} from './chartIndicatorSelection';
 import {fmt, type Analysis, type PeriodResult, type Trade, type IndicatorPoint, type BacktestSettings} from './types';
 
 export function EquityChart({period}: {period: Pick<PeriodResult,'name'|'equity'>}) {
@@ -37,7 +40,15 @@ export default function BacktestChart({candles,trades,selected,onSelect,indicato
   const chartRef = useRef<IChartApi|null>(null);
   const viewportRef = useRef<{dataKey:string;selectedId:number|null;viewport:ReturnType<typeof captureViewport>}|null>(null);
   const onSelectRef = useRef(onSelect);onSelectRef.current=onSelect;
-  const [readout,setReadout] = useState('Hover for candle time and prices. Click an entry or exit to select its trade.');
+  const [readout,setReadout] = useState('Hover for candle time and prices.');
+  const selectedIndicators=useChartIndicatorSelection();
+  const [follow,setFollow]=useState(true);
+  const indicatorConfig=useMemo(()=>readIndicatorSettings(),[]);
+  function toggleIndicator(key:'atr'|'adx'|'rsi'){
+    toggleChartIndicator(key);
+  }
+  function latest(){setFollow(true);chartRef.current?.timeScale().setVisibleLogicalRange({from:Math.max(0,candles.length-180),to:candles.length+5});}
+  function holdView(){setFollow(false);}
   useEffect(()=>{
     if (!ref.current || !candles.length) return;
     const dataKey=`${candles.length}:${candles[0]?.time}:${candles.at(-1)?.time}`;
@@ -51,6 +62,17 @@ export default function BacktestChart({candles,trades,selected,onSelect,indicato
     const price = chart.addSeries(CandlestickSeries,{borderVisible:false,upColor:'#26a69a',downColor:'#ef5350',wickUpColor:'#26a69a',wickDownColor:'#ef5350',priceFormat:{type:'price',precision:3,minMove:.001}});
     price.priceScale().applyOptions({scaleMargins:{top:.18,bottom:.22}});
     price.setData(view.map(c=>({...c,time:c.time as UTCTimestamp})));
+    const oscillatorData=chartOscillators(view,barSeconds,indicatorConfig.atrLength,indicatorConfig.adxLength,indicatorConfig.atrSmoothing,indicatorConfig.rsiLength);
+    const oscillatorKinds=(['atr','adx','rsi'] as const).filter(key=>selectedIndicators[key]);
+    for(const [index,key] of oscillatorKinds.entries()){
+      const colors={atr:'#38d9ff',adx:'#90a4ae',rsi:'#bd93f9'};
+      const series=chart.addSeries(LineSeries,{color:colors[key],lineWidth:1,title:key==='atr'?`ATR (${indicatorConfig.atrLength})`:key==='adx'?`ADX (${indicatorConfig.adxLength})`:`RSI (${indicatorConfig.rsiLength})`,priceLineVisible:false,priceFormat:{type:'price',precision:key==='atr'?3:2,minMove:key==='atr'?.001:.01},...(key==='rsi'?{autoscaleInfoProvider:()=>({priceRange:{minValue:0,maxValue:100}})}:{})},index+1);
+      series.setData(oscillatorData.map(point=>point[key]===null?{time:point.time as UTCTimestamp}:{time:point.time as UTCTimestamp,value:point[key]}));
+      if(key==='rsi')for(const [value,color,title] of [[indicatorConfig.rsiUpper,'#ff8191','Upper'],[50,'#61718b','Mid'],[indicatorConfig.rsiLower,'#43d9a5','Lower']] as const)series.createPriceLine({price:value,color,title,lineStyle:LineStyle.Dashed,lineWidth:1,axisLabelVisible:true});
+      if(key==='atr')series.createPriceLine({price:indicatorConfig.atrThreshold,color:'#ffb74d',title:'Threshold',lineStyle:LineStyle.Dashed,lineWidth:1,axisLabelVisible:true});
+      if(key==='adx')for(const [value,color,title] of [[20,'#90a4aea6','20 Weak'],[25,'#26a69acc','25 Trend'],[indicatorConfig.adxThreshold,'#ff40ff','Entry']] as const)series.createPriceLine({price:value,color,title,lineStyle:LineStyle.Dashed,lineWidth:1,axisLabelVisible:true});
+    }
+    if(oscillatorKinds.length)chart.panes().forEach((pane,index)=>pane.setStretchFactor(index===0?3:1));
     if(indicators.length) {
       if(indicatorSettings.strategy==='chartart_v12'||indicatorSettings.strategy==='bb_outer_reversal') {
         for(const [key,color,title] of [['bbBasis','#63d6d0','BB basis'],['bbUpper','#7d8da5','BB upper'],['bbLower','#7d8da5','BB lower']] as const) {
@@ -138,7 +160,7 @@ export default function BacktestChart({candles,trades,selected,onSelect,indicato
       viewportRef.current={dataKey,selectedId:selected?.id??null,viewport:captureViewport(chart,view.at(-1)?.time)};
       stopResize();chartRef.current=null;chart.remove();
     };
-  },[candles,trades,selected,indicators,barSeconds,indicatorSettings]);
+  },[candles,trades,selected,indicators,barSeconds,indicatorSettings,selectedIndicators,indicatorConfig]);
   useEffect(()=>{const options=chartTimeOptions(timeZone);chartRef.current?.applyOptions({localization:options.localization,timeScale:options.timeScale});},[timeZone]);
-  return <><ChartTools chartRef={chartRef} endLabel="End" onLatest={()=>chartRef.current?.timeScale().setVisibleLogicalRange({from:Math.max(0,candles.length-180),to:candles.length+5})}/><p className="readout">{readout}</p><div className="chart-resize"><div ref={ref} className="chart-container position-chart" aria-label={`${timeframe} trade positions, indicators, entries, exits, stop and target zones`}/></div></>;
+  return <><ChartTools chartRef={chartRef} endLabel="Latest" onLatest={latest} onNavigate={holdView} showEarlier indicators={selectedIndicators} onToggleIndicator={toggleIndicator} follow={follow} onFollowChange={setFollow}/><p className="readout">{readout}</p><div className="chart-history-status" role="status">All candles in this backtest are loaded<span>Latest returns to the end of the test period</span></div><div className="chart-resize"><div ref={ref} className="chart-container position-chart" aria-label={`${timeframe} trade positions, indicators, entries, exits, stop and target zones`}/></div></>;
 }

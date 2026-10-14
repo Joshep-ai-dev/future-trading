@@ -18,11 +18,13 @@ export function resizeChart(chart:IChartApi,element:HTMLDivElement,initialView:(
   return ()=>observer.disconnect();
 }
 
-export default function ChartTools({chartRef,valueLabel='Price',endLabel='Latest',onLatest,onEarlier,onNavigate,loading=false,hasMore=false}: {
+export default function ChartTools({chartRef,valueLabel='Price',endLabel='Latest',onLatest,onEarlier,onNavigate,loading=false,hasMore=false,indicators,onToggleIndicator,follow,onFollowChange,showEarlier=false}: {
   chartRef: {current:IChartApi|null}; valueLabel?:string; onLatest?:()=>void;
   endLabel?:string;
   onEarlier?:()=>void; loading?:boolean; hasMore?:boolean;
   onNavigate?:()=>void;
+  indicators?:{atr:boolean;adx:boolean;rsi:boolean};onToggleIndicator?:(key:'atr'|'adx'|'rsi')=>void;
+  follow?:boolean;onFollowChange?:(value:boolean)=>void;showEarlier?:boolean;
 }) {
   function zoomTime(factor:number) {
     onNavigate?.();
@@ -43,12 +45,15 @@ export default function ChartTools({chartRef,valueLabel='Price',endLabel='Latest
     chartRef.current?.priceScale('right').setAutoScale(true);
     chartRef.current?.timeScale().fitContent();
   }
-  return <div className="chart-toolbar" role="group" aria-label={`${valueLabel} chart controls`}>
-    <div><span>Time</span><button className="secondary" type="button" aria-label="Zoom in time" onClick={()=>zoomTime(.7)}>+</button><button className="secondary" type="button" aria-label="Zoom out time" onClick={()=>zoomTime(1/.7)}>−</button></div>
-    <div><span>{valueLabel}</span><button className="secondary" type="button" aria-label={`Zoom in ${valueLabel.toLowerCase()}`} onClick={()=>zoomValue(.7)}>+</button><button className="secondary" type="button" aria-label={`Zoom out ${valueLabel.toLowerCase()}`} onClick={()=>zoomValue(1/.7)}>−</button></div>
-    <button className="secondary" type="button" onClick={reset}>Fit / reset</button>
-    {onLatest&&<button className="secondary" type="button" onClick={onLatest}>{endLabel}</button>}
-    {onEarlier&&<button className="secondary" type="button" disabled={loading||!hasMore} onClick={onEarlier}>{loading?'Loading history…':hasMore?'Load earlier':'Start of history'}</button>}
-    <small>Scroll / pinch to zoom · drag to pan · drag lower-right corner to resize</small>
+  return <div className="chart-actions">
+    <div className="chart-toolbar" role="group" aria-label={`${valueLabel} chart controls`}>
+      <div><span>Time</span><button className="secondary" type="button" aria-label="Zoom in time" onClick={()=>zoomTime(.7)}>+</button><button className="secondary" type="button" aria-label="Zoom out time" onClick={()=>zoomTime(1/.7)}>−</button></div>
+      <div><span>{valueLabel}</span><button className="secondary" type="button" aria-label={`Zoom in ${valueLabel.toLowerCase()}`} onClick={()=>zoomValue(.7)}>+</button><button className="secondary" type="button" aria-label={`Zoom out ${valueLabel.toLowerCase()}`} onClick={()=>zoomValue(1/.7)}>−</button></div>
+      <button className="secondary" type="button" onClick={reset}>Fit / reset</button>
+      {onLatest&&<button className="secondary" type="button" onClick={onLatest}>{endLabel}</button>}
+      {(onEarlier||showEarlier)&&<button className="secondary" type="button" disabled={loading||!hasMore||!onEarlier} onClick={onEarlier}>{loading?'Loading history…':hasMore?'Load earlier':'Load earlier'}</button>}
+    </div>
+    {indicators&&onToggleIndicator&&<div className="indicator-switch" role="group" aria-label="Chart indicators"><span>Indicators</span>{(['atr','adx','rsi'] as const).map(key=><button key={key} type="button" aria-pressed={indicators[key]} onClick={()=>onToggleIndicator(key)}>{key.toUpperCase()}</button>)}</div>}
+    {follow!==undefined&&onFollowChange&&<label className="follow-toggle"><input type="checkbox" checked={follow} onChange={event=>{onNavigate?.();onFollowChange(event.target.checked);if(event.target.checked)onLatest?.();}}/> Follow price</label>}
   </div>;
 }

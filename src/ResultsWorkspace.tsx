@@ -3,6 +3,7 @@ import {useMemo,useState} from 'react';
 import BacktestChart,{EquityChart} from './BacktestChart';
 import {fmt,type BacktestResult,type Trade} from './types';
 import {formatTradingTime,useTradingTimeZone,type TradingTimeZone} from './tradingTime';
+import TradingChartHeader from './TradingChartHeader';
 
 const utc=(t:number)=>new Date(t*1000).toISOString().replace('T',' ').slice(0,16);
 const tradeTime=(t:number,zone:TradingTimeZone)=>formatTradingTime(t,zone);
@@ -18,7 +19,7 @@ export default function ResultsWorkspace({result,busy,stale,onRun,onConfigure,on
   const currentPage=Math.min(page,pages-1);
   const exits=useMemo(()=>Object.entries((p?.trades??[]).reduce<Record<string,number>>((counts,t)=>{counts[t.exitReason]=(counts[t.exitReason]??0)+1;return counts;},{})),[p]);
   return <>
-    <div className="workspace-heading"><div><span className="eyebrow">STRATEGY ANALYSIS</span><h1>Results</h1><p>One continuous backtest. Every fill, position and account change in one workspace.</p></div><div className="workspace-actions"><button className="secondary" onClick={onConfigure}>Edit settings</button>{result&&<button className="secondary" onClick={onExport}>Export JSON</button>}<button disabled={busy} onClick={onRun}>{busy?'Running…':'Run backtest'}</button></div></div>
+    <div className="workspace-heading"><div><span className="eyebrow">BACKTEST REPORT</span><h1>Backtest</h1><p>Review the run, its performance and every simulated trade.</p></div><div className="workspace-actions"><button className="secondary" onClick={onConfigure}>Edit settings</button>{result&&<button className="secondary" onClick={onExport}>Export JSON</button>}<button disabled={busy} onClick={onRun}>{busy?'Running…':'Run backtest'}</button></div></div>
     {stale&&<p className="notice">Settings have changed. These results use the previous configuration.</p>}
     {result&&p&&s?<>
       <div className="run-context"><span className="run-label">BB OUTER BAND REVERSAL</span><span>{result.executionTimeframe.toUpperCase()} candles</span><span>{result.settings.max_leverage}× leverage</span><span>{utc(p.start)} — {utc(p.end)} UTC</span><span className="paper-badge">SIMULATED</span></div>
@@ -29,7 +30,7 @@ export default function ResultsWorkspace({result,busy,stale,onRun,onConfigure,on
         <article><small>Max drawdown</small><strong className="negative">{fmt(s.maxDrawdownPct)}%</strong><span>Measured on closing equity</span></article>
       </div>
       <div className="results-layout"><div className="results-main">
-        <section className="terminal-panel result-chart"><div className="panel-heading"><div className="chart-title"><strong>XAGUSDT</strong><span className="timeframe-tag">{result.executionTimeframe.toUpperCase()}</span><span className="chart-mode">BACKTEST EXECUTIONS</span></div><button className="text-button" onClick={()=>setSelectedId(null)}>Show latest ↗</button></div>
+        <section className="terminal-panel result-chart"><TradingChartHeader timeframe={result.executionTimeframe} mode="BACKTEST" caption={`Backtest executions on ${result.executionTimeframe} candles`} actions={<button className="text-button" onClick={()=>setSelectedId(null)}>Show latest ↗</button>}/>
           <BacktestChart indicators={result.indicators} indicatorSettings={result.settings} barSeconds={result.barSeconds} timeframe={result.executionTimeframe} candles={result.candles} trades={p.trades} selected={selected} onSelect={select}/>
           <div className="chart-legend"><span><i className="legend-dot buy"/> Buy</span><span><i className="legend-dot sell"/> Sell / exit</span><span><i className="legend-line"/> Stop</span><span className="legend-note">Select a marker or trade to inspect its position</span></div>
         </section>

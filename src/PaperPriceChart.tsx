@@ -13,6 +13,7 @@ import {useEffect,useRef,useState} from 'react';
 import {CandlestickSeries,ColorType,createChart,createSeriesMarkers,LineSeries,LineStyle,type AutoscaleInfo,type ISeriesApi,type IChartApi,type UTCTimestamp,type SeriesMarker} from 'lightweight-charts';
 import {fillMarker,FillLabels} from './fillMarkers';
 import ChartTools,{chartInteraction,resizeChart} from './ChartTools';
+import {useChartIndicatorSelection,toggleChartIndicator} from './chartIndicatorSelection';
 import {fmt,type Analysis} from './types';
 import type {PaperTrade,Position} from './PaperTrading';
 
@@ -23,14 +24,14 @@ type Props=Data&{sessionId:number;showSma:boolean;timeframe:string;atrLength:num
 export default function PaperPriceChart(props:Props) {
   const container=useRef<HTMLDivElement>(null),chartRef=useRef<IChartApi|null>(null);
   const update=useRef<(data:Data)=>void>(()=>{});
-  const [selectedIndicators,setSelectedIndicators]=useState<{atr:boolean;adx:boolean;rsi:boolean}>(()=>{try{const saved=JSON.parse(localStorage.getItem('silver.chart.oscillators')??'{}');return {atr:saved.atr===true,adx:saved.adx===true,rsi:saved.rsi===true};}catch{return {atr:false,adx:false,rsi:false};}});
+  const selectedIndicators=useChartIndicatorSelection();
   const [indicatorConfig,setIndicatorConfig]=useState(readIndicatorSettings),[settingsOpen,setSettingsOpen]=useState<IndicatorKind|null>(null);
   const timeZone=useChartTimeZone();
   const timeZoneRef=useRef(timeZone);timeZoneRef.current=timeZone;
   const configRef=useRef(indicatorConfig);configRef.current=indicatorConfig;
   function applyIndicatorConfig(config:IndicatorConfig){setIndicatorConfig(config);try{localStorage.setItem('silver.chart.indicatorSettings',JSON.stringify(config));}catch{}}
   const changePanels=useRef<(selection:{atr:boolean;adx:boolean;rsi:boolean},config:IndicatorConfig)=>void>(()=>{});
-  function toggleIndicator(key:IndicatorKind){setSelectedIndicators(old=>{const next={...old,[key]:!old[key]};try{localStorage.setItem('silver.chart.oscillators',JSON.stringify(next));}catch{}return next;});}
+  function toggleIndicator(key:IndicatorKind){toggleChartIndicator(key);}
   const [paneHeaders,setPaneHeaders]=useState<{kind:IndicatorKind;top:number}[]>([]);
   const [paneValues,setPaneValues]=useState<{atr:number|null;adx:number|null;rsi:number|null}>({atr:null,adx:null,rsi:null});
   const [hiddenIndicators,setHiddenIndicators]=useState({atr:false,adx:false,rsi:false});
@@ -212,5 +213,5 @@ export default function PaperPriceChart(props:Props) {
   useEffect(()=>{update.current(props);},[props]);
   useEffect(()=>{updateVisibility.current();},[hiddenIndicators]);
   useEffect(()=>{changePanels.current(selectedIndicators,indicatorConfig);},[selectedIndicators,indicatorConfig,props.sessionId,props.showSma,props.timeframe]);
-  return <><div className="chart-actions"><ChartTools chartRef={chartRef} onLatest={latest} onNavigate={holdView} onEarlier={()=>loadEarlier.current()} loading={loading} hasMore={hasMore}/><div className="indicator-switch" role="group" aria-label="Chart indicators"><span>Indicators</span>{(['atr','adx','rsi'] as const).map(key=><button key={key} type="button" aria-pressed={selectedIndicators[key]} onClick={()=>toggleIndicator(key)}>{key.toUpperCase()}</button>)}</div><label className="follow-toggle"><input type="checkbox" checked={follow} onChange={e=>{following.current=e.target.checked;setFollow(e.target.checked);if(e.target.checked)latest();}}/> Follow price</label></div>{settingsOpen&&<IndicatorSettings key={settingsOpen} kind={settingsOpen} value={indicatorConfig} onApply={applyIndicatorConfig} onClose={()=>setSettingsOpen(null)}/>}<p className="readout">{readout}</p>{historyError&&<p className="chart-history-status error" role="alert">{historyError} <button type="button" className="text-button" onClick={()=>loadEarlier.current()}>Retry</button></p>}<div className="chart-history-status" role="status">{loading?"Loading earlier candles...":hasMore?"Pan left to load history":"Beginning of available history"}<span>Pan right for newer candles ? Latest returns to the current price</span></div><div className="chart-resize">{paneHeaders.map(({kind,top})=><IndicatorHeader key={kind} kind={kind} top={top} config={indicatorConfig} value={paneValues[kind]} hidden={hiddenIndicators[kind]} onSettings={()=>setSettingsOpen(kind)} onVisibility={()=>setHiddenIndicators(old=>({...old,[kind]:!old[kind]}))} onRemove={()=>{setHiddenIndicators(old=>({...old,[kind]:false}));toggleIndicator(kind);}}/>)}<div ref={container} onWheelCapture={holdView} onPointerDownCapture={holdView} className="chart-container position-chart" aria-label="Virtual bot price chart with buys, sells, exits and trailing stops"/></div></>;
+  return <><ChartTools chartRef={chartRef} onLatest={latest} onNavigate={holdView} onEarlier={()=>loadEarlier.current()} loading={loading} hasMore={hasMore} showEarlier indicators={selectedIndicators} onToggleIndicator={toggleIndicator} follow={follow} onFollowChange={setFollow}/>{settingsOpen&&<IndicatorSettings key={settingsOpen} kind={settingsOpen} value={indicatorConfig} onApply={applyIndicatorConfig} onClose={()=>setSettingsOpen(null)}/>}<p className="readout">{readout}</p>{historyError&&<p className="chart-history-status error" role="alert">{historyError} <button type="button" className="text-button" onClick={()=>loadEarlier.current()}>Retry</button></p>}<div className="chart-history-status" role="status">{loading?"Loading earlier candles...":hasMore?"Pan left to load history":"Beginning of available history"}<span>Pan right for newer candles · Latest returns to the current price</span></div><div className="chart-resize">{paneHeaders.map(({kind,top})=><IndicatorHeader key={kind} kind={kind} top={top} config={indicatorConfig} value={paneValues[kind]} hidden={hiddenIndicators[kind]} onSettings={()=>setSettingsOpen(kind)} onVisibility={()=>setHiddenIndicators(old=>({...old,[kind]:!old[kind]}))} onRemove={()=>{setHiddenIndicators(old=>({...old,[kind]:false}));toggleIndicator(kind);}}/>)}<div ref={container} onWheelCapture={holdView} onPointerDownCapture={holdView} className="chart-container position-chart" aria-label="Virtual bot price chart with buys, sells, exits and trailing stops"/></div></>;
 }

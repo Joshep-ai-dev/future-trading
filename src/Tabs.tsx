@@ -1,7 +1,7 @@
 export type Page = 'strategy'|'results'|'paper'|'account';
-const pages: [Page,string][]=[['paper','Trading terminal'],['results','Results'],['strategy','Bot settings']];
+const pages: [Page,string][]=[['paper','Trading terminal'],['results','Backtest'],['strategy','Bot settings']];
 export default function Tabs({value,onChange}:{value:Page;onChange:(page:Page)=>void}) {
-  return <nav className="page-tabs" role="tablist" aria-label="Research pages">
+  return <nav className="page-tabs" role="tablist" aria-label="Main workspace">
     {pages.map(([key,label],index)=><button key={key} id={`tab-${key}`} role="tab" aria-selected={value===key} aria-controls={`page-${key}`} tabIndex={value===key?0:-1}
       onClick={()=>onChange(key)} onKeyDown={e=>{
         let next=index;
