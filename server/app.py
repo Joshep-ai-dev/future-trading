@@ -29,6 +29,29 @@ class Parameters(BaseModel):
     model_config = ConfigDict(extra='forbid')
     timeframe: Literal['1m', '3m', '5m', '10m', '15m', '30m', '1h', '4h', '1d'] = '1m'
 
+
+class ChartViewRequest(Parameters):
+    session_id: int
+    clock: float = Field(ge=0,le=4102444800)
+
+
+@app.post('/api/chart-view')
+def session_chart(parameters: ChartViewRequest):
+    from .chart_view import chart_view
+    with paper_service.lock:
+        state = paper_service.state
+        if not state or state['startedAt'] != parameters.session_id:
+            raise HTTPException(status_code=409, detail='The paper session has changed. Reload its chart.')
+        replay = state.get('mode') == 'replay'
+        clock = min(parameters.clock, state.get('virtualTime',0) if replay else paper_service.now())
+        snapshots = list(state.get('minuteCandles',[]))
+        settings = dict(state['settings']['bb_reversal'])
+    try:
+        frame, _ = load_bars('1m')
+        return chart_view(frame,snapshots,parameters.timeframe,clock,settings,replay)
+    except (ValueError,OSError) as error:
+        raise HTTPException(status_code=400,detail=str(error)) from error
+
 @app.get('/api/health')
 def health():
     return {'application': 'silver-price', 'version': 3}

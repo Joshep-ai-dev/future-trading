@@ -1,3 +1,5 @@
+import {useChartTimeframe} from './useChartTimeframe';
+import {TIMEFRAMES,chartPosition} from './chartTimeframe';
 import TradeView from './TradeView';
 import {STOP_COLORS,type StopPoint} from './StopOverlay';
 import {FILL_COLORS} from './fillMarkers';
@@ -16,6 +18,7 @@ type Response={session:Session|null;error:string|null};
 const date=(t:number|null)=>t===null?'Waiting':new Date(t*1000).toLocaleString();
 
 export default function PaperTrading({settings,onChange,onConfigure,visible}:{settings:BacktestSettings;onChange:(s:BacktestSettings)=>void;onConfigure:()=>void;visible:boolean}) {
+  const [chartTimeframe,setChartTimeframe]=useState<BacktestSettings['entry_timeframe']>(settings.entry_timeframe);
   const [data,setData]=useState<Response>({session:null,error:null});
   const [error,setError]=useState(''),[busy,setBusy]=useState(false);
   const [mode,setMode]=useState<'live'|'replay'>('live'),[speed,setSpeed]=useState(300);
@@ -27,9 +30,9 @@ export default function PaperTrading({settings,onChange,onConfigure,visible}:{se
   useEffect(()=>{
     if(!visible||data.session)return;
     const abort=new AbortController();
-    void api<Analysis>('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},signal:abort.signal,body:JSON.stringify({timeframe:settings.entry_timeframe})}).then(value=>{setPreview(value.candles.slice(-240));setPreviewError('');}).catch(e=>{if(!abort.signal.aborted)setPreviewError(String(e));});
+    void api<Analysis>('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},signal:abort.signal,body:JSON.stringify({timeframe:'1m'})}).then(value=>{setPreview(value.candles);setPreviewError('');}).catch(e=>{if(!abort.signal.aborted)setPreviewError(String(e));});
     return ()=>abort.abort();
-  },[visible,settings.entry_timeframe,!!data.session]);
+  },[visible,!!data.session]);
   useEffect(()=>{
     let active=true,pending=false;
     async function poll(){
@@ -51,14 +54,14 @@ export default function PaperTrading({settings,onChange,onConfigure,visible}:{se
     catch(e){setSpeed(data.session?.speed??300);setError(String(e));}finally{revision.current++;setBusy(false);}
   }
   const s=data.session;
-  const durations:Record<string,number>={'1m':60,'3m':180,'5m':300,'10m':600,'15m':900,'30m':1800,'1h':3600,'4h':14400,'1d':86400};
+  const durations=TIMEFRAMES;
   const duration=durations[s?.settings.entry_timeframe??settings.entry_timeframe];
   const displayClock=useReplayAnimation(visible&&s?.mode==='replay',s?.startedAt??0,s?.virtualTime??0);
   const animated=s?.mode==='replay'&&s.animationMinutes?.length?candleAt(s.animationMinutes,displayClock,duration):s?.formingCandle;
   const chartCandles=s?[...(s.chartCandles??[]).filter(c=>(s.mode!=='replay'||c.time+duration<=displayClock)&&(!animated||c.time<animated.time)),...(animated?[animated]:[])]:[];
   const chartIndicators=(s?.chartIndicators??[]).filter(row=>s?.mode!=='replay'||row.time+duration<=displayClock);
   const chartStops=(s?.chartStops??[]).filter(row=>s?.mode!=='replay'||row.time+duration<=displayClock);
-  useEffect(()=>{if(s){setMode(s.mode??'live');setSpeed(s.speed??300);const saved=s.settings as BacktestSettings&{replay_start?:string;replay_end?:string};if(saved.replay_start)setStartDate(saved.replay_start);if(saved.replay_end)setEndDate(saved.replay_end);}},[s?.startedAt]);
+  useEffect(()=>{if(s){setChartTimeframe(s.settings.entry_timeframe);setMode(s.mode??'live');setSpeed(s.speed??300);const saved=s.settings as BacktestSettings&{replay_start?:string;replay_end?:string};if(saved.replay_start)setStartDate(saved.replay_start);if(saved.replay_end)setEndDate(saved.replay_end);}},[s?.startedAt]);
   const config=s?.running?s.settings:settings;
   const price=s?(s.mode==='replay'?(animated?.close??chartCandles.at(-1)?.close??null):(s.displayPrice??s.latestPrice)):preview.at(-1)?.close??null;
   const equityHistory=(s?.equityHistory??[]).filter(row=>s?.mode!=='replay'||row.time+duration<=displayClock);
@@ -69,7 +72,17 @@ export default function PaperTrading({settings,onChange,onConfigure,visible}:{se
   const equity=replay?.equity??(s?(s.displayEquity??s.equity):settings.capital);
   const pnl=s?equity-s.settings.capital:0;
   const status=s?.halted?'Balance depleted':s?.completed?'Replay complete':s?.running?'Running':s?'Paused':'Ready to start';
-  const hasChart=s?chartCandles.length>0:preview.length>0;
+  const chartDuration=TIMEFRAMES[chartTimeframe];
+  const alternate=!!s&&chartTimeframe!==s.settings.entry_timeframe;
+  const chartView=useChartTimeframe(s?chartTimeframe:settings.entry_timeframe,s?.startedAt??0,s?(s.mode==='replay'?displayClock:s.quoteTime??s.virtualTime??0):Date.now()/1000,visible,s?.animationMinutes??preview,(s?.settings??settings).bb_reversal,s?.mode==='replay');
+  const view=chartView.view;
+  const viewForming=view.forming;
+  const visibleCandles=alternate||!s?(view?[...view.candles.filter(c=>(s?.mode!=='replay'||c.time+chartDuration<=displayClock)&&(!viewForming||c.time<viewForming.time)),...(viewForming?[viewForming]:[])]:[]):s?chartCandles:preview;
+  const visibleIndicators=alternate||!s?(view?.indicators??[]).filter(c=>s?.mode!=='replay'||c.time+chartDuration<=displayClock):chartIndicators;
+  const visibleTrades=alternate?chartTrades.map(t=>chartPosition(t,duration,chartDuration)):chartTrades;
+  const visiblePosition=alternate&&p?chartPosition(p,duration,chartDuration):p;
+  const hasChart=visibleCandles.length>0;
+  function changeChartTimeframe(value:BacktestSettings['entry_timeframe']){setChartTimeframe(value);if(!s){onChange({...settings,entry_timeframe:value});}}
   const replayProgress=s?.mode==='replay'&&s.replayEnd?Math.min(100,Math.max(0,(displayClock-s.tradingFrom)/(s.replayEnd-s.tradingFrom)*100)):0;
   return <div id="page-paper" role="tabpanel" aria-labelledby="tab-paper" hidden={!visible}>
     <div className="market-bar"><div className="instrument"><span className="instrument-icon">Ag</span><div><h1>XAG / USDT <span>PERP</span></h1><small>Silver perpetual · OKX</small></div></div>
@@ -78,8 +91,9 @@ export default function PaperTrading({settings,onChange,onConfigure,visible}:{se
       <div className="market-stat clock-stat"><small>{s?.mode==='replay'?'Replay clock':'Last candle'}</small><b>{date(s?(s.mode==='replay'?displayClock:s.virtualTime??s.lastProcessed):preview.at(-1)?.time??null)}</b></div>
     </div>
     <div className="terminal-grid"><div className="terminal-main">
-      <section className="terminal-panel price-panel"><div className="panel-heading"><div className="chart-title"><strong>XAGUSDT</strong><span className="timeframe-tag">{(s?.settings.entry_timeframe??settings.entry_timeframe).toUpperCase()}</span><span className="chart-mode">{s?s.mode==='replay'?'HISTORICAL REPLAY':'LIVE PAPER':'MARKET PREVIEW'}</span></div><span className="chart-caption">{s?'BB reversal + trailing stop':'Start a bot to display its trades'}</span></div>
-        {hasChart&&visible?<PaperPriceChart timeframe={s?.settings.entry_timeframe??settings.entry_timeframe} sessionId={s?.startedAt??0} candles={s?chartCandles:preview} indicators={chartIndicators} stops={chartStops} trades={chartTrades} position={p??null} showSma={(s?.settings??settings).bb_reversal.use_sma_trend_adjustment!==false}/>:<div className="chart-empty"><span className="empty-chart-icon">⌁</span><h3>{previewError?'Market preview unavailable':'Preparing your chart'}</h3><p>{previewError||'Loading downloaded market candles…'}</p></div>}
+      <section className="terminal-panel price-panel"><div className="panel-heading"><div className="chart-title"><strong>XAGUSDT</strong><label className="chart-timeframe-label"><span className="sr-only">Chart timeframe</span><select aria-label="Chart timeframe" className="chart-timeframe-select" value={s?chartTimeframe:settings.entry_timeframe} onChange={e=>changeChartTimeframe(e.target.value as BacktestSettings['entry_timeframe'])}>{Object.keys(TIMEFRAMES).map(tf=><option key={tf} value={tf}>{tf}</option>)}</select></label><span className="chart-mode">{s?s.mode==='replay'?'HISTORICAL REPLAY':'LIVE PAPER':'MARKET PREVIEW'}</span></div><span className="chart-caption">{s?`Bot executes on ${s.settings.entry_timeframe} candles`:'Choose a timeframe, then start your bot'}</span></div>
+        {hasChart&&visible?<PaperPriceChart timeframe={s?chartTimeframe:settings.entry_timeframe} sessionId={s?.startedAt??0} candles={visibleCandles} indicators={visibleIndicators} stops={alternate?[]:chartStops} trades={visibleTrades} position={visiblePosition??null} showSma={(s?.settings??settings).bb_reversal.use_sma_trend_adjustment!==false}/>:<div className="chart-empty"><span className="empty-chart-icon">⌁</span><h3>{chartView.error||previewError?'Chart unavailable':'Preparing your chart'}</h3><p>{previewError||'Loading downloaded market candles…'}</p></div>}
+        {alternate&&chartView.error&&hasChart&&<p className="chart-history-status error" role="alert">{chartView.error}</p>}
         <div className="chart-legend"><span><b style={{color:FILL_COLORS.buy}}>↑</b> Buy / close short</span><span><b style={{color:FILL_COLORS.sell}}>↓</b> Sell / close long</span><span><i className="legend-line" style={{borderColor:STOP_COLORS.initial}}/> Stop loss</span><span><i className="legend-line" style={{borderColor:STOP_COLORS.trailing}}/> Trailing stop / TRAIL activation</span><span className="legend-note">Markers show exact fill prices · {s?.mode==='replay'?'1s animation · simulated intraminute path':'1-minute source · selected timeframe aggregation'}</span></div>
       </section>
       <section className="terminal-panel activity-panel"><div className="activity-tabs" role="tablist" aria-label="Bot activity">{([['position','Open position',p?1:0],['history','Trade history',chartTrades.length],['equity','Equity',null]] as const).map(([key,label,count])=><button key={key} role="tab" id={`activity-tab-${key}`} aria-controls={`activity-${key}`} aria-selected={bottomTab===key} tabIndex={bottomTab===key?0:-1} onKeyDown={e=>{const keys=['position','history','equity'] as const;let index=keys.indexOf(key);if(e.key==='ArrowRight')index=(index+1)%3;else if(e.key==='ArrowLeft')index=(index+2)%3;else if(e.key==='Home')index=0;else if(e.key==='End')index=2;else return;e.preventDefault();setBottomTab(keys[index]);document.getElementById(`activity-tab-${keys[index]}`)?.focus();}} onClick={()=>setBottomTab(key)}>{label}{count!==null&&<span>{count}</span>}</button>)}<span className="activity-caption">VIRTUAL ACCOUNT</span></div>
