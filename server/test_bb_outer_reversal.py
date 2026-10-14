@@ -58,6 +58,34 @@ class BBOuterReversalTests(unittest.TestCase):
         self.assertAlmostEqual(p['trail_trigger'], .9)
         self.assertAlmostEqual(p['trail_distance'], .45)
 
+    def test_sma_disabled_uses_normal_distances_without_sma_warmup(self):
+        bars = self.bars([(99.5, 100.5, 98.9, 100.)])
+        bars['sma_downtrend'] = True
+        bars['sma_ready'] = False
+        self.assertIsNone(self.run_bars(bars)['open_position'])
+        p = self.run_bars(bars, use_sma_trend_adjustment=False)['open_position']
+        self.assertFalse(p['countertrend'])
+        self.assertEqual(p['stop'], 99.5)
+        self.assertAlmostEqual(p['trail_trigger'], 1.2)
+        self.assertAlmostEqual(p['trail_distance'], .6)
+
+    def test_sma_disabled_hides_indicator_values(self):
+        frame = pd.DataFrame(dict(open=[100.]*5, high=[101.]*5,
+                                  low=[99.]*5, close=[100.]*5))
+        result = calculate(frame, Settings(sma_length=2, use_sma_trend_adjustment=False))
+        self.assertTrue(result.trend_sma.isna().all())
+
+    def test_leverage_sizes_each_entry_and_pnl_from_current_balance(self):
+        bars = self.bars([(99.5, 100.5, 98.9, 100.),
+                          (99., 100.5, 98.8, 100.),
+                          (100.5, 101.2, 99.8, 100.)])
+        result = self.run_bars(bars, initial_capital=1000, leverage=3)
+        trade = result['trades'].iloc[0]
+        self.assertEqual(trade.quantity, 30)
+        self.assertEqual(trade.pnl, -30)
+        self.assertEqual(result['open_position']['quantity'], 29.1)
+        self.assertEqual(result['open_position']['direction'], -1)
+
 
 if __name__ == '__main__':
     unittest.main()

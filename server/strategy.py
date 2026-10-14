@@ -24,7 +24,7 @@ class BacktestRequest(BaseModel):
     setup_active: bool = True
     setup_timeframe: Literal['5m', '15m', '30m', '1h'] = '15m'
     entry_active: bool = True
-    entry_timeframe: Literal['1m', '3m', '5m', '15m'] = '5m'
+    entry_timeframe: Literal['1m', '3m', '5m', '10m', '15m', '30m', '1h', '4h', '1d'] = '5m'
     exit_condition: Literal['none', 'ema', 'rsi', 'either'] = 'none'
     stop_mode: Literal['none', 'fixed', 'breakeven', 'trailing', 'breakeven_trailing'] = 'fixed'
     atr_active: bool = False
@@ -50,6 +50,8 @@ class BacktestRequest(BaseModel):
 
     @model_validator(mode='after')
     def check_ranges(self):
+        if self.strategy != 'bb_outer_reversal' and self.entry_timeframe not in ('1m', '3m', '5m', '15m'):
+            raise ValueError('This strategy supports 1m, 3m, 5m or 15m entry timeframes.')
         if self.strategy not in ('bb_outer_reversal', 'chartart_v12') and self.ema_fast >= self.ema_slow:
             raise ValueError('Fast EMA period must be less than slow EMA period.')
         if not self.start_date < self.validation_date <= self.end_date:
@@ -65,6 +67,7 @@ class BacktestRequest(BaseModel):
             from .bb_outer_reversal import Settings
             try:
                 Settings(**self.bb_reversal)
+                self.bb_reversal = {**self.bb_reversal, 'trade_mode': 'Both'}
             except (TypeError, ValueError) as error:
                 raise ValueError(str(error)) from error
             self.exit_condition = 'none'

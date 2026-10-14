@@ -55,6 +55,16 @@ class MarketRefreshTests(unittest.TestCase):
 
 
 class BBIntegrationTests(unittest.TestCase):
+    def test_both_directions_and_all_execution_timeframes(self):
+        from .strategy import BacktestRequest
+        from .data import TIMEFRAMES
+        for timeframe in TIMEFRAMES:
+            cfg=BacktestRequest(strategy='bb_outer_reversal',start_date='2026-01-01',
+                validation_date='2026-01-02',end_date='2026-01-03',entry_timeframe=timeframe,
+                max_leverage=5,bb_reversal={'trade_mode':'Long Only'})
+            self.assertEqual(cfg.bb_reversal['trade_mode'],'Both')
+            self.assertEqual(cfg.max_leverage,5)
+
     def test_api_strategy_and_period_output_are_json_serializable(self):
         from .app import backtest
         from .strategy import BacktestRequest

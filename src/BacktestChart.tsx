@@ -42,7 +42,7 @@ export default function BacktestChart({candles,trades,selected,onSelect,indicato
           indicators.map(p=>p[key]===null?{time:p.time as UTCTimestamp}:{time:p.time as UTCTimestamp,value:p[key]}));
       }
       }
-      if(indicatorSettings.strategy==='bb_outer_reversal') {
+      if(indicatorSettings.strategy==='bb_outer_reversal'&&indicatorSettings.bb_reversal.use_sma_trend_adjustment!==false) {
         chart.addSeries(LineSeries,{color:'#d7ad69',lineWidth:2,title:'Trend SMA',priceLineVisible:false,lastValueVisible:false}).setData(
           indicators.map(p=>p.trendSma==null?{time:p.time as UTCTimestamp}:{time:p.time as UTCTimestamp,value:p.trendSma}));
       }

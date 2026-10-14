@@ -33,14 +33,20 @@ class Settings:
     trail_distance: float = 0.30
     trail_multiplier: float = 2.0
     sma_length: int = 30
+    use_sma_trend_adjustment: bool = True
     sma_slope_bars: int = 3
     counter_profit_pct: float = 75.0
     counter_sl_pct: float = 75.0
     min_tick: float = 0.01
     initial_capital: float = 10000.0
     quantity: float = 1.0
+    leverage: float | None = None
 
     def __post_init__(self):
+        if self.leverage is not None and (not np.isfinite(self.leverage) or not 1 <= self.leverage <= 100):
+            raise ValueError('leverage must be between 1 and 100')
+        if not isinstance(self.use_sma_trend_adjustment, bool):
+            raise ValueError('use_sma_trend_adjustment must be a boolean')
         if self.trade_mode not in ('Both', 'Long Only', 'Short Only'):
             raise ValueError('Invalid trade_mode')
         for name in ('bb_length', 'atr_length', 'adx_length', 'pullback_bars',
@@ -124,7 +130,7 @@ def calculate(frame, settings=None, *, bar_seconds=None):
     total = plus_di + minus_di
     dx = np.abs(plus_di-minus_di) / np.where(total == 0, 1, total)
     result['adx'] = 100 * _rma(dx, s.adx_length)
-    result['trend_sma'] = data.close.rolling(s.sma_length).mean()
+    result['trend_sma'] = data.close.rolling(s.sma_length).mean() if s.use_sma_trend_adjustment else np.nan
     previous = result.trend_sma.shift(s.sma_slope_bars)
     result['sma_ready'] = previous.notna()
     result['sma_uptrend'] = result.trend_sma > previous
@@ -149,7 +155,7 @@ def run_backtest(frame, settings=None, *, start=None, close_at_end=False, bar_se
 
     def close_position(time, price, reason):
         nonlocal cash, position
-        pnl = (price-position['entry_price']) * position['direction'] * s.quantity
+        pnl = (price-position['entry_price']) * position['direction'] * position['quantity']
         cash += pnl
         trades.append(dict(**position, exit_time=time, exit_price=float(price),
                            exit_reason=reason, pnl=float(pnl)))
@@ -182,7 +188,7 @@ def run_backtest(frame, settings=None, *, start=None, close_at_end=False, bar_se
             lower_touch = None
         if short_rebound:
             upper_touch = None
-        allowed = (bar.sma_ready and bar.atr >= s.min_atr and
+        allowed = (cash > 0 and (not s.use_sma_trend_adjustment or bar.sma_ready) and bar.atr >= s.min_atr and
                    bar.bb_width_pct >= s.min_bb_width_pct and bar.adx > s.adx_threshold)
         direction = 0
         if allowed and long_rebound and last_direction != 1 and s.trade_mode != 'Short Only':
@@ -193,10 +199,14 @@ def run_backtest(frame, settings=None, *, start=None, close_at_end=False, bar_se
         if direction:
             if position is not None:
                 close_position(time, bar.close, 'reversal')
-            counter = bar.sma_downtrend if direction == 1 else bar.sma_uptrend
+            if cash <= 0:
+                direction = 0
+        if direction:
+            counter = s.use_sma_trend_adjustment and (bar.sma_downtrend if direction == 1 else bar.sma_uptrend)
             sl = max(s.min_tick, s.initial_sl * (s.counter_sl_pct/100 if counter else 1))
             scale = s.counter_profit_pct/100 if counter else 1
-            position = dict(direction=direction, entry_time=time, entry_price=float(bar.close),
+            quantity = s.quantity if s.leverage is None else cash*s.leverage/bar.close
+            position = dict(direction=direction, entry_time=time, entry_price=float(bar.close), quantity=float(quantity),
                             stop=float(bar.close-direction*sl), extreme=float(bar.close),
                             trailing_active=False, countertrend=bool(counter),
                             trail_trigger=max(s.min_tick, s.trail_trigger*s.trail_multiplier*scale),
@@ -213,7 +223,7 @@ def run_backtest(frame, settings=None, *, start=None, close_at_end=False, bar_se
                 p['stop'] = max(p['stop'], candidate) if d == 1 else min(p['stop'], candidate)
                 if d*(bar.close-p['stop']) <= 0:
                     close_position(time, bar.close, 'trailing_stop_at_close')
-        unrealized = 0 if position is None else (bar.close-position['entry_price'])*position['direction']*s.quantity
+        unrealized = 0 if position is None else (bar.close-position['entry_price'])*position['direction']*position['quantity']
         records.append(dict(long_signal=direction == 1, short_signal=direction == -1,
                             trailing_activated=activated, position=0 if position is None else position['direction'],
                             stop=np.nan if position is None else position['stop'],

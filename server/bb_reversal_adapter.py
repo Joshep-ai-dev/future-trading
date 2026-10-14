@@ -13,7 +13,7 @@ from .strategy import metrics, seconds
 def run_bb_reversal_backtest(frame, settings):
     duration = TIMEFRAMES[settings.entry_timeframe]
     config = replace(Settings(**settings.bb_reversal), initial_capital=settings.capital,
-                     min_tick=settings.tick_size)
+                     min_tick=settings.tick_size, trade_mode='Both', leverage=settings.max_leverage)
     start, split, end = (seconds(settings.start_date), seconds(settings.validation_date),
                          seconds(settings.end_date+timedelta(days=1)))
     clean = frame.dropna(subset=['open', 'high', 'low', 'close'])
@@ -28,7 +28,7 @@ def run_bb_reversal_backtest(frame, settings):
             balance += trade['pnl']
             initial_stop = trade['entry_price']-trade['direction']*max(config.min_tick,
                 config.initial_sl*(config.counter_sl_pct/100 if trade['countertrend'] else 1))
-            risk = abs(trade['entry_price']-initial_stop)*config.quantity
+            risk = abs(trade['entry_price']-initial_stop)*trade['quantity']
             entry_time, exit_time = int(trade['entry_time'].timestamp()), int(trade['exit_time'].timestamp())
             history = [dict(time=entry_time, price=initial_stop, reason='initial')]
             previous = initial_stop
@@ -39,7 +39,7 @@ def run_bb_reversal_backtest(frame, settings):
             trades.append(dict(id=i+1, direction=trade['direction'], signalTime=entry_time,
                 entryTime=entry_time, exitTime=exit_time, entry=trade['entry_price'], exit=trade['exit_price'],
                 stop=initial_stop, initialStop=initial_stop, finalStop=trade['stop'], stopHistory=history,
-                initialRisk=risk, target=None, trigger=None, sweepLevel=None, quantity=config.quantity,
+                initialRisk=risk, target=None, trigger=None, sweepLevel=None, quantity=trade['quantity'],
                 riskBudget=risk, plannedRisk=risk, netPnl=trade['pnl'], grossPnl=trade['pnl'],
                 fees=0., funding=0., executionCost=0., netR=trade['pnl']/risk, balance=balance,
                 exitReason=trade['exit_reason'], session='continuous', ambiguous=False, obstacle=None,

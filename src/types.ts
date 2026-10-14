@@ -11,12 +11,12 @@ export type BacktestSettings = {
   atr_active: boolean; atr_period: number; atr_multiplier: number;
   ema_fast: number; ema_slow: number; rsi_period: number; rsi_threshold: number; rsi_active: boolean;
   strategy: 'sweep'|'mtf'|'chartart_v12'|'bb_outer_reversal'; bb_period: number; chartart_stop_pct: number;
-  bb_reversal: {trade_mode: 'Both'|'Long Only'|'Short Only'; bb_length:number; bb_mult:number; min_bb_width_pct:number; atr_length:number; min_atr:number; adx_length:number; adx_threshold:number; pullback_bars:number; initial_sl:number; trail_trigger:number; trail_distance:number; trail_multiplier:number; sma_length:number; sma_slope_bars:number; counter_profit_pct:number; counter_sl_pct:number; quantity:number};
+  bb_reversal: {use_sma_trend_adjustment:boolean; trade_mode: 'Both'|'Long Only'|'Short Only'; bb_length:number; bb_mult:number; min_bb_width_pct:number; atr_length:number; min_atr:number; adx_length:number; adx_threshold:number; pullback_bars:number; initial_sl:number; trail_trigger:number; trail_distance:number; trail_multiplier:number; sma_length:number; sma_slope_bars:number; counter_profit_pct:number; counter_sl_pct:number; quantity:number};
   exit_condition: 'none'|'ema'|'rsi'|'either';
   stop_mode: 'none'|'fixed'|'breakeven'|'trailing'|'breakeven_trailing';
   direction_active: boolean; direction_timeframe: '15m'|'30m'|'1h'|'4h';
   setup_active: boolean; setup_timeframe: '5m'|'15m'|'30m'|'1h';
-  entry_active: boolean; entry_timeframe: '1m'|'3m'|'5m'|'15m';
+  entry_active: boolean; entry_timeframe: '1m'|'3m'|'5m'|'10m'|'15m'|'30m'|'1h'|'4h'|'1d';
   start_date: string; end_date: string; validation_date: string; capital: number;
   tick_size: number; fee_bps: number; spread: number; slippage: number; funding_bps: number;
   max_leverage: number; session_start: number; session_end: number; session_timezone: string;
