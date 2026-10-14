@@ -203,3 +203,8 @@ input,select{display:block;width:100%;margin-top:7px;background:#0d131e;color:#d
 .settings-profiles .profile-message{grid-column:1/-1;color:#91b8eb}
 
 .settings-profiles{grid-template-columns:minmax(250px,340px) minmax(0,1fr);align-items:center}.settings-profiles .profile-actions{display:grid!important;grid-template-columns:minmax(150px,1.1fr) minmax(150px,1fr) auto auto auto;align-items:center;gap:10px;min-width:0}.settings-profiles .profile-actions select,.settings-profiles .profile-actions input{margin-top:0}.settings-profiles .profile-message{grid-column:1/-1}@media(max-width:1000px){.settings-profiles{grid-template-columns:1fr}.settings-profiles .profile-actions{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:520px){.settings-profiles .profile-actions{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.settings-profiles .profile-actions select,.settings-profiles .profile-actions input{grid-column:1/-1}}
+
+.settings-layout{max-width:none;width:100%}
+.configuration-form .settings-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+.configuration-form #settings-execution .settings-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media(max-width:1200px){.configuration-form .settings-grid,.configuration-form #settings-execution .settings-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
