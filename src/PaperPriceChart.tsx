@@ -21,6 +21,7 @@ export default function PaperPriceChart(props:Props) {
     const chart=createChart(container.current,{autoSize:false,...chartInteraction,layout:{background:{type:ColorType.Solid,color:'#10141d'},textColor:'#7d8da5'},timeScale:{timeVisible:true,minBarSpacing:.001,lockVisibleTimeRangeOnResize:true},grid:{vertLines:{visible:false},horzLines:{color:'#202836'}}});
     chartRef.current=chart;
     const price=chart.addSeries(CandlestickSeries,{borderVisible:false,upColor:'#26a69a',downColor:'#ef5350',wickUpColor:'#26a69a',wickDownColor:'#ef5350',priceFormat:{type:'price',precision:3,minMove:.001}});
+    price.priceScale().applyOptions({scaleMargins:{top:.18,bottom:.22}});
     const markers=createSeriesMarkers(price,[]);
     const fillLabels=new FillLabels();price.attachPrimitive(fillLabels);
     const overlays=([['bbBasis','#63d6d0','BB middle'],['bbUpper','#7d8da5','BB upper'],['bbLower','#7d8da5','BB lower'],['trendSma','#d7ad69','Trend SMA']] as const).filter(([key])=>key!=='trendSma'||props.showSma).map(([key,color,title])=>({key,series:chart.addSeries(LineSeries,{color,lineWidth:1,title,priceLineVisible:false,lastValueVisible:false})}));
@@ -52,8 +53,8 @@ export default function PaperPriceChart(props:Props) {
       if(p)addEntry(p,`${p.direction===1?'BUY':'SELL'} OPEN`,'entry-open');
       fillReadouts=new Map();
       for(const point of points){const time=Number(point.time);fillReadouts.set(time,[...(fillReadouts.get(time)??[]),point.text!.replaceAll("\n"," ")]);}
-      fillLabels.setMarkers(points);
-      markers.setMarkers(points.sort((a,b)=>Number(a.time)-Number(b.time)).map(m=>({...m,text:undefined})));
+      fillLabels.setMarkers(points,data.candles);
+      markers.setMarkers(points.sort((a,b)=>Number(a.time)-Number(b.time)).map(m=>({...m,text:undefined,size:0})));
       if(following.current&&(stamp!==previousTime||previousTime===undefined))chart.timeScale().setVisibleLogicalRange({from:Math.max(0,count.current-150),to:count.current+5});
       else if(!following.current&&visible)chart.timeScale().setVisibleRange(visible);
       previousTime=stamp;previous=data;

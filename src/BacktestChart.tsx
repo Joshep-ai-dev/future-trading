@@ -38,6 +38,7 @@ export default function BacktestChart({candles,trades,selected,onSelect,indicato
     const chart = createChart(ref.current,{autoSize:false,...chartInteraction,layout:{background:{type:ColorType.Solid,color:'#10141d'},textColor:'#7d8da5'},timeScale:{timeVisible:true,minBarSpacing:.001,lockVisibleTimeRangeOnResize:true},grid:{vertLines:{visible:false},horzLines:{color:'#202836'}}});
     chartRef.current=chart;
     const price = chart.addSeries(CandlestickSeries,{borderVisible:false,upColor:'#26a69a',downColor:'#ef5350',wickUpColor:'#26a69a',wickDownColor:'#ef5350',priceFormat:{type:'price',precision:3,minMove:.001}});
+    price.priceScale().applyOptions({scaleMargins:{top:.18,bottom:.22}});
     price.setData(view.map(c=>({...c,time:c.time as UTCTimestamp})));
     if(indicators.length) {
       if(indicatorSettings.strategy==='chartart_v12'||indicatorSettings.strategy==='bb_outer_reversal') {
@@ -74,8 +75,8 @@ export default function BacktestChart({candles,trades,selected,onSelect,indicato
     }
     if(selected && present.has(selected.signalTime)) markers.push({time:selected.signalTime as UTCTimestamp,position:selected.direction===1?'belowBar':'aboveBar',shape:'square',color:'#e0c278',text:selected.signalLabel?'SIGNAL':'SWEEP'});
     if(selected?.exitSignal && present.has(selected.exitSignal.time)) markers.push({time:selected.exitSignal.time as UTCTimestamp,position:'aboveBar',shape:'square',color:'#be9bf3',text:'CLOSE SIGNAL'});
-    const fillLabels=new FillLabels();price.attachPrimitive(fillLabels);fillLabels.setMarkers(markers);
-    createSeriesMarkers(price,markers.sort((a,b)=>Number(a.time)-Number(b.time)).map(m=>m.price===undefined?m:{...m,text:undefined}));
+    const fillLabels=new FillLabels();price.attachPrimitive(fillLabels);fillLabels.setMarkers(markers,view);
+    createSeriesMarkers(price,markers.sort((a,b)=>Number(a.time)-Number(b.time)).map(m=>m.price===undefined?m:{...m,text:undefined,size:0}));
     if(selected && selected.stop !== null && selected.target !== null && present.has(selected.entryTime)) {
       const from = selected.entryTime as UTCTimestamp;
       const to = Math.max(selected.exitTime,selected.entryTime+barSeconds) as UTCTimestamp;
