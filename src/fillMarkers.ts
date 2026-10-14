@@ -1,5 +1,7 @@
 import type {SeriesMarker,UTCTimestamp,IPrimitivePaneRenderer,ISeriesPrimitive,SeriesAttachedParameter,Time} from 'lightweight-charts';
 
+export const FILL_COLORS={buy:'#38d9ff',sell:'#ffb347'};
+
 /** Preserve execution details for the chart readout and marker selection. */
 export function fillMarker(time:number,price:number,_label:string,kind:'entry'|'close',direction:number,id:string,quantity:number):SeriesMarker<UTCTimestamp> {
   const buy=kind==='entry'?direction===1:direction!==1;
@@ -7,7 +9,7 @@ export function fillMarker(time:number,price:number,_label:string,kind:'entry'|'
   return {
     time:time as UTCTimestamp,position:buy?'atPriceBottom':'atPriceTop',price,
     shape:buy?'arrowUp':'arrowDown',
-    color:buy?'#7d8bff':'#d485e8',
+    color:buy?FILL_COLORS.buy:FILL_COLORS.sell,
     id,text:`${name}\n${buy?'+':'-'}${Number(quantity.toFixed(3))}\n@ ${Number(price.toFixed(8))}`,size:1,
   };
 }
@@ -22,7 +24,7 @@ export class FillLabels implements ISeriesPrimitive<Time> {
     if(!attached)return;
     target.useMediaCoordinateSpace(({context:ctx,mediaSize})=>{
       ctx.save();
-      ctx.font='11px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.font='600 11px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
       const candles=this.candles.flatMap(c=>{
         const x=attached.chart.timeScale().timeToCoordinate(c.time as UTCTimestamp);
         const high=attached.series.priceToCoordinate(c.high),low=attached.series.priceToCoordinate(c.low);
@@ -34,7 +36,8 @@ export class FillLabels implements ISeriesPrimitive<Time> {
         const x=attached.chart.timeScale().timeToCoordinate(marker.time),y=attached.series.priceToCoordinate(marker.price);
         if(x===null||y===null||x<0||x>mediaSize.width||y<0||y>mediaSize.height)continue;
         // The small point is the fill; the arrow and label sit clear of nearby wicks.
-        ctx.fillStyle=marker.color;ctx.beginPath();ctx.arc(x,y,2.5,0,Math.PI*2);ctx.fill();
+        ctx.fillStyle=marker.color;ctx.strokeStyle='#080c13';ctx.lineWidth=2;
+        ctx.beginPath();ctx.arc(x,y,3.5,0,Math.PI*2);ctx.fill();ctx.stroke();
         const below=marker.shape==='arrowUp',lines=(marker.text??'').split('\n').slice(0,2);
         const width=Math.max(...lines.map(line=>ctx.measureText(line).width))+12;
         const labelX=Math.max(width/2+4,Math.min(mediaSize.width-width/2-4,x));
@@ -51,15 +54,16 @@ export class FillLabels implements ISeriesPrimitive<Time> {
         // At dense zoom levels retain exact fill points; details remain in the readout.
         if(top<4||bottom>mediaSize.height-4)continue;
         occupied.push({left,right,top,bottom});
-        ctx.strokeStyle=marker.color;ctx.globalAlpha=.45;ctx.lineWidth=1;
+        ctx.strokeStyle=marker.color;ctx.globalAlpha=.8;ctx.lineWidth=1;
         ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(labelX,tip);ctx.stroke();ctx.globalAlpha=1;
         const tail=tip+(below?16:-16);
-        ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(labelX,tail);ctx.lineTo(labelX,tip);ctx.stroke();
+        ctx.lineWidth=2.5;ctx.beginPath();ctx.moveTo(labelX,tail);ctx.lineTo(labelX,tip);ctx.stroke();
         ctx.beginPath();ctx.moveTo(labelX,tip);ctx.lineTo(labelX-4,tip+(below?6:-6));ctx.lineTo(labelX+4,tip+(below?6:-6));ctx.closePath();ctx.fill();
         const start=below?tip+27:tip-39;
         // A small opaque backing keeps indicator lines from cutting through the text.
-        ctx.fillStyle='#10141d';ctx.fillRect(left,start-7,width,28);
-        lines.forEach((line,index)=>{ctx.fillStyle=index===1?marker.color:'#dce3ee';ctx.fillText(line,labelX,start+index*14);});
+        ctx.fillStyle='#080c13';ctx.fillRect(left,start-7,width,28);
+        ctx.strokeStyle=marker.color;ctx.lineWidth=1;ctx.strokeRect(left,start-7,width,28);
+        lines.forEach((line,index)=>{ctx.fillStyle=index===1?marker.color:'#ffffff';ctx.fillText(line,labelX,start+index*14);});
       }
       ctx.restore();
     });
