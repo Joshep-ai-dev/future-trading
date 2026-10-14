@@ -153,8 +153,13 @@ export default function PaperPriceChart(props:Props) {
       data={...data,candles:cached,indicators};
       byTime=new Map(data.candles.map(c=>[c.time,c]));
       const stamp=data.candles.at(-1)?.time;
-      if(previous&&stamp===previousTime&&data.candles.length===previous.candles.length&&data.candles.length){const last=data.candles.at(-1)!;price.update({...last,time:last.time as UTCTimestamp});}
-      else price.setData(data.candles.map(c=>({...c,time:c.time as UTCTimestamp})));
+      // Append live candles without rebuilding the time scale. History prepends
+      // still need setData, followed by restoration against a visible candle.
+      const appendOnly=previous&&previousTime!==undefined&&data.candles[0]?.time===previous.candles[0]?.time&&data.candles.length>=previous.candles.length&&data.candles[previous.candles.length-1]?.time===previousTime;
+      if(appendOnly&&previous){
+        for(const candle of data.candles.slice(previous.candles.length-1))price.update({...candle,time:candle.time as UTCTimestamp});
+      }else price.setData(data.candles.map(c=>({...c,time:c.time as UTCTimestamp})));
+
       if(!previous||data.indicators.at(-1)!==previous.indicators.at(-1)||data.indicators.length!==previous.indicators.length)
         for(const {key,series} of overlays)series.setData(data.indicators.map(p=>p[key]===null?{time:p.time as UTCTimestamp}:{time:p.time as UTCTimestamp,value:p[key]}));
       const duration=TIMEFRAMES[props.timeframe as keyof typeof TIMEFRAMES];
