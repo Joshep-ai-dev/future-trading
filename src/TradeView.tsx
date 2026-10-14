@@ -1,12 +1,13 @@
 import {useState,type ReactNode} from 'react';
 import {fmt} from './types';
+import {formatTradingTime,type TradingTimeZone} from './tradingTime';
 
 export type PnlTrade={id:number;direction:number;pnl:number;entry:number;exit:number;quantity:number;exitTime:number};
 const money=(value:number)=>`${value>0?'+':value<0?'-':''}$${fmt(Math.abs(value))}`;
 const tone=(value:number)=>value>0?'profit':value<0?'loss':'flat';
 
-export default function TradeView({trades,capital,unrealized=0,scope,children,onSelect}:{
-  trades:PnlTrade[];capital:number;unrealized?:number;scope:'Session'|'Backtest';children:ReactNode;onSelect?:(id:number)=>void;
+export default function TradeView({trades,capital,unrealized=0,scope,children,onSelect,timeZone='UTC'}:{
+  trades:PnlTrade[];capital:number;unrealized?:number;scope:'Session'|'Backtest';children:ReactNode;onSelect?:(id:number)=>void;timeZone?:TradingTimeZone;
 }){
   const storageKey=`silver.trades.view.${scope}`;
   const [view,setView]=useState<'table'|'grid'>(()=>{try{return localStorage.getItem(storageKey)==='grid'?'grid':'table';}catch{return 'table';}});
@@ -39,7 +40,7 @@ export default function TradeView({trades,capital,unrealized=0,scope,children,on
         {recent.length?<div className="pnl-trade-grid">{recent.map(t=><button key={t.id} type="button" className={`pnl-trade-tile ${tone(t.pnl)}`} aria-pressed={selectedId===t.id} aria-label={`Trade ${t.id}, ${t.direction===1?'long':'short'}, P&L ${money(t.pnl)}`} onClick={()=>{setSelectedId(t.id);onSelect?.(t.id);}}><span>#{t.id}<span>{t.direction===1?'↗ Long':'↘ Short'}</span></span><strong>{money(t.pnl)}</strong></button>)}</div>:<div className="pnl-filter-empty"><strong>No {filter==='profit'?'winning':filter==='loss'?'losing':'breakeven'} trades</strong><p>Choose another filter to explore your results.</p></div>}
         {pages>1&&<div className="pagination"><span>{currentPage*24+1}–{Math.min((currentPage+1)*24,filtered.length)} of {filtered.length}</span><button type="button" className="secondary" disabled={currentPage===0} onClick={()=>setPage(currentPage-1)}>Previous</button><button type="button" className="secondary" disabled={currentPage+1===pages} onClick={()=>setPage(currentPage+1)}>Next</button></div>}
         </div>
-        <aside className="pnl-trade-detail" aria-label="Selected trade" aria-live="polite">{selected?<><div className="pnl-detail-heading"><span className="eyebrow">TRADE #{selected.id}</span><button type="button" className="text-button" aria-label="Dismiss trade details" onClick={()=>setSelectedId(null)}>×</button></div><span className={`side-badge ${selected.direction===1?'long':'short'}`}>{selected.direction===1?'LONG':'SHORT'}</span><strong className={`pnl-detail-profit ${tone(selected.pnl)}`}>{money(selected.pnl)}</strong><small>Realized P&amp;L · USDT</small><dl><div><dt>Entry price</dt><dd>{fmt(selected.entry,3)}</dd></div><div><dt>Close price</dt><dd>{fmt(selected.exit,3)}</dd></div><div><dt>Quantity</dt><dd>{fmt(selected.quantity,4)}</dd></div><div><dt>Closed (UTC)</dt><dd>{new Date(selected.exitTime*1000).toISOString().replace('T',' ').slice(0,19)}</dd></div></dl></>:<div className="pnl-detail-empty"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M6 24V12m10 12V6m10 18V16M3 27h26"/></svg><strong>Explore a trade</strong><p>Select any tile to inspect its entry, close, and result.</p></div>}</aside>
+        <aside className="pnl-trade-detail" aria-label="Selected trade" aria-live="polite">{selected?<><div className="pnl-detail-heading"><span className="eyebrow">TRADE #{selected.id}</span><button type="button" className="text-button" aria-label="Dismiss trade details" onClick={()=>setSelectedId(null)}>×</button></div><span className={`side-badge ${selected.direction===1?'long':'short'}`}>{selected.direction===1?'LONG':'SHORT'}</span><strong className={`pnl-detail-profit ${tone(selected.pnl)}`}>{money(selected.pnl)}</strong><small>Realized P&amp;L · USDT</small><dl><div><dt>Entry price</dt><dd>{fmt(selected.entry,3)}</dd></div><div><dt>Close price</dt><dd>{fmt(selected.exit,3)}</dd></div><div><dt>Quantity</dt><dd>{fmt(selected.quantity,4)}</dd></div><div><dt>Closed ({timeZone})</dt><dd>{formatTradingTime(selected.exitTime,timeZone)}</dd></div></dl></>:<div className="pnl-detail-empty"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M6 24V12m10 12V6m10 18V16M3 27h26"/></svg><strong>Explore a trade</strong><p>Select any tile to inspect its entry, close, and result.</p></div>}</aside>
         </div>
       </>:<div className="empty-position"><h3>No closed trades yet</h3><p>Each completed trade will appear here as a profit or loss tile.</p></div>}
     </div>}

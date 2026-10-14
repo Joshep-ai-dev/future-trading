@@ -3,6 +3,7 @@ import {api} from './api';
 import BBReversalSettings,{bbDefaults} from './BBReversalSettings';
 import PaperTrading from './PaperTrading';
 import ResultsWorkspace from './ResultsWorkspace';
+import AccountPage from './AccountPage';
 import type {Page} from './Tabs';
 import {fmt,type BacktestSettings,type BacktestResult} from './types';
 
@@ -23,7 +24,7 @@ function restore(range:{startDate:string;endDate:string}){
     return restored;
   }catch{return defaults;}
 }
-export default function BacktestPanel({range,view,onViewChange}:{range:{startDate:string;endDate:string};view:Page;onViewChange:(page:Page)=>void}) {
+export default function BacktestPanel({range,view,onViewChange,accountMode,onAccountModeChange}:{range:{startDate:string;endDate:string};view:Page;onViewChange:(page:Page)=>void;accountMode:'live'|'paper';onAccountModeChange:(mode:'live'|'paper')=>void}) {
   const [settings,setSettings]=useState(()=>restore(range));
   useEffect(()=>{try{localStorage.setItem(settingsKey,JSON.stringify(settings));}catch{/* Storage restrictions must not block trading controls. */}},[settings]);
   const [result,setResult]=useState<BacktestResult|null>(null);
@@ -40,6 +41,7 @@ export default function BacktestPanel({range,view,onViewChange}:{range:{startDat
   const chapters=[['execution','Execution & allocation'],['filters','Entry filters'],['stops','Stops & trailing'],['rsi-exit','RSI + price exit'],['trend','Trend adjustment'],['range','Backtest range']];
   return <section className="backtest">
     <PaperTrading settings={settings} onChange={setSettings} onConfigure={()=>onViewChange('strategy')} visible={view==='paper'}/>
+    {view==='account'&&<AccountPage settings={settings} onBack={()=>onViewChange('paper')} accountMode={accountMode} onAccountModeChange={onAccountModeChange}/>}
     <div id="page-strategy" role="tabpanel" aria-labelledby="tab-strategy" hidden={view!=='strategy'}>
       <div className="workspace-heading"><div><span className="eyebrow">BOT CONFIGURATION</span><h1>Build your trading setup</h1><p>Configure once, then test or trade virtually. Your draft settings are saved in this browser.</p></div><div className="workspace-actions"><button className="secondary" disabled={busy} onClick={()=>setSettings(initial(range))}>Restore defaults</button><button className="secondary" onClick={()=>onViewChange('paper')}>Open terminal</button></div></div>
       <div className="settings-layout"><aside className="settings-navigation"><div className="configuration-profile"><span className="strategy-icon">BB</span><h2>Outer Band Reversal</h2><p>Trailing stop loss</p><span className="paper-badge">BOTH DIRECTIONS</span></div>

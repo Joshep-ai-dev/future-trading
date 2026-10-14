@@ -4,9 +4,11 @@ import {CandlestickSeries, ColorType, createChart, createSeriesMarkers, LineSeri
 import {fillMarker,FillLabels} from './fillMarkers';
 import ChartTools,{chartInteraction,resizeChart} from './ChartTools';
 import {captureViewport,restoreViewport} from './chartViewport';
+import {chartTimeOptions,formatChartTime,readChartTimeZone,useChartTimeZone} from './chartTimeZone';
 import {fmt, type Analysis, type PeriodResult, type Trade, type IndicatorPoint, type BacktestSettings} from './types';
 
 export function EquityChart({period}: {period: Pick<PeriodResult,'name'|'equity'>}) {
+  const timeZone=useChartTimeZone();
   const ref = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi|null>(null);
   const lineRef = useRef<ISeriesApi<'Line'>|null>(null);
@@ -14,12 +16,13 @@ export function EquityChart({period}: {period: Pick<PeriodResult,'name'|'equity'
   const seriesName = useRef(period.name);
   useEffect(() => {
     if (!ref.current) return;
-    const chart = createChart(ref.current, {autoSize:false, ...chartInteraction, layout:{background:{type:ColorType.Solid,color:'#10141d'},textColor:'#7d8da5'},timeScale:{timeVisible:true,minBarSpacing:2,lockVisibleTimeRangeOnResize:true},grid:{vertLines:{visible:false},horzLines:{color:'#202836'}}});
+    const chart = createChart(ref.current, {autoSize:false, ...chartInteraction, localization:chartTimeOptions(readChartTimeZone()).localization, layout:{background:{type:ColorType.Solid,color:'#10141d'},textColor:'#7d8da5'},timeScale:{timeVisible:true,minBarSpacing:2,lockVisibleTimeRangeOnResize:true,...chartTimeOptions(readChartTimeZone()).timeScale},grid:{vertLines:{visible:false},horzLines:{color:'#202836'}}});
     chartRef.current=chart;
     lineRef.current=chart.addSeries(LineSeries,{color:'#6ce4bc',priceLineVisible:false,title:'Net equity'});
     const stopResize=resizeChart(chart,ref.current,()=>chart.timeScale().fitContent());
     return ()=>{stopResize();lineRef.current=null;chartRef.current=null;hasData.current=false;chart.remove();};
   },[]);
+  useEffect(()=>{const options=chartTimeOptions(timeZone);chartRef.current?.applyOptions({localization:options.localization,timeScale:options.timeScale});},[timeZone]);
   useEffect(()=>{
     lineRef.current?.setData(period.equity.map(p=>({...p,time:p.time as UTCTimestamp})));
     if((!hasData.current||seriesName.current!==period.name)&&period.equity.length){chartRef.current?.timeScale().fitContent();hasData.current=true;}
@@ -29,11 +32,12 @@ export function EquityChart({period}: {period: Pick<PeriodResult,'name'|'equity'
 }
 
 export default function BacktestChart({candles,trades,selected,onSelect,indicators,barSeconds,timeframe,indicatorSettings}: {indicatorSettings: BacktestSettings; indicators: IndicatorPoint[]; barSeconds: number; timeframe: string; candles: Analysis['candles']; trades: Trade[]; selected: Trade | null; onSelect: (trade: Trade)=>void}) {
+  const timeZone=useChartTimeZone();
   const ref = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi|null>(null);
   const viewportRef = useRef<{dataKey:string;selectedId:number|null;viewport:ReturnType<typeof captureViewport>}|null>(null);
   const onSelectRef = useRef(onSelect);onSelectRef.current=onSelect;
-  const [readout,setReadout] = useState('Hover for UTC candle prices. Click an entry or exit to select its trade.');
+  const [readout,setReadout] = useState('Hover for candle time and prices. Click an entry or exit to select its trade.');
   useEffect(()=>{
     if (!ref.current || !candles.length) return;
     const dataKey=`${candles.length}:${candles[0]?.time}:${candles.at(-1)?.time}`;
@@ -42,7 +46,7 @@ export default function BacktestChart({candles,trades,selected,onSelect,indicato
     const focus = selected ? candles.findIndex(c=>c.time>=selected.signalTime) : -1;
     const exit = selected ? candles.findIndex(c=>c.time>=selected.exitTime) : -1;
     const view = candles;
-    const chart = createChart(ref.current,{autoSize:false,...chartInteraction,layout:{background:{type:ColorType.Solid,color:'#10141d'},textColor:'#7d8da5'},timeScale:{timeVisible:true,minBarSpacing:2,lockVisibleTimeRangeOnResize:true},grid:{vertLines:{visible:false},horzLines:{color:'#202836'}}});
+    const chart = createChart(ref.current,{autoSize:false,...chartInteraction,localization:chartTimeOptions(readChartTimeZone()).localization,layout:{background:{type:ColorType.Solid,color:'#10141d'},textColor:'#7d8da5'},timeScale:{timeVisible:true,minBarSpacing:2,lockVisibleTimeRangeOnResize:true,...chartTimeOptions(readChartTimeZone()).timeScale},grid:{vertLines:{visible:false},horzLines:{color:'#202836'}}});
     chartRef.current=chart;
     const price = chart.addSeries(CandlestickSeries,{borderVisible:false,upColor:'#26a69a',downColor:'#ef5350',wickUpColor:'#26a69a',wickDownColor:'#ef5350',priceFormat:{type:'price',precision:3,minMove:.001}});
     price.priceScale().applyOptions({scaleMargins:{top:.18,bottom:.22}});
@@ -118,7 +122,7 @@ export default function BacktestChart({candles,trades,selected,onSelect,indicato
       if(c) {
         const indicator=indicatorByTime.get(c.time);
         const extra=indicatorSettings.strategy==='bb_outer_reversal'&&indicator?` · ADX ${fmt(indicator.adx??null)} · ATR ${fmt(indicator.atr??null,3)} · BB width ${fmt(indicator.bbWidthPct??null)}%`:'';
-        setReadout(`${new Date(c.time*1000).toISOString()} · O ${fmt(c.open,3)} H ${fmt(c.high,3)} L ${fmt(c.low,3)} C ${fmt(c.close,3)}${extra}${fillReadouts.has(c.time)?` | ${fillReadouts.get(c.time)!.join(" | ")}`:""}`);
+        setReadout(`${formatChartTime(c.time,readChartTimeZone())} · O ${fmt(c.open,3)} H ${fmt(c.high,3)} L ${fmt(c.low,3)} C ${fmt(c.close,3)}${extra}${fillReadouts.has(c.time)?` | ${fillReadouts.get(c.time)!.join(" | ")}`:""}`);
       }
     });
     chart.subscribeClick(p=>{
@@ -135,5 +139,6 @@ export default function BacktestChart({candles,trades,selected,onSelect,indicato
       stopResize();chartRef.current=null;chart.remove();
     };
   },[candles,trades,selected,indicators,barSeconds,indicatorSettings]);
+  useEffect(()=>{const options=chartTimeOptions(timeZone);chartRef.current?.applyOptions({localization:options.localization,timeScale:options.timeScale});},[timeZone]);
   return <><ChartTools chartRef={chartRef} endLabel="End" onLatest={()=>chartRef.current?.timeScale().setVisibleLogicalRange({from:Math.max(0,candles.length-180),to:candles.length+5})}/><p className="readout">{readout}</p><div className="chart-resize"><div ref={ref} className="chart-container position-chart" aria-label={`${timeframe} trade positions, indicators, entries, exits, stop and target zones`}/></div></>;
 }

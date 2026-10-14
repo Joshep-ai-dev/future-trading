@@ -41,7 +41,7 @@ class BacktestRequest(BaseModel):
     max_leverage: float = Field(default=1, ge=1, le=100)
     session_start: int = Field(default=0, ge=0, le=23)
     session_end: int = Field(default=24, ge=0, le=24)
-    session_timezone: Literal['UTC', 'Asia/Shanghai', 'America/New_York', 'Europe/London'] = 'UTC'
+    session_timezone: Literal['UTC', 'Asia/Shanghai', 'Asia/Tokyo', 'Asia/Singapore', 'America/New_York', 'Europe/London'] = 'UTC'
 
     @model_validator(mode='after')
     def check_ranges(self):

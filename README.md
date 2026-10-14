@@ -1,10 +1,10 @@
 # BB Outer Band Reversal + Trailing SL
 
-Local OKX XAG-USDT-SWAP research and virtual trading. This is the only active strategy. No exchange orders are submitted.
+Local XAG/USDT perpetual research, virtual trading and optional live execution. BB Outer Band Reversal is the active strategy.
 
 ## Start
 
-On Windows, run `start.cmd` or `start.ps1`, then open http://localhost:5173. Stop with Ctrl+C before restarting. Restart after backend code changes. Alternatively, install requirements in a Python virtual environment, run `npm install`, then `npm run dev`.
+On Windows, run `start.cmd` or `start.ps1`, then open http://localhost:5173. The development UI and API bind to loopback. Stop with Ctrl+C before restarting. Restart after backend code changes. Alternatively, install requirements in a Python virtual environment, run `npm install`, then `npm run dev`.
 
 ## Workspace
 
@@ -24,7 +24,7 @@ Execution timeframe defaults to 5m; choices are 1m, 3m, 5m, 10m, 15m, 30m, 1h, 4
 
 Entries fill at completed candle closes. Existing stops use OHLC with adverse gap-open fills. Trailing activation and distances use absolute price units and the trailing multiplier; stops never loosen. A newly tightened stop already crossed at close fills at close. Missing data forces a last-known-close exit and indicator warmup resets. A single balance runs through the full historical date range without a validation split or intermediate reset. Remaining positions close at the end.
 
-## Live and accelerated replay
+## Paper trading and accelerated replay
 
 Configure BB settings, open **Trading terminal**, choose a mode, then **Start virtual bot**. Session settings are frozen. Pause before starting a new session; old sessions are archived in `data/`.
 
@@ -36,7 +36,11 @@ The chart combines 1-minute data into the selected timeframe's forming candle, i
 
 The chart shows the latest 1,000 revealed candles with buy/sell/exit markers, Bollinger bands, optional SMA, open entry and active stop. **Follow bot clock** scrolls to the latest price; disable it to inspect earlier visible candles. Current displayed equity follows the displayed price; equity history records completed candle closes. Session state and trades are saved atomically to `data/paper_trading.json` and restored across restarts without duplicating trades.
 
-All execution is virtual and candle-based. Fees, spread, slippage, funding, tick rounding and margin liquidation are not modeled.
+The profile **Account** page contains exchange connection and live order controls, plus the choice between live exchange and paper account handling. In live mode, connect OKX, HTX, MEXC or Binance where an active linear XAG/USDT perpetual is available, then use either a manual market ticket with a reduce-only protective trigger stop or BB Outer Band Reversal automation on completed candles. Use API keys with read/trade permissions only, disable withdrawals, and apply IP allowlisting. Credentials stay in backend process memory and are cleared on disconnect or backend restart. Use a dedicated exchange subaccount and verify venue position mode, leverage, order size, fills and stop orders directly at the exchange. Live execution is real and venue trigger semantics and risk limits differ.
+
+Open the profile menu from the S button or account badge in the header. Choose paper or live account mode, then open **Account settings** to manage exchange connections and one shared **Display and trading time zone**. That setting controls chart axes, crosshairs and trade timestamps throughout Trading and Results. Market data and backtest date boundaries stay in UTC.
+
+All paper execution is virtual and candle-based. Fees, spread, slippage, funding, tick rounding and margin liquidation are not modeled.
 
 ## Market data
 
@@ -51,6 +55,8 @@ Download status and **Download latest prices now** remain available above the wo
 `POST /api/backtest` accepts `strategy: bb_outer_reversal` (also the default), start/end dates, `entry_timeframe`, `capital`, `max_leverage`, and optional `bb_reversal` fields documented by `Settings` in `server/bb_outer_reversal.py`.
 
 `GET /api/paper`, `POST /api/paper/start`, `POST /api/paper/pause`, `POST /api/paper/resume`. Start accepts BB settings plus `paper_mode: live|replay`. Replay also requires `replay_start`, `replay_end` and optional `replay_speed`. Historical backtest dates are ignored for paper start. Change replay speed with `POST /api/paper/speed` and `{"speed": 300}`.
+
+Live endpoints: `GET /api/exchange/status`, `POST /api/exchange/connect`, `POST /api/exchange/disconnect`, `POST /api/exchange/order`, `POST /api/exchange/close`, `POST /api/exchange/auto/start`, `POST /api/exchange/auto/stop`. Live order and automation requests require explicit confirmation fields; credentials are never saved by the browser.
 
 ```sh
 python -m unittest discover -s server -t .

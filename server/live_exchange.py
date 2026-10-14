@@ -1,0 +1,426 @@
+"""Local-only exchange access. API credentials are kept in process memory."""
+from __future__ import annotations
+
+import threading
+import time
+from typing import Literal
+
+import pandas as pd
+
+from .bb_outer_reversal import Settings, run_backtest
+from .data import TIMEFRAMES
+
+
+VENUES = {
+    'okx': 'okx',
+    'htx': 'htx',
+    'mexc': 'mexc',
+    'binance': 'binanceusdm',
+}
+
+
+class LiveExchange:
+    def __init__(self):
+        self.lock = threading.RLock()
+        self.trade_lock = threading.RLock()
+        self.clients = {}
+        self.markets = {}
+        self.protective_orders = {}
+        self.auto_bot = None
+
+    @staticmethod
+    def _market(exchange):
+        exchange.load_markets()
+        candidates = [market for market in exchange.markets.values()
+                      if market.get('swap') and market.get('linear')
+                      and market.get('quote') == 'USDT'
+                      and market.get('settle') == 'USDT'
+                      and (market.get('base') == 'XAG'
+                           or 'XAG' in str(market.get('baseId', '')).upper()
+                           or 'XAG' in str(market.get('id', '')).upper())]
+        candidates = [market for market in candidates if market.get('active') is not False]
+        if not candidates:
+            raise ValueError('This exchange account does not expose an active linear XAG/USDT perpetual contract through its API')
+        return sorted(candidates, key=lambda market: (market.get('base') != 'XAG', market['symbol']))[0]
+
+    def connect(self, venue: str, api_key: str, secret: str, passphrase: str | None = None):
+        if venue not in VENUES:
+            raise ValueError('Choose OKX, HTX, MEXC or Binance USDⓈ-M Futures')
+        if not api_key.strip() or not secret.strip():
+            raise ValueError('API key and secret are required')
+        import ccxt
+        exchange_type = getattr(ccxt, VENUES[venue])
+        credentials = dict(apiKey=api_key.strip(), secret=secret.strip(), enableRateLimit=True)
+        if passphrase:
+            credentials['password'] = passphrase
+        if venue == 'okx' and not passphrase:
+            raise ValueError('OKX requires the API key passphrase')
+        exchange = exchange_type(credentials)
+        try:
+            market = self._market(exchange)
+            if not exchange.has.get('fetchPositions'):
+                raise ValueError(f'{venue.upper()} adapter does not support position checks required for safe live orders')
+            balance = exchange.fetch_balance()
+        except Exception:
+            exchange.close()
+            raise
+        with self.lock:
+            previous = self.clients.pop(venue, None)
+            self.markets.pop(venue, None)
+            self.clients[venue] = exchange
+            self.markets[venue] = market
+            if previous:
+                previous.close()
+        total = balance.get('total', {}).get('USDT')
+        return dict(venue=venue, connected=True, symbol=market['symbol'],
+                    contractSize=market.get('contractSize'), usdtBalance=total)
+
+    def disconnect(self, venue: str):
+        if self.auto_bot and self.auto_bot.running:
+            raise ValueError('Stop the live strategy before disconnecting the exchange')
+        if self.clients.get(venue):
+            active=[position for position in self.positions(venue) if float(position.get('contracts') or 0)!=0]
+            if active:
+                raise ValueError('Close the XAG/USDT position before disconnecting the exchange')
+        with self.lock:
+            exchange = self.clients.pop(venue, None)
+            self.markets.pop(venue, None)
+        if exchange:
+            exchange.close()
+        return dict(venue=venue, connected=False)
+
+    def status(self):
+        with self.lock:
+            rows=[]
+            for venue in self.clients:
+                row=dict(venue=venue, connected=True, symbol=self.markets[venue]['symbol'],
+                         contractSize=self.markets[venue].get('contractSize'),position=None)
+                try:
+                    active=[p for p in self.positions(venue) if float(p.get('contracts') or 0)!=0]
+                    if len(active)==1:
+                        p=active[0]; market=self.markets[venue]
+                        row['position']=dict(side=p.get('side'),quantity=abs(float(p.get('contracts') or 0))*float(market.get('contractSize') or 1),
+                                             entryPrice=p.get('entryPrice'),markPrice=p.get('markPrice'),unrealizedPnl=p.get('unrealizedPnl'))
+                    elif len(active)>1:
+                        row['position']={'error':'Multiple XAG positions detected; reconcile at exchange'}
+                except Exception as error:
+                    row['position']={'error':f'Position query failed: {type(error).__name__}'}
+                rows.append(row)
+            return rows
+
+    def _get(self, venue: str):
+        with self.lock:
+            exchange, market = self.clients.get(venue), self.markets.get(venue)
+        if exchange is None or market is None:
+            raise ValueError(f'Connect {venue.upper()} before placing orders')
+        return exchange, market
+
+    def market_order(self, venue: str, side: Literal['buy', 'sell'], quantity: float,
+                     *, reduce_only: bool = False):
+        if side not in ('buy', 'sell') or not isinstance(quantity, (int, float)) or quantity <= 0:
+            raise ValueError('Order side and XAG quantity must be valid and positive')
+        exchange, market = self._get(venue)
+        size = float(quantity) / float(market.get('contractSize') or 1)
+        amount = float(exchange.amount_to_precision(market['symbol'], size))
+        if amount <= 0 or amount < float(market.get('limits', {}).get('amount', {}).get('min') or 0):
+            raise ValueError('Quantity is below this contract’s minimum order size')
+        params = {'reduceOnly': True} if reduce_only else {}
+        order = exchange.create_order(market['symbol'], 'market', side, amount, None, params)
+        return dict(id=order.get('id'), status=order.get('status'), side=side,
+                    amount=order.get('amount'), filled=order.get('filled'), average=order.get('average'),
+                    symbol=market['symbol'], reduceOnly=reduce_only)
+
+    def open_with_stop(self, venue: str, direction: Literal['long', 'short'],
+                       quantity: float, stop_price: float):
+        with self.trade_lock:
+            return self._open_with_stop_locked(venue,direction,quantity,stop_price)
+
+    def _open_with_stop_locked(self, venue: str, direction: Literal['long', 'short'],
+                               quantity: float, stop_price: float):
+        exchange, market = self._get(venue)
+        positions = self.positions(venue)
+        if any(float(position.get('contracts') or 0) != 0 for position in positions):
+            raise ValueError('Close the existing XAG/USDT position before opening another from this terminal')
+        ticker = exchange.fetch_ticker(market['symbol'])
+        last = float(ticker.get('last') or 0)
+        if not last or (direction == 'long' and stop_price >= last) or (direction == 'short' and stop_price <= last):
+            raise ValueError('Stop must be below the current price for a long, or above it for a short')
+        side = 'buy' if direction == 'long' else 'sell'
+        result = self.market_order(venue, side, quantity)
+        contract_size = float(market.get('contractSize') or 1)
+        stop_quantity = float(result.get('filled') or result.get('amount') or 0) * contract_size
+        if stop_quantity <= 0:
+            stop_quantity = quantity
+        try:
+            stop = self.set_stop(venue, direction, stop_quantity, stop_price)
+        except Exception as error:
+            try:
+                self.market_order(venue, 'sell' if direction == 'long' else 'buy', quantity, reduce_only=True)
+            except Exception as close_error:
+                raise RuntimeError(f'Entry was sent, protective stop was rejected, and emergency close also failed: {close_error}') from error
+            raise RuntimeError(f'Entry was sent but the protective stop was rejected; an emergency reduce-only close was sent: {error}') from error
+        with self.lock:
+            self.protective_orders[venue] = stop.get('id')
+        return dict(order=result, protectiveStop=stop, direction=direction, quantity=stop_quantity,
+                    entryPrice=result.get('average'))
+
+    def close_position(self, venue: str):
+        with self.trade_lock:
+            return self._close_position_locked(venue)
+
+    def _close_position_locked(self, venue: str):
+        if self.auto_bot and self.auto_bot.running and self.auto_bot.venue == venue:
+            raise ValueError('Stop the automated strategy before manually closing its position')
+        exchange, market = self._get(venue)
+        positions = self.positions(venue)
+        active = [position for position in positions if float(position.get('contracts') or 0) != 0]
+        if not active:
+            return dict(venue=venue, closed=False, message='No open XAG/USDT position')
+        if len(active) != 1:
+            raise ValueError('Multiple XAG/USDT positions detected. Reconcile the account position mode before closing here')
+        position = active[0]
+        contracts = float(position.get('contracts') or 0)
+        side = 'sell' if position.get('side') == 'long' else 'buy'
+        base_quantity = abs(contracts) * float(market.get('contractSize') or 1)
+        result = self.market_order(venue, side, base_quantity, reduce_only=True)
+        with self.lock:
+            stop_id = self.protective_orders.pop(venue, None)
+        if stop_id:
+            try:
+                self.cancel_stop(venue, stop_id)
+            except Exception:
+                # The remaining reduce-only stop cannot increase exposure.
+                pass
+        return dict(venue=venue, closed=True, order=result)
+
+    def set_stop(self, venue: str, direction: Literal['long', 'short'], quantity: float, trigger: float):
+        if not isinstance(trigger, (int, float)) or trigger <= 0:
+            raise ValueError('Protective stop price must be positive')
+        exchange, market = self._get(venue)
+        side = 'sell' if direction == 'long' else 'buy'
+        contracts = float(quantity) / float(market.get('contractSize') or 1)
+        amount = float(exchange.amount_to_precision(market['symbol'], contracts))
+        price = float(exchange.price_to_precision(market['symbol'], trigger))
+        order = exchange.create_order(market['symbol'], 'market', side, amount, None,
+                                      {'triggerPrice': price, 'reduceOnly': True})
+        if not order.get('id'):
+            raise RuntimeError('Exchange did not confirm the protective stop order id')
+        return dict(id=order.get('id'), amount=order.get('amount'), triggerPrice=price)
+
+    def cancel_stop(self, venue: str, order_id: str):
+        exchange, market = self._get(venue)
+        return exchange.cancel_order(order_id, market['symbol'], {'trigger': True})
+
+    def positions(self, venue: str):
+        exchange, market = self._get(venue)
+        if not exchange.has.get('fetchPositions'):
+            raise ValueError(f'{venue.upper()} position query is not supported by the installed exchange adapter')
+        return exchange.fetch_positions([market['symbol']])
+
+
+class AutomaticLiveBot:
+    """Runs the candle strategy against the connected venue and keeps an exchange stop."""
+    def __init__(self, exchange_service: LiveExchange):
+        self.service = exchange_service
+        self.lock = threading.RLock()
+        self.stop_event = threading.Event()
+        self.thread = None
+        self.running = False
+        self.venue = None
+        self.settings = None
+        self.timeframe = None
+        self.duration = None
+        self.frame = None
+        self.trading_from = None
+        self.last_processed = None
+        self.position = None
+        self.error = None
+        self.started_at = None
+
+    def status(self):
+        with self.lock:
+            return dict(running=self.running,venue=self.venue,timeframe=self.timeframe,
+                        startedAt=self.started_at,lastProcessed=self.last_processed,
+                        position=self.position,error=self.error)
+
+    def start(self, venue, request):
+        exchange, market = self.service._get(venue)
+        if self.running:
+            raise ValueError('Stop the current live strategy before starting another')
+        active = [p for p in self.service.positions(venue) if float(p.get('contracts') or 0) != 0]
+        if active:
+            raise ValueError('Close the existing exchange position before starting the live strategy')
+        timeframe = request.entry_timeframe
+        duration = TIMEFRAMES[timeframe]
+        try:
+            exchange.set_margin_mode('isolated',market['symbol'])
+            leverage=float(request.max_leverage)
+            if leverage != int(leverage):
+                raise ValueError('Live exchange leverage must be a whole number')
+            exchange.set_leverage(int(leverage),market['symbol'])
+        except Exception as error:
+            raise ValueError('Could not set isolated margin and the requested leverage. Check account position mode, venue limits and API permissions.') from error
+        frame = self._fetch_frame(exchange,market,timeframe,duration)
+        if len(frame) < 100:
+            raise ValueError('The exchange returned too few completed candles to warm up the strategy')
+        self.venue,self.settings,self.timeframe,self.duration=venue,request, timeframe,duration
+        self.frame=frame
+        self.last_processed=int(frame.index[-1].timestamp())
+        self.trading_from=self.last_processed+duration
+        self.position=None
+        self.error=None
+        self.started_at=int(time.time())
+        self.stop_event.clear()
+        self.running=True
+        self.thread=threading.Thread(target=self._run,name=f'live-strategy-{venue}',daemon=True)
+        self.thread.start()
+        return self.status()
+
+    @staticmethod
+    def _fetch_frame(exchange,market,timeframe,duration):
+        provider_timeframe=timeframe if timeframe in (exchange.timeframes or {}) else '1m'
+        minutes=exchange.fetch_ohlcv(market['symbol'],provider_timeframe,limit=1000)
+        if not minutes:
+            raise ValueError('The exchange returned no market candles')
+        source=pd.DataFrame(minutes,columns=['milliseconds','open','high','low','close','volume'])
+        source['time']=pd.to_datetime(source.pop('milliseconds'),unit='ms',utc=True)
+        source=source.set_index('time').sort_index()
+        if provider_timeframe=='1m' and duration>60:
+            rule=f'{duration}s'
+            source=source.resample(rule,origin='epoch',label='left',closed='left').agg(
+                {'open':'first','high':'max','low':'min','close':'last','volume':'sum'}).dropna(subset=['open','high','low','close'])
+        now=pd.Timestamp.now(tz='UTC')
+        source=source.loc[source.index+pd.Timedelta(seconds=duration)<=now]
+        return source[['open','high','low','close']].tail(1000)
+
+    def _run(self):
+        while not self.stop_event.is_set():
+            try:
+                self._cycle()
+            except Exception as error:
+                with self.lock:
+                    self.error='Live strategy paused after an exchange or data error. Check the exchange position and protective stop before resuming.'
+                    self.running=False
+                break
+            self.stop_event.wait(1)
+
+    def _cycle(self):
+        with self.lock:
+            if not self.running:return
+            venue,request,timeframe,duration=self.venue,self.settings,self.timeframe,self.duration
+            frame=self.frame.copy()
+            last=self.last_processed
+        exchange,market=self.service._get(venue)
+        fresh=self._fetch_frame(exchange,market,timeframe,duration)
+        fresh=fresh.loc[fresh.index>pd.Timestamp(last,unit='s',tz='UTC')]
+        if fresh.empty:return
+        active=[p for p in self.service.positions(venue) if float(p.get('contracts') or 0)!=0]
+        if self.position is None and active:
+            raise RuntimeError('An unmanaged XAG position appeared; live automation has paused')
+        if self.position is not None:
+            if len(active)>1:
+                raise RuntimeError('Multiple XAG positions detected; live automation has paused')
+            if not active:
+                # The exchange stop may have filled. Stay flat until a fresh strategy entry signal.
+                with self.lock:self.position=None
+            else:
+                exchange_position=active[0]
+                expected=self.position['direction']
+                actual_quantity=abs(float(exchange_position.get('contracts') or 0))*float(market.get('contractSize') or 1)
+                if exchange_position.get('side')!=expected or abs(actual_quantity-self.position['quantity'])>max(.001,self.position['quantity']*.02):
+                    raise RuntimeError('Exchange position differs from the bot position; live automation has paused')
+        for stamp,row in fresh.iterrows():
+            with self.lock:
+                if not self.running:return
+            frame=pd.concat([frame,pd.DataFrame([row],index=[stamp])]).tail(1000)
+            config_fields=dict(request.bb_reversal)
+            for key in ('initial_capital','leverage','trade_mode','min_tick','min_tick_unit'):
+                config_fields.pop(key,None)
+            config=Settings(**config_fields,initial_capital=request.capital,
+                            leverage=request.max_leverage,trade_mode='Both',
+                            min_tick=request.tick_size,min_tick_unit='price')
+            result=run_backtest(frame,config,start=pd.Timestamp(self.trading_from,unit='s',tz='UTC'),bar_seconds=duration)
+            signal=result['bars'].iloc[-1]
+            simulated=result['open_position']
+            self._apply_bar(exchange,market,venue,request,signal,simulated,float(row.close))
+            with self.lock:
+                self.frame=frame
+                self.last_processed=int(stamp.timestamp())
+
+    def _apply_bar(self,exchange,market,venue,request,signal,simulated,close):
+        signal_direction=1 if bool(signal.long_signal) else -1 if bool(signal.short_signal) else 0
+        live=self.position
+        if signal_direction:
+            if live:
+                self._close(exchange,market,venue,live)
+                live=None
+            self._open(exchange,market,venue,request,signal_direction,simulated,close)
+            return
+        if live and simulated is None:
+            self._close(exchange,market,venue,live)
+            return
+        if live and simulated is not None:
+            self._trail(exchange,market,venue,live,simulated,close)
+
+    def _available_usdt(self,exchange):
+        balance=exchange.fetch_balance()
+        return float((balance.get('free') or {}).get('USDT') or (balance.get('total') or {}).get('USDT') or 0)
+
+    def _open(self,exchange,market,venue,request,direction,simulated,close):
+        available=self._available_usdt(exchange)
+        config=request.bb_reversal
+        allocation=(available*config.get('amount_per_trade',100)/100 if config.get('amount_unit','percent')=='percent'
+                    else min(float(config.get('amount_per_trade',available)),available))
+        quantity=allocation*request.max_leverage/close
+        side='long' if direction==1 else 'short'
+        stop=close+(float(simulated['stop'])-float(simulated['entry_price']))
+        result=self.service.open_with_stop(venue,side,quantity,stop)
+        position=dict(direction=side,quantity=result['quantity'],entryPrice=result.get('entryPrice') or close,
+                      stop=stop,stopOrderId=result['protectiveStop'].get('id'))
+        with self.lock:self.position=position
+
+    def _close(self,exchange,market,venue,position):
+        side='sell' if position['direction']=='long' else 'buy'
+        self.service.market_order(venue,side,position['quantity'],reduce_only=True)
+        stop_id=position.get('stopOrderId')
+        if stop_id:
+            try:self.service.cancel_stop(venue,stop_id)
+            except Exception:pass
+        with self.lock:self.position=None
+
+    def _trail(self,exchange,market,venue,position,simulated,close):
+        offset=float(simulated['stop'])-float(simulated['entry_price'])
+        desired=float(position['entryPrice'])+offset
+        old=float(position['stop'])
+        tighter=desired>old if position['direction']=='long' else desired<old
+        if not tighter:return
+        ticker=exchange.fetch_ticker(market['symbol'])
+        last=float(ticker.get('last') or close)
+        crossed=(desired>=last if position['direction']=='long' else desired<=last)
+        if crossed:
+            self._close(exchange,market,venue,position)
+            return
+        new_stop=self.service.set_stop(venue,position['direction'],position['quantity'],desired)
+        old_id=position.get('stopOrderId')
+        if old_id:
+            try:self.service.cancel_stop(venue,old_id)
+            except Exception:
+                try:self.service.cancel_stop(venue,new_stop['id'])
+                except Exception:pass
+                raise RuntimeError('Could not replace the trailing stop; exchange state needs manual review')
+        with self.lock:
+            position['stop']=new_stop['triggerPrice']
+            position['stopOrderId']=new_stop.get('id')
+
+    def stop(self):
+        with self.lock:
+            self.running=False
+            self.stop_event.set()
+        result=self.status()
+        result['message']='Automation stopped. Any open position and its exchange hosted stop remain active; manage them at the exchange or close from this terminal.'
+        return result
+
+
+live_exchange = LiveExchange()
+live_bot = AutomaticLiveBot(live_exchange)
+live_exchange.auto_bot = live_bot

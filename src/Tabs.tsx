@@ -1,4 +1,4 @@
-export type Page = 'strategy'|'results'|'paper';
+export type Page = 'strategy'|'results'|'paper'|'account';
 const pages: [Page,string][]=[['paper','Trading terminal'],['results','Results'],['strategy','Bot settings']];
 export default function Tabs({value,onChange}:{value:Page;onChange:(page:Page)=>void}) {
   return <nav className="page-tabs" role="tablist" aria-label="Research pages">

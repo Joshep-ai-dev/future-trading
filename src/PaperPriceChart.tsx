@@ -3,6 +3,7 @@ import IndicatorHeader from './IndicatorHeader';
 import IndicatorSettings,{readIndicatorSettings,type IndicatorConfig,type IndicatorKind} from './IndicatorSettings';
 import {AdxDecoration,displayAdx} from './adxDisplay';
 import {chartOscillators} from './chartOscillators';
+import {chartTimeOptions,formatChartTime,readChartTimeZone,useChartTimeZone} from './chartTimeZone';
 import {TIMEFRAMES} from './chartTimeframe';
 import {StopOverlay} from './StopOverlay';
 import {api} from './api';
@@ -24,6 +25,8 @@ export default function PaperPriceChart(props:Props) {
   const update=useRef<(data:Data)=>void>(()=>{});
   const [selectedIndicators,setSelectedIndicators]=useState<{atr:boolean;adx:boolean;rsi:boolean}>(()=>{try{const saved=JSON.parse(localStorage.getItem('silver.chart.oscillators')??'{}');return {atr:saved.atr===true,adx:saved.adx===true,rsi:saved.rsi===true};}catch{return {atr:false,adx:false,rsi:false};}});
   const [indicatorConfig,setIndicatorConfig]=useState(readIndicatorSettings),[settingsOpen,setSettingsOpen]=useState<IndicatorKind|null>(null);
+  const timeZone=useChartTimeZone();
+  const timeZoneRef=useRef(timeZone);timeZoneRef.current=timeZone;
   const configRef=useRef(indicatorConfig);configRef.current=indicatorConfig;
   function applyIndicatorConfig(config:IndicatorConfig){setIndicatorConfig(config);try{localStorage.setItem('silver.chart.indicatorSettings',JSON.stringify(config));}catch{}}
   const changePanels=useRef<(selection:{atr:boolean;adx:boolean;rsi:boolean},config:IndicatorConfig)=>void>(()=>{});
@@ -48,7 +51,7 @@ export default function PaperPriceChart(props:Props) {
   useEffect(()=>{
     if(!container.current)return;
     following.current=true;setFollow(true);
-    const chart=createChart(container.current,{autoSize:false,...chartInteraction,layout:{background:{type:ColorType.Solid,color:'#10141d'},textColor:'#7d8da5'},timeScale:{timeVisible:true,minBarSpacing:2,rightOffset:6,fixRightEdge:false,lockVisibleTimeRangeOnResize:true,shiftVisibleRangeOnNewBar:false,allowShiftVisibleRangeOnWhitespaceReplacement:false},grid:{vertLines:{visible:false},horzLines:{color:'#202836'}}});
+    const chart=createChart(container.current,{autoSize:false,...chartInteraction,localization:chartTimeOptions(timeZone).localization,layout:{background:{type:ColorType.Solid,color:'#10141d'},textColor:'#7d8da5'},timeScale:{timeVisible:true,minBarSpacing:2,rightOffset:6,fixRightEdge:false,lockVisibleTimeRangeOnResize:true,shiftVisibleRangeOnNewBar:false,allowShiftVisibleRangeOnWhitespaceReplacement:false,...chartTimeOptions(timeZone).timeScale},grid:{vertLines:{visible:false},horzLines:{color:'#202836'}}});
     chartRef.current=chart;
     const price=chart.addSeries(CandlestickSeries,{borderVisible:false,upColor:'#26a69a',downColor:'#ef5350',wickUpColor:'#26a69a',wickDownColor:'#ef5350',priceFormat:{type:'price',precision:3,minMove:.001}});
     price.priceScale().applyOptions({scaleMargins:{top:.18,bottom:.22}});
@@ -200,11 +203,12 @@ export default function PaperPriceChart(props:Props) {
       const oscillator=c?oscillatorData.find(p=>p.time===c.time):undefined;
       const value=oscillator??oscillatorData.at(-1);setPaneValues({atr:value?.atr??null,adx:value?.adx??null,rsi:value?.rsi??null});
       const indicatorReadout=oscillator?[...oscillatorSeries.keys()].map(key=>` | ${key.toUpperCase()} ${fmt(oscillator[key],key==='atr'?3:2)}`).join(''):'';
-      if(c)setReadout(`${new Date(c.time*1000).toISOString()} · O ${fmt(c.open,3)} H ${fmt(c.high,3)} L ${fmt(c.low,3)} C ${fmt(c.close,3)}${indicatorReadout}${fillReadouts.has(c.time)?` | ${fillReadouts.get(c.time)!.join(" | ")}`:""}`);
+      if(c)setReadout(`${formatChartTime(c.time,timeZoneRef.current)} · O ${fmt(c.open,3)} H ${fmt(c.high,3)} L ${fmt(c.low,3)} C ${fmt(c.close,3)}${indicatorReadout}${fillReadouts.has(c.time)?` | ${fillReadouts.get(c.time)!.join(" | ")}`:""}`);
     });
     const stopResize=resizeChart(chart,container.current,()=>{if(following.current)latest();});
     return ()=>{paneResize?.disconnect();cancelAnimationFrame(paneFrame);updateVisibility.current=()=>{};disposed=true;abort.abort();if(timer)clearTimeout(timer);chart.timeScale().unsubscribeVisibleLogicalRangeChange(scheduleHistory);stopResize();changePanels.current=()=>{};loadEarlier.current=()=>{};update.current=()=>{};chartRef.current=null;chart.remove();};
   },[props.sessionId,props.showSma,props.timeframe]);
+  useEffect(()=>{chartRef.current?.applyOptions({localization:chartTimeOptions(timeZone).localization,timeScale:chartTimeOptions(timeZone).timeScale});},[timeZone]);
   useEffect(()=>{update.current(props);},[props]);
   useEffect(()=>{updateVisibility.current();},[hiddenIndicators]);
   useEffect(()=>{changePanels.current(selectedIndicators,indicatorConfig);},[selectedIndicators,indicatorConfig,props.sessionId,props.showSma,props.timeframe]);

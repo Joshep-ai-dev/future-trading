@@ -19,7 +19,7 @@ export type BacktestSettings = {
   entry_active: boolean; entry_timeframe: '1m'|'3m'|'5m'|'10m'|'15m'|'30m'|'1h'|'4h'|'1d';
   start_date: string; end_date: string; validation_date?: string; capital: number;
   tick_size: number; fee_bps: number; spread: number; slippage: number; funding_bps: number;
-  max_leverage: number; session_start: number; session_end: number; session_timezone: string;
+  max_leverage: number; session_start: number; session_end: number; session_timezone: 'UTC'|'Asia/Shanghai'|'Asia/Tokyo'|'Asia/Singapore'|'Europe/London'|'America/New_York';
 };
 export type Trade = {
   id: number; direction: number; signalTime: number; entryTime: number; exitTime: number;

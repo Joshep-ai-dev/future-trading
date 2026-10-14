@@ -10,6 +10,7 @@ from .strategy import BacktestRequest
 from .bb_reversal_adapter import run_bb_reversal_backtest
 from .market_refresh import refresh_service
 from .paper_trading import paper_service
+from .live_exchange import live_exchange, live_bot
 
 @asynccontextmanager
 async def lifespan(app):
@@ -33,6 +34,15 @@ class Parameters(BaseModel):
 class ChartViewRequest(Parameters):
     session_id: int
     clock: float = Field(ge=0,le=4102444800)
+
+
+class BBBacktestRequest(BacktestRequest):
+    strategy: Literal['bb_outer_reversal'] = 'bb_outer_reversal'
+
+
+class LiveBotStartRequest(BBBacktestRequest):
+    venue: Literal['okx','htx','mexc','binance']
+    confirmation: Literal['START LIVE STRATEGY']
 
 
 @app.post('/api/chart-view')
@@ -72,8 +82,93 @@ def paper_status():
     return paper_service.status()
 
 
-class BBBacktestRequest(BacktestRequest):
-    strategy: Literal['bb_outer_reversal'] = 'bb_outer_reversal'
+class ExchangeConnectRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    venue: Literal['okx','htx','mexc','binance']
+    api_key: str = Field(min_length=1,max_length=512)
+    secret: str = Field(min_length=1,max_length=512)
+    passphrase: str | None = Field(default=None,max_length=512)
+
+
+class ExchangeOrderRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    venue: Literal['okx','htx','mexc','binance']
+    direction: Literal['long','short']
+    quantity: float = Field(gt=0,le=1e9)
+    stop_price: float = Field(gt=0,le=1e9)
+    leverage: int = Field(ge=1,le=100)
+    confirmation: Literal['PLACE LIVE ORDER']
+
+
+class ExchangeDisconnectRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    venue: Literal['okx','htx','mexc','binance']
+
+
+class ExchangeCloseRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    venue: Literal['okx','htx','mexc','binance']
+    confirmation: Literal['CLOSE LIVE POSITION']
+
+
+@app.get('/api/exchange/status')
+def exchange_status():
+    return {'venues':live_exchange.status(),'bot':live_bot.status()}
+
+
+@app.post('/api/exchange/connect')
+def exchange_connect(parameters: ExchangeConnectRequest):
+    try:
+        return live_exchange.connect(parameters.venue,parameters.api_key,parameters.secret,parameters.passphrase)
+    except ValueError as error:
+        raise HTTPException(status_code=400,detail=str(error)) from error
+    except Exception as error:
+        # Exchange/library errors may echo request details. Never return credentials to the browser.
+        raise HTTPException(status_code=502,detail=f'{parameters.venue.upper()} connection failed. Check API permissions, XAG contract access, account mode, and network availability.') from error
+
+
+@app.post('/api/exchange/disconnect')
+def exchange_disconnect(parameters: ExchangeDisconnectRequest):
+    live_exchange.disconnect(parameters.venue)
+    return {'venue':parameters.venue,'connected':False}
+
+
+@app.post('/api/exchange/order')
+def exchange_order(parameters: ExchangeOrderRequest):
+    try:
+        exchange,market=live_exchange._get(parameters.venue)
+        exchange.set_margin_mode('isolated',market['symbol'])
+        exchange.set_leverage(parameters.leverage,market['symbol'])
+        return live_exchange.open_with_stop(parameters.venue,parameters.direction,parameters.quantity,parameters.stop_price)
+    except ValueError as error:
+        raise HTTPException(status_code=400,detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(status_code=502,detail='Live order failed. Check the exchange order and position status before retrying.') from error
+
+
+@app.post('/api/exchange/close')
+def exchange_close(parameters: ExchangeCloseRequest):
+    try:
+        return live_exchange.close_position(parameters.venue)
+    except ValueError as error:
+        raise HTTPException(status_code=400,detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(status_code=502,detail='Close request failed. Check the live position and open reduce-only orders at the exchange.') from error
+
+
+@app.post('/api/exchange/auto/start')
+def exchange_auto_start(parameters: LiveBotStartRequest):
+    try:
+        return live_bot.start(parameters.venue,parameters)
+    except ValueError as error:
+        raise HTTPException(status_code=400,detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(status_code=502,detail='Could not start the live strategy. Verify exchange account state and protective-order support.') from error
+
+
+@app.post('/api/exchange/auto/stop')
+def exchange_auto_stop():
+    return live_bot.stop()
 
 
 class PaperStartRequest(BBBacktestRequest):
