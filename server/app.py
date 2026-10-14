@@ -2,15 +2,16 @@
 from typing import Literal
 from contextlib import asynccontextmanager
 import pandas as pd
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.gzip import GZipMiddleware
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from .data import load_bars
 from .strategy import BacktestRequest
 from .bb_reversal_adapter import run_bb_reversal_backtest
 from .market_refresh import refresh_service
 from .paper_trading import paper_service
 from .live_exchange import live_exchange, live_bot
+from .profile_store import profile_store
 
 @asynccontextmanager
 async def lifespan(app):
@@ -40,6 +41,20 @@ class BBBacktestRequest(BacktestRequest):
     strategy: Literal['bb_outer_reversal'] = 'bb_outer_reversal'
 
 
+class ProfileSaveRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    name: str = Field(min_length=1, max_length=48)
+    settings: BBBacktestRequest
+
+    @field_validator('name')
+    @classmethod
+    def clean_name(cls, value):
+        value = value.strip()
+        if not value:
+            raise ValueError('Setup name cannot be blank')
+        return value
+
+
 class LiveBotStartRequest(BBBacktestRequest):
     venue: Literal['okx','htx','mexc','binance']
     confirmation: Literal['START LIVE STRATEGY']
@@ -65,6 +80,23 @@ def session_chart(parameters: ChartViewRequest):
 @app.get('/api/health')
 def health():
     return {'application': 'silver-price', 'version': 3}
+
+
+@app.get('/api/profiles')
+def list_profiles():
+    return profile_store.list()
+
+
+@app.post('/api/profiles')
+def save_profile(parameters: ProfileSaveRequest):
+    return profile_store.save(parameters.name, parameters.settings.model_dump(mode='json'))
+
+
+@app.delete('/api/profiles')
+def delete_profile(name: str = Query(min_length=1, max_length=48)):
+    if not profile_store.delete(name.strip()):
+        raise HTTPException(status_code=404, detail='Saved setup not found')
+    return {'deleted': name.strip()}
 
 
 @app.get('/api/market-status')
