@@ -48,6 +48,8 @@ class BacktestRequest(BaseModel):
         if self.end_date < self.start_date:
             raise ValueError('End date must be on or after the start date.')
         from .bb_outer_reversal import Settings
+        # Ignore the removed option in older saved browser configurations.
+        self.bb_reversal = {k: v for k, v in self.bb_reversal.items() if k != 'hedge_mode'}
         try:
             config = Settings(**self.bb_reversal)
             if config.amount_unit == 'price' and config.amount_per_trade > self.capital:

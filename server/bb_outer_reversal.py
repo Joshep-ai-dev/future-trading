@@ -20,7 +20,6 @@ from .indicators import atr, rsi
 @dataclass(frozen=True)
 class Settings:
     trade_mode: str = 'Both'
-    hedge_mode: bool = False
     bb_length: int = 20
     bb_mult: float = 3.0
     min_bb_width_pct: float = 0.8
@@ -52,8 +51,6 @@ class Settings:
     rsi_exit_long: float = 85.
 
     def __post_init__(self):
-        if not isinstance(self.hedge_mode, bool):
-            raise ValueError('Hedge mode must be boolean')
         if not isinstance(self.rsi_exit_enabled, bool):
             raise ValueError('RSI exit enabled must be boolean')
         if isinstance(self.rsi_exit_length, bool) or not isinstance(self.rsi_exit_length, int) or not 1 <= self.rsi_exit_length <= 500:
@@ -177,40 +174,38 @@ def run_backtest(frame, settings=None, *, start=None, close_at_end=False, bar_se
     if start is not None:
         bars = bars.loc[bars.index >= start]
     trades, records = [], []
-    positions = []
+    position = None
     cash, last_direction = s.initial_capital, 0
     lower_touch = upper_touch = None
 
-    def close_position(position, time, price, reason):
-        nonlocal cash
+    def close_position(time, price, reason):
+        nonlocal cash, position
         pnl = (price-position['entry_price']) * position['direction'] * position['quantity']
         cash += pnl
         trades.append(dict(**position, exit_time=time, exit_price=float(price),
                            exit_reason=reason, pnl=float(pnl)))
-        positions.remove(position)
+        position = None
 
     for i, (time, bar) in enumerate(bars.iterrows()):
         if bar_seconds and i and (time-bars.index[i-1]).total_seconds() > bar_seconds:
-            for position in positions[:]:
-                close_position(position, bars.index[i-1], bars.close.iloc[i-1], 'data_gap')
+            if position is not None:
+                close_position(bars.index[i-1], bars.close.iloc[i-1], 'data_gap')
             lower_touch = upper_touch = None
-        for position in positions[:]:
+        if position is not None:
             stop, direction = position['stop'], position['direction']
             if direction == 1 and bar.low <= stop:
-                close_position(position, time, min(bar.open, stop), 'stop')
+                close_position(time, min(bar.open, stop), 'stop')
             elif direction == -1 and bar.high >= stop:
-                close_position(position, time, max(bar.open, stop), 'stop')
+                close_position(time, max(bar.open, stop), 'stop')
 
-        for position in positions[:]:
-            if not s.rsi_exit_enabled:
-                continue
+        if position is not None and s.rsi_exit_enabled:
             exit_rsi = bar.get('exit_rsi', np.nan)
             # User-defined upward price difference for BOTH sides, not directional profit.
             price_condition = bar.close > position['entry_price']+s.rsi_exit_move
             rsi_condition = (exit_rsi < s.rsi_exit_short if position['direction'] == -1
                              else exit_rsi > s.rsi_exit_long)
             if price_condition and np.isfinite(exit_rsi) and rsi_condition:
-                close_position(position, time, bar.close, 'rsi_price_exit')
+                close_position(time, bar.close, 'rsi_price_exit')
 
         if bar.low <= bar.bb_lower:
             lower_touch = i
@@ -230,67 +225,55 @@ def run_backtest(frame, settings=None, *, start=None, close_at_end=False, bar_se
         allowed = (cash > 0 and (not s.use_sma_trend_adjustment or bar.sma_ready) and bar.atr >= s.min_atr and
                    bar.bb_width_pct >= s.min_bb_width_pct and bar.adx > s.adx_threshold)
         direction = 0
-        if allowed and long_rebound and (not any(p['direction'] == 1 for p in positions) if s.hedge_mode else last_direction != 1) and s.trade_mode != 'Short Only':
+        if allowed and long_rebound and last_direction != 1 and s.trade_mode != 'Short Only':
             direction = 1
-        elif allowed and short_rebound and (not any(p['direction'] == -1 for p in positions) if s.hedge_mode else last_direction != -1) and s.trade_mode != 'Long Only':
+        elif allowed and short_rebound and last_direction != -1 and s.trade_mode != 'Long Only':
             direction = -1
         activated = False
         if direction:
-            if not s.hedge_mode:
-                for position in positions[:]:
-                    close_position(position, time, bar.close, 'reversal')
+            if position is not None:
+                close_position(time, bar.close, 'reversal')
             if cash <= 0:
                 direction = 0
-        available = max(0., cash-sum(p.get('margin', 0.) for p in positions))
-        if s.hedge_mode and available <= 0:
-            direction = 0
         if direction:
             counter = s.use_sma_trend_adjustment and (bar.sma_downtrend if direction == 1 else bar.sma_uptrend)
             minimum = s.min_tick if s.min_tick_unit == 'price' else bar.close*s.min_tick/100
             sl = max(minimum, s.initial_sl * (s.counter_sl_pct/100 if counter else 1))
             scale = s.counter_profit_pct/100 if counter else 1
             amount = cash*s.amount_per_trade/100 if s.amount_unit == 'percent' else min(s.amount_per_trade, cash)
-            if s.hedge_mode:
-                amount = min(amount, available)
             quantity = s.quantity if s.leverage is None else amount*s.leverage/bar.close
-            position = dict(margin=amount if s.leverage is not None else 0., direction=direction, entry_time=time, entry_price=float(bar.close), quantity=float(quantity),
+            position = dict(direction=direction, entry_time=time, entry_price=float(bar.close), quantity=float(quantity),
                             stop=float(bar.close-direction*sl), initial_stop=float(bar.close-direction*sl), extreme=float(bar.close),
                             trailing_active=False, countertrend=bool(counter),
                             trail_trigger=max(minimum, s.trail_trigger*s.trail_multiplier*scale),
                             trail_distance=max(minimum, s.trail_distance*s.trail_multiplier*scale))
             position['stop_history'] = [dict(time=int(time.timestamp()) if hasattr(time, 'timestamp') else int(time),
                                              price=position['stop'], reason='initial')]
-            positions.append(position)
             last_direction = direction
-        for p in positions[:]:
-            if p['entry_time'] == time:
-                continue
-            position_activated = False
+        elif position is not None:
+            p = position
             d = p['direction']
             p['extreme'] = max(p['extreme'], bar.high) if d == 1 else min(p['extreme'], bar.low)
             if not p['trailing_active'] and d*(p['extreme']-p['entry_price']) >= p['trail_trigger']:
-                p['trailing_active'] = activated = position_activated = True
+                p['trailing_active'] = activated = True
             if p['trailing_active']:
                 previous_stop = p['stop']
                 candidate = p['extreme']-d*p['trail_distance']
                 p['stop'] = max(p['stop'], candidate) if d == 1 else min(p['stop'], candidate)
-                if position_activated or p['stop'] != previous_stop:
+                if activated or p['stop'] != previous_stop:
                     p['stop_history'].append(dict(time=int(time.timestamp()) if hasattr(time, 'timestamp') else int(time),
-                                                  price=p['stop'], reason='activation' if position_activated else 'trailing'))
+                                                  price=p['stop'], reason='activation' if activated else 'trailing'))
                 if d*(bar.close-p['stop']) <= 0:
-                    close_position(p, time, bar.close, 'trailing_stop_at_close')
-        unrealized = sum((bar.close-p['entry_price'])*p['direction']*p['quantity'] for p in positions)
-        position = positions[0] if len(positions) == 1 else None
+                    close_position(time, bar.close, 'trailing_stop_at_close')
+        unrealized = 0 if position is None else (bar.close-position['entry_price'])*position['direction']*position['quantity']
         records.append(dict(long_signal=direction == 1, short_signal=direction == -1,
                             trailing_activated=activated, position=0 if position is None else position['direction'],
                             stop=np.nan if position is None else position['stop'],
                             trailing_active=False if position is None else position['trailing_active'],
                             equity=float(cash+unrealized)))
-    if close_at_end and positions and len(bars):
-        for position in positions[:]:
-            close_position(position, bars.index[-1], bars.close.iloc[-1], 'period_end')
+    if close_at_end and position is not None and len(bars):
+        close_position(bars.index[-1], bars.close.iloc[-1], 'period_end')
         records[-1].update(position=0, stop=np.nan, trailing_active=False, equity=float(cash))
     diagnostics = pd.DataFrame(records, index=bars.index)
     return dict(bars=bars.join(diagnostics), trades=pd.DataFrame(trades),
-                open_position=positions[0].copy() if len(positions) == 1 else None,
-                open_positions=[p.copy() for p in positions], cash=float(cash))
+                open_position=None if position is None else position.copy(), cash=float(cash))

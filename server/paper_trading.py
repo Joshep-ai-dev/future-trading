@@ -28,6 +28,13 @@ class PaperTrading:
         self.live_check = 0
         try:
             self.state = json.loads(self.path.read_text(encoding='utf-8')) if self.path.exists() else None
+            if self.state:
+                old_settings = self.state['settings']['bb_reversal']
+                if old_settings.get('hedge_mode'):
+                    self.state['running'] = False
+                    self.error = 'This saved session used removed hedge mode. Start a new virtual session; the previous session will be archived.'
+                else:
+                    old_settings.pop('hedge_mode', None)
         except (OSError, ValueError) as error:
             self.state = None
             self.error = f'Could not restore saved paper session: {error}'
@@ -42,6 +49,8 @@ class PaperTrading:
         with self.lock:
             if self.state is None:
                 return dict(session=None, error=self.error)
+            if self.state['settings']['bb_reversal'].get('hedge_mode'):
+                return dict(session=None, error=self.error)
             session = {k:v for k,v in self.state.items() if k not in ('candles','replayCandles','minuteCandles')}
             session['chartCandles'] = self.state['candles'][-1000:]
             replay = self.state.get('mode','live') == 'replay'
@@ -54,10 +63,9 @@ class PaperTrading:
             left = (int(max(0,clock-window))//duration)*duration
             session['animationMinutes'] = [row for row in self.state.get('minuteCandles',[])
                                            if left <= row['time'] <= clock]
-            positions = self.state.get('openPositions', [self.state['openPosition']] if self.state['openPosition'] else [])
-            session['openPositions'] = positions
-            session['displayEquity'] = (self.state['balance']+sum((session['displayPrice']-p['entry_price'])*p['direction']*p['quantity'] for p in positions)
-                if positions and session['displayPrice'] is not None else self.state['equity'])
+            position = self.state['openPosition']
+            session['displayEquity'] = (self.state['balance']+(session['displayPrice']-position['entry_price'])*position['direction']*position['quantity']
+                if position and session['displayPrice'] is not None else self.state['equity'])
             return dict(session=session, error=self.error)
 
     def begin(self, request):
@@ -108,7 +116,7 @@ class PaperTrading:
             self.state = dict(running=True, startedAt=now, tradingFrom=first,
                 settings=request.model_dump(mode='json'), candles=candles,
                 lastProcessed=None, lastCheck=None, balance=float(request.capital),
-                equity=float(request.capital), openPosition=None, openPositions=[], trades=[], equityHistory=[],
+                equity=float(request.capital), openPosition=None, trades=[], equityHistory=[],
                 halted=False, latestPrice=None, signals=0, mode=mode,
                 speed=getattr(request,'replay_speed',300), virtualTime=float(first),
                 replayEnd=replay_end, replayCandles=replay_candles, completed=False,
@@ -127,6 +135,8 @@ class PaperTrading:
         with self.lock:
             if not self.state:
                 raise ValueError('Start a paper session first')
+            if self.state.get('settings', {}).get('bb_reversal', {}).get('hedge_mode'):
+                raise ValueError('Hedge mode was removed. Start a new virtual session.')
             if running and self.state['halted']:
                 raise ValueError('Balance is zero or negative; start a new virtual session')
             if running and self.state.get('completed'):
@@ -197,10 +207,9 @@ class PaperTrading:
             for i,trade in enumerate(trades):
                 trade.update(id=i+1, entry_time=int(trade['entry_time'].timestamp()),
                              exit_time=int(trade['exit_time'].timestamp()))
-            positions = result['open_positions']
-            for position in positions:
+            position = result['open_position']
+            if position:
                 position['entry_time'] = int(position['entry_time'].timestamp())
-            position = positions[0] if len(positions) == 1 else None
             bars = result['bars']
             chart_indicators, chart_stops = [], []
             for stamp, bar in bars.tail(1000).iterrows():
@@ -213,11 +222,11 @@ class PaperTrading:
                 chart_stops.append(dict(time=point['time'],price=float(bar.stop) if pd.notna(bar.stop) else None))
             state.update(candles=combined, lastProcessed=int(bars.index[-1].timestamp()),
                 chartIndicators=chart_indicators, chartStops=chart_stops,
-                balance=result['cash'], equity=float(bars.equity.iloc[-1]), openPosition=position, openPositions=positions,
+                balance=result['cash'], equity=float(bars.equity.iloc[-1]), openPosition=position,
                 trades=trades, latestPrice=float(bars.close.iloc[-1]),
                 equityHistory=[dict(time=int(t.timestamp()),value=float(v)) for t,v in bars.equity.items()],
                 signals=int(bars[['long_signal','short_signal']].to_numpy().sum()),
-                halted=result['cash'] <= 0 and not positions, completed=finished)
+                halted=result['cash'] <= 0, completed=finished)
             if state['halted'] or finished:
                 state['running'] = False
             self.error = None

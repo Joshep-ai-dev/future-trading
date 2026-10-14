@@ -10,35 +10,6 @@ from .strategy import BacktestRequest
 
 
 class PaperTradingTests(unittest.TestCase):
-    def test_hedged_paper_positions_survive_restart_and_mark_both_sides(self):
-        with TemporaryDirectory() as folder:
-            index = pd.date_range('2026-01-01',periods=3,freq='5min',tz='UTC')
-            frame = pd.DataFrame([(100.,100.2,99.8,100.),(99.5,100.5,98.9,100.),
-                                  (100.7,101.2,99.8,100.5)],
-                                 columns=['open','high','low','close'],index=index)
-            clock = [int(index[1].timestamp())]
-            path = Path(folder)/'hedge.json'
-            service = PaperTrading(path,loader=lambda tf:(frame,{}),now=lambda:clock[0])
-            request = BacktestRequest(strategy='bb_outer_reversal',entry_timeframe='5m',capital=1000,
-                start_date='2026-01-01',end_date='2026-01-01',
-                bb_reversal=dict(hedge_mode=True,amount_per_trade=50,initial_sl=2,
-                                 trail_trigger=10,use_sma_trend_adjustment=False))
-            service.begin(request)
-            clock[0] = int(index[-1].timestamp())+300
-            def calculate(bars,settings,**kwargs):
-                return bars.assign(bb_lower=99.,bb_upper=101.,atr=1.,bb_width_pct=2.,adx=30.,
-                                   sma_ready=False,sma_uptrend=False,sma_downtrend=False)
-            with patch('server.bb_outer_reversal.calculate',side_effect=calculate):
-                service.advance()
-            self.assertEqual(len(service.state['openPositions']),2)
-            self.assertEqual(service.state['trades'],[])
-            restored = PaperTrading(path,now=lambda:clock[0])
-            session = restored.status()['session']
-            self.assertEqual(session['openPositions'],service.state['openPositions'])
-            expected = session['balance']+sum((session['displayPrice']-p['entry_price'])*p['direction']*p['quantity']
-                                               for p in session['openPositions'])
-            self.assertAlmostEqual(session['displayEquity'],expected)
-
     def test_live_forming_price_does_not_submit_trades_or_close_execution_bars(self):
         with TemporaryDirectory() as folder:
             index=pd.date_range('2026-01-01',periods=1,freq='min',tz='UTC')

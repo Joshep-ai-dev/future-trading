@@ -8,43 +8,6 @@ from .bb_outer_reversal import Settings, _rma, calculate, run_backtest
 
 
 class BBOuterReversalTests(unittest.TestCase):
-    def test_hedge_keeps_both_sides_and_default_reverses(self):
-        bars = self.bars([(99.5,100.5,98.9,100.), (100.7,101.2,99.8,100.5)])
-        options = dict(initial_sl=2,trail_trigger=10,use_sma_trend_adjustment=False)
-        hedged = self.run_bars(bars,hedge_mode=True,**options)
-        self.assertEqual([p['direction'] for p in hedged['open_positions']],[1,-1])
-        self.assertTrue(hedged['trades'].empty)
-        self.assertAlmostEqual(hedged['bars'].equity.iloc[-1],10000.5)
-        normal = self.run_bars(bars,**options)
-        self.assertEqual(normal['trades'].iloc[0].exit_reason,'reversal')
-        self.assertEqual(normal['open_position']['direction'],-1)
-
-    def test_hedge_independent_stops_and_no_same_side_stacking(self):
-        bars = self.bars([(99.5,100.5,98.9,100.), (100.7,101.2,99.8,100.5),
-                          (100.7,101.2,99.8,100.5), (99.,100.,97.5,99.5)])
-        result = self.run_bars(bars,hedge_mode=True,initial_sl=2,trail_trigger=10,
-                               use_sma_trend_adjustment=False)
-        self.assertEqual(result['bars'].short_signal.tolist(),[False,True,False,False])
-        self.assertEqual(len(result['trades']),1)
-        self.assertEqual(result['trades'].iloc[0].exit_price,98.)
-        self.assertEqual(result['trades'].iloc[0].direction,1)
-        self.assertEqual(len(result['open_positions']),2)  # Fresh long signal after stop.
-        self.assertEqual(result['open_positions'][0]['entry_time'],1)
-
-    def test_hedge_margin_cap_and_period_end(self):
-        bars = self.bars([(99.5,100.5,98.9,100.), (100.7,101.2,99.8,100.5)])
-        options = dict(hedge_mode=True,initial_sl=2,trail_trigger=10,
-                       use_sma_trend_adjustment=False,leverage=2,initial_capital=1000)
-        full = self.run_bars(bars,amount_per_trade=100,**options)
-        self.assertEqual(len(full['open_positions']),1)
-        split = self.run_bars(bars,amount_per_trade=60,**options)
-        self.assertEqual([p['margin'] for p in split['open_positions']],[600,400])
-        with patch('server.bb_outer_reversal.calculate',return_value=bars):
-            closed = run_backtest(bars,Settings(amount_per_trade=50,**options),close_at_end=True)
-        self.assertEqual(closed['open_positions'],[])
-        self.assertEqual(len(closed['trades']),2)
-        self.assertEqual(set(closed['trades'].exit_reason),{'period_end'})
-
     def bars(self, candles):
         data = pd.DataFrame(candles, columns=['open', 'high', 'low', 'close'])
         return data.assign(bb_lower=99., bb_upper=101., atr=1., bb_width_pct=2.,
