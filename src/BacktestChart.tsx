@@ -1,5 +1,6 @@
 import {useEffect, useRef, useState} from 'react';
 import {CandlestickSeries, ColorType, createChart, createSeriesMarkers, LineSeries, BaselineSeries, LineStyle, LineType, type IChartApi, type ISeriesApi, type UTCTimestamp, type SeriesMarker} from 'lightweight-charts';
+import {fillMarker,FillLabels} from './fillMarkers';
 import ChartTools,{chartInteraction,resizeChart} from './ChartTools';
 import {fmt, type Analysis, type PeriodResult, type Trade, type IndicatorPoint, type BacktestSettings} from './types';
 
@@ -68,12 +69,13 @@ export default function BacktestChart({candles,trades,selected,onSelect,indicato
     const visibleTrades = trades.filter(t=>present.has(t.entryTime)||present.has(t.exitTime));
     const markers: SeriesMarker<UTCTimestamp>[] = [];
     for (const t of visibleTrades) {
-      if(present.has(t.entryTime)) markers.push({time:t.entryTime as UTCTimestamp,position:t.direction===1?'belowBar':'aboveBar',shape:t.direction===1?'arrowUp':'arrowDown',color:t.direction===1?'#6ce4bc':'#ff8291',text:`${t.direction===1?'BUY':'SELL'} #${t.id}`});
-      if(present.has(t.exitTime)) markers.push({time:t.exitTime as UTCTimestamp,position:t.direction===1?'aboveBar':'belowBar',shape:'circle',color:t.netPnl>=0?'#6ce4bc':'#ff8291',text:`EXIT #${t.id} ${fmt(t.netPnl)}`});
+      if(present.has(t.entryTime)) markers.push(fillMarker(t.entryTime,t.entry,`${t.direction===1?'BUY':'SELL'} #${t.id}`,'entry',t.direction,`entry-${t.id}`,t.quantity));
+      if(present.has(t.exitTime)) markers.push(fillMarker(t.exitTime,t.exit,`CLOSE #${t.id}`,'close',t.direction,`close-${t.id}`,t.quantity));
     }
     if(selected && present.has(selected.signalTime)) markers.push({time:selected.signalTime as UTCTimestamp,position:selected.direction===1?'belowBar':'aboveBar',shape:'square',color:'#e0c278',text:selected.signalLabel?'SIGNAL':'SWEEP'});
     if(selected?.exitSignal && present.has(selected.exitSignal.time)) markers.push({time:selected.exitSignal.time as UTCTimestamp,position:'aboveBar',shape:'square',color:'#be9bf3',text:'CLOSE SIGNAL'});
-    createSeriesMarkers(price,markers.sort((a,b)=>Number(a.time)-Number(b.time)));
+    const fillLabels=new FillLabels();price.attachPrimitive(fillLabels);fillLabels.setMarkers(markers);
+    createSeriesMarkers(price,markers.sort((a,b)=>Number(a.time)-Number(b.time)).map(m=>m.price===undefined?m:{...m,text:undefined}));
     if(selected && selected.stop !== null && selected.target !== null && present.has(selected.entryTime)) {
       const from = selected.entryTime as UTCTimestamp;
       const to = Math.max(selected.exitTime,selected.entryTime+barSeconds) as UTCTimestamp;
@@ -104,6 +106,8 @@ export default function BacktestChart({candles,trades,selected,onSelect,indicato
       }
       chart.addSeries(LineSeries,{color:'#88bfff',lineWidth:2,lineStyle:LineStyle.Dashed,title:'Entry',priceLineVisible:false}).setData([{time:selected.entryTime as UTCTimestamp,value:selected.entry},{time:Math.max(selected.exitTime,selected.entryTime+barSeconds) as UTCTimestamp,value:selected.entry}]);
     }
+    const fillReadouts=new Map<number,string[]>();
+    for(const marker of markers.filter(m=>m.price!==undefined)){const time=Number(marker.time);fillReadouts.set(time,[...(fillReadouts.get(time)??[]),marker.text!.replaceAll("\n"," ")]);}
     const byTime = new Map(view.map(c=>[c.time,c]));
     const indicatorByTime = new Map(indicators.map(p=>[p.time,p]));
     chart.subscribeCrosshairMove(p=>{
@@ -111,11 +115,11 @@ export default function BacktestChart({candles,trades,selected,onSelect,indicato
       if(c) {
         const indicator=indicatorByTime.get(c.time);
         const extra=indicatorSettings.strategy==='bb_outer_reversal'&&indicator?` · ADX ${fmt(indicator.adx??null)} · ATR ${fmt(indicator.atr??null,3)} · BB width ${fmt(indicator.bbWidthPct??null)}%`:'';
-        setReadout(`${new Date(c.time*1000).toISOString()} · O ${fmt(c.open,3)} H ${fmt(c.high,3)} L ${fmt(c.low,3)} C ${fmt(c.close,3)}${extra}`);
+        setReadout(`${new Date(c.time*1000).toISOString()} · O ${fmt(c.open,3)} H ${fmt(c.high,3)} L ${fmt(c.low,3)} C ${fmt(c.close,3)}${extra}${fillReadouts.has(c.time)?` | ${fillReadouts.get(c.time)!.join(" | ")}`:""}`);
       }
     });
     chart.subscribeClick(p=>{
-      const trade = visibleTrades.find(t=>t.entryTime===p.time||t.exitTime===p.time);
+      const trade = visibleTrades.find(t=>p.hoveredObjectId===`entry-${t.id}`||p.hoveredObjectId===`close-${t.id}`)??visibleTrades.find(t=>t.entryTime===p.time||t.exitTime===p.time);
       if(trade) onSelect(trade);
     });
     const stopResize=resizeChart(chart,ref.current,()=>{

@@ -1,5 +1,6 @@
 import {useEffect,useRef,useState} from 'react';
 import {CandlestickSeries,ColorType,createChart,createSeriesMarkers,LineSeries,LineType,type IChartApi,type UTCTimestamp,type SeriesMarker} from 'lightweight-charts';
+import {fillMarker,FillLabels} from './fillMarkers';
 import ChartTools,{chartInteraction,resizeChart} from './ChartTools';
 import {fmt,type Analysis} from './types';
 import type {PaperTrade,Position} from './PaperTrading';
@@ -21,10 +22,12 @@ export default function PaperPriceChart(props:Props) {
     chartRef.current=chart;
     const price=chart.addSeries(CandlestickSeries,{borderVisible:false,upColor:'#26a69a',downColor:'#ef5350',wickUpColor:'#26a69a',wickDownColor:'#ef5350',priceFormat:{type:'price',precision:3,minMove:.001}});
     const markers=createSeriesMarkers(price,[]);
+    const fillLabels=new FillLabels();price.attachPrimitive(fillLabels);
     const overlays=([['bbBasis','#63d6d0','BB middle'],['bbUpper','#7d8da5','BB upper'],['bbLower','#7d8da5','BB lower'],['trendSma','#d7ad69','Trend SMA']] as const).filter(([key])=>key!=='trendSma'||props.showSma).map(([key,color,title])=>({key,series:chart.addSeries(LineSeries,{color,lineWidth:1,title,priceLineVisible:false,lastValueVisible:false})}));
     const stops=chart.addSeries(LineSeries,{color:'#ff8291',lineWidth:2,lineType:LineType.WithSteps,title:'Active stop',priceLineVisible:false,lastValueVisible:false});
     const entry=chart.addSeries(LineSeries,{color:'#88bfff',lineWidth:2,title:'Open entry',priceLineVisible:false});
     let byTime=new Map<number,Analysis['candles'][number]>(),previousTime:number|undefined,previous:Data|null=null;
+    let fillReadouts=new Map<number,string[]>();
     update.current=data=>{
       const visible=chart.timeScale().getVisibleRange();
       byTime=new Map(data.candles.map(c=>[c.time,c]));count.current=data.candles.length;
@@ -41,20 +44,23 @@ export default function PaperPriceChart(props:Props) {
         entry.setData((from===stamp?[from]:[from,stamp]).map(time=>({time:time as UTCTimestamp,value:p.entry_price})));
       }else entry.setData([]);
       const points:SeriesMarker<UTCTimestamp>[]=[];
-      const addEntry=(position:Position,label:string)=>{if(byTime.has(position.entry_time))points.push({time:position.entry_time as UTCTimestamp,position:position.direction===1?'belowBar':'aboveBar',shape:position.direction===1?'arrowUp':'arrowDown',color:position.direction===1?'#6ce4bc':'#ff8291',text:label});};
+      const addEntry=(position:Position,label:string,id:string)=>{if(byTime.has(position.entry_time))points.push(fillMarker(position.entry_time,position.entry_price,label,'entry',position.direction,id,position.quantity));};
       for(const t of data.trades){
-        addEntry(t,`${t.direction===1?'BUY':'SELL'} #${t.id}`);
-        if(byTime.has(t.exit_time))points.push({time:t.exit_time as UTCTimestamp,position:t.direction===1?'aboveBar':'belowBar',shape:'circle',color:t.pnl>=0?'#6ce4bc':'#ff8291',text:`EXIT #${t.id} ${fmt(t.pnl)}`});
+        addEntry(t,`${t.direction===1?'BUY':'SELL'} #${t.id}`,`entry-${t.id}`);
+        if(byTime.has(t.exit_time))points.push(fillMarker(t.exit_time,t.exit_price,`CLOSE #${t.id}`,'close',t.direction,`close-${t.id}`,t.quantity));
       }
-      if(p)addEntry(p,`${p.direction===1?'BUY':'SELL'} · OPEN`);
-      markers.setMarkers(points.sort((a,b)=>Number(a.time)-Number(b.time)));
+      if(p)addEntry(p,`${p.direction===1?'BUY':'SELL'} OPEN`,'entry-open');
+      fillReadouts=new Map();
+      for(const point of points){const time=Number(point.time);fillReadouts.set(time,[...(fillReadouts.get(time)??[]),point.text!.replaceAll("\n"," ")]);}
+      fillLabels.setMarkers(points);
+      markers.setMarkers(points.sort((a,b)=>Number(a.time)-Number(b.time)).map(m=>({...m,text:undefined})));
       if(following.current&&(stamp!==previousTime||previousTime===undefined))chart.timeScale().setVisibleLogicalRange({from:Math.max(0,count.current-150),to:count.current+5});
       else if(!following.current&&visible)chart.timeScale().setVisibleRange(visible);
       previousTime=stamp;previous=data;
     };
     chart.subscribeCrosshairMove(event=>{
       const c=typeof event.time==='number'?byTime.get(event.time):undefined;
-      if(c)setReadout(`${new Date(c.time*1000).toISOString()} · O ${fmt(c.open,3)} H ${fmt(c.high,3)} L ${fmt(c.low,3)} C ${fmt(c.close,3)}`);
+      if(c)setReadout(`${new Date(c.time*1000).toISOString()} · O ${fmt(c.open,3)} H ${fmt(c.high,3)} L ${fmt(c.low,3)} C ${fmt(c.close,3)}${fillReadouts.has(c.time)?` | ${fillReadouts.get(c.time)!.join(" | ")}`:""}`);
     });
     const stopResize=resizeChart(chart,container.current,()=>{if(following.current)latest();});
     return ()=>{stopResize();update.current=()=>{};chartRef.current=null;chart.remove();};
