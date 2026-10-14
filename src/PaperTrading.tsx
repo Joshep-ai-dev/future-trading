@@ -6,7 +6,7 @@ import {fmt,type BacktestSettings} from './types';
 
 export type Position={direction:number;entry_time:number;entry_price:number;quantity:number;stop:number;trailing_active:boolean};
 export type PaperTrade=Position&{id:number;exit_time:number;exit_price:number;exit_reason:string;pnl:number};
-type Session={chartCandles?:{time:number;open:number;high:number;low:number;close:number}[];chartIndicators?:{time:number;bbBasis:number|null;bbUpper:number|null;bbLower:number|null;trendSma:number|null}[];chartStops?:{time:number;price:number|null}[];mode?:'live'|'replay';speed?:number;virtualTime?:number;replayEnd?:number|null;completed?:boolean;running:boolean;startedAt:number;tradingFrom:number;lastProcessed:number|null;lastCheck:number|null;balance:number;equity:number;openPosition:Position|null;trades:PaperTrade[];equityHistory:{time:number;value:number}[];halted:boolean;latestPrice:number|null;signals:number;settings:BacktestSettings};
+type Session={formingCandle?:{time:number;open:number;high:number;low:number;close:number}|null;displayPrice?:number|null;displayEquity?:number;quoteError?:string|null;quoteTime?:number|null;chartCandles?:{time:number;open:number;high:number;low:number;close:number}[];chartIndicators?:{time:number;bbBasis:number|null;bbUpper:number|null;bbLower:number|null;trendSma:number|null}[];chartStops?:{time:number;price:number|null}[];mode?:'live'|'replay';speed?:number;virtualTime?:number;replayEnd?:number|null;completed?:boolean;running:boolean;startedAt:number;tradingFrom:number;lastProcessed:number|null;lastCheck:number|null;balance:number;equity:number;openPosition:Position|null;trades:PaperTrade[];equityHistory:{time:number;value:number}[];halted:boolean;latestPrice:number|null;signals:number;settings:BacktestSettings};
 type Response={session:Session|null;error:string|null};
 const date=(t:number|null)=>t===null?'Waiting':new Date(t*1000).toLocaleString();
 
@@ -37,6 +37,7 @@ export default function PaperTrading({settings,visible}:{settings:BacktestSettin
     catch(e){setError(String(e));}finally{setBusy(false);}
   }
   const s=data.session,p=s?.openPosition;
+  const chartCandles=s?[...(s.chartCandles??[]).filter(c=>!s.formingCandle||c.time<s.formingCandle.time),...(s.formingCandle?[s.formingCandle]:[])]:[];
   return <div id="page-paper" role="tabpanel" aria-labelledby="tab-paper" hidden={!visible}>
     <div className="section-heading"><h2>Virtual bot · Live & backtest replay</h2><span className="badge">Virtual money only</span></div>
     <p>Live follows fresh market candles with a price check every 30 seconds. Backtest replay moves a virtual clock through downloaded historical candles at your selected speed. For example, 300× advances five market minutes per real second. Both use your BB Strategy settings and process only candles that have closed by the current clock.</p>
@@ -53,14 +54,16 @@ export default function PaperTrading({settings,visible}:{settings:BacktestSettin
       <p><strong>{s.mode==='replay'?'Replay clock':'Market clock'}: {date(s.virtualTime??s.lastProcessed)}</strong>{s.mode==='replay'&&s.replayEnd?` · Ends ${date(s.replayEnd)}`:''}</p>
       {s.mode==='replay'&&<label>Replay speed<select aria-label="Replay speed" disabled={busy||s.completed||s.halted} value={s.speed??300} onChange={e=>void changeSpeed(Number(e.target.value))}>{speeds.map(v=><option key={v} value={v}>{v}×</option>)}</select></label>}
       <p>Execution: {s.settings.entry_timeframe.toUpperCase()} · Leverage {s.settings.max_leverage}× · Amount per trade {s.settings.bb_reversal.amount_unit==='percent'?`${s.settings.bb_reversal.amount_per_trade??100}% of balance`:`$${s.settings.bb_reversal.amount_per_trade}`} · First eligible candle {date(s.tradingFrom)}.</p>
-      <div className="metrics">{[['Virtual balance',fmt(s.balance)],['Equity',fmt(s.equity)],['Unrealized P&L',fmt(s.equity-s.balance)],['Realized P&L',fmt(s.balance-s.settings.capital)],['Closed trades',String(s.trades.length)],['Latest candle price',fmt(s.latestPrice,3)]].map(([label,value])=><article key={label}><small>{label}</small><strong>{value}</strong></article>)}</div>
+      <div className="metrics">{[['Virtual balance',fmt(s.balance)],['Equity',fmt(s.displayEquity??s.equity)],['Unrealized P&L',fmt((s.displayEquity??s.equity)-s.balance)],['Realized P&L',fmt(s.balance-s.settings.capital)],['Closed trades',String(s.trades.length)],['Current price',fmt(s.displayPrice??s.latestPrice,3)]].map(([label,value])=><article key={label}><small>{label}</small><strong>{value}</strong></article>)}</div>
+      {s.quoteError&&<p role="alert" className="error">Live price update failed: {s.quoteError}</p>}
+      <p>{s.mode==='replay'?'Replay updates every second using a simulated price path inside each historical 1-minute candle. This animation is not recorded tick data.':'Live prices refresh approximately every second from OKX.'} The forming {s.settings.entry_timeframe} candle combines the available 1-minute candles. Signals use only completed execution candles.</p>
       <h3>Price & trades ? {s.settings.entry_timeframe.toUpperCase()}</h3>
       <p>Green arrows: buys ? red arrows: sells ? circles: exits ? red line: active stop ? blue line: open entry. Turn off Follow bot clock to pan and zoom earlier candles. Shows the latest 1,000 revealed candles, including pre-session warmup.</p>
-      {visible&&<PaperPriceChart sessionId={s.startedAt} candles={s.chartCandles??[]} indicators={s.chartIndicators??[]} stops={s.chartStops??[]} trades={s.trades} position={s.openPosition} showSma={s.settings.bb_reversal.use_sma_trend_adjustment!==false}/>}
+      {visible&&<PaperPriceChart sessionId={s.startedAt} candles={chartCandles} indicators={s.chartIndicators??[]} stops={s.chartStops??[]} trades={s.trades} position={s.openPosition} showSma={s.settings.bb_reversal.use_sma_trend_adjustment!==false}/>}
       <h3>Open virtual position</h3>{p?<p>{p.direction===1?'Long':'Short'} · Entry {date(p.entry_time)} at {fmt(p.entry_price,3)} · Quantity {fmt(p.quantity,4)} · Stop {fmt(p.stop,3)} · Trailing {p.trailing_active?'active':'waiting'}.</p>:<p>No open position. Waiting for the next qualifying signal.</p>}
       {!!s.equityHistory.length&&<EquityChart period={{name:'Paper trading',equity:s.equityHistory}}/>}
       <h3>Virtual trade ledger</h3><div className="table-scroll"><table><thead><tr>{['Trade','Side','Entry time','Entry','Exit time','Exit','Quantity','P&L','Reason'].map(label=><th key={label}>{label}</th>)}</tr></thead><tbody>{s.trades.slice(-100).reverse().map(t=><tr key={t.id}><td>#{t.id}</td><td>{t.direction===1?'Long':'Short'}</td><td>{date(t.entry_time)}</td><td>{fmt(t.entry_price,3)}</td><td>{date(t.exit_time)}</td><td>{fmt(t.exit_price,3)}</td><td>{fmt(t.quantity,4)}</td><td className={t.pnl>=0?'positive':'negative'}>{fmt(t.pnl)}</td><td>{t.exit_reason.replaceAll('_',' ')}</td></tr>)}</tbody></table></div>
-      <p>Shows the latest 100 closed trades. This is a candle-based simulation with zero modeled costs and no margin liquidation. Equity is marked at the latest processed candle close.</p>
+      <p>Shows the latest 100 closed trades. This is a candle-based simulation with zero modeled costs and no margin liquidation. Current equity follows the displayed price; the equity graph records completed execution candles.</p>
     </>}
   </div>;
 }

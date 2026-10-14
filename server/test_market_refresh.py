@@ -55,6 +55,17 @@ class MarketRefreshTests(unittest.TestCase):
 
 
 class BBIntegrationTests(unittest.TestCase):
+    def test_active_api_only_accepts_bb_strategy(self):
+        from .app import BBBacktestRequest, PaperStartRequest
+        from pydantic import ValidationError
+        dates=dict(start_date='2026-01-01',validation_date='2026-01-02',end_date='2026-01-03')
+        self.assertEqual(BBBacktestRequest(**dates).strategy,'bb_outer_reversal')
+        for removed in ('sweep','mtf','chartart_v12'):
+            with self.assertRaises(ValidationError):
+                BBBacktestRequest(strategy=removed,**dates)
+            with self.assertRaises(ValidationError):
+                PaperStartRequest(strategy=removed)
+
     def test_both_directions_and_all_execution_timeframes(self):
         from .strategy import BacktestRequest
         from .data import TIMEFRAMES

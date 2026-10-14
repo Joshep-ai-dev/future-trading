@@ -10,6 +10,23 @@ from .strategy import BacktestRequest
 
 
 class PaperTradingTests(unittest.TestCase):
+    def test_live_forming_price_does_not_submit_trades_or_close_execution_bars(self):
+        with TemporaryDirectory() as folder:
+            index=pd.date_range('2026-01-01',periods=1,freq='min',tz='UTC')
+            frame=pd.DataFrame(dict(open=[100.],high=[101.],low=[99.],close=[100.]),index=index)
+            clock=int(index[0].timestamp())+1
+            service=PaperTrading(Path(folder)/'paper.json',loader=lambda tf:(frame,{}),now=lambda:clock)
+            service.begin(self.request())
+            service.live_fetch=lambda limit:[dict(time=int(index[0].timestamp()),open=100.,high=102.,low=99.,close=101.)]
+            service.update_quote()
+            session=service.status()['session']
+            self.assertEqual(session['formingCandle']['close'],101.)
+            self.assertEqual(session['displayPrice'],101.)
+            self.assertEqual(session['trades'],[])
+            self.assertIsNone(session['lastProcessed'])
+            self.assertIsNone(session['openPosition'])
+            self.assertNotIn('minuteCandles',session)
+
     def test_replay_speed_pause_restart_and_end_without_future_candles(self):
         from .app import PaperStartRequest
         with TemporaryDirectory() as folder:

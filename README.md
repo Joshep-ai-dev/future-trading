@@ -1,195 +1,58 @@
-# Silver / Price research
+# BB Outer Band Reversal + Trailing SL
 
-Price research dashboard using the original OKX CSV plus hourly public candle downloads. No exchange orders are placed.
-
-## Live paper trading
-
-The virtual bot page includes an updating price chart alongside its balance and ledger. It shows the latest 1,000 revealed candles, buy/sell/exit markers, Bollinger bands, the optional trend SMA, open entry and trailing stop. **Follow bot clock** keeps the newest candles in view; disable it to inspect earlier visible candles without the next update resetting your zoom. Replay never exposes candles beyond its virtual clock. Pre-session warmup candles may be shown before the replay starts.
-
-The **Paper trading** page offers two modes: **Live** and **Backtest replay**. Live follows fresh downloaded candles. Replay uses a frozen snapshot of downloaded historical candles, with UTC start/end dates (end date inclusive) and a virtual clock. Choose 1×, 10×, 60×, 300×, 1,800×, 3,600× or 10,000×. At 300×, five market minutes pass per real second. Speed can be changed while running or paused. Actual speed can be lower when processing takes longer.
-
-Replay reveals candles to the strategy only when they have closed by the virtual clock, using earlier candles only for indicator warmup. It does not need network downloads. Pause and backend downtime freeze the replay clock; resume continues from the saved time. Replay finishes at the chosen end or the last downloaded candle, closes any remaining position at the last close, and stops. A depleted balance halts it sooner. Pause the existing session before starting a new session or switching modes. Prior sessions are archived. API: start with `paper_mode: replay`, `replay_start: YYYY-MM-DD`, `replay_end: YYYY-MM-DD`, `replay_speed: 300`; change speed with `POST /api/paper/speed` and `{"speed": 1800}`. Omit these fields for Live mode.
-
-Select the BB strategy and configure its timeframe, virtual starting balance, amount per trade, leverage and indicators under **Strategy settings**. Open **Paper trading** and click **Start virtual bot**. It starts flat at the next full execution candle and continues forward with real OKX data; historical start/end dates and research splits are ignored. No exchange orders are submitted.
-
-While the virtual bot runs, the backend checks for missing candles every 30 seconds in addition to the hourly download job. The page updates every five seconds and shows balance, closing equity, unrealized/realized P&L, the open position and its stop, and the latest 100 trades. Trades and state are saved atomically in `data/paper_trading.json`. Earlier processed candles stay fixed, and replay reconstructs state without duplicating trades. Open positions carry across candles, dates, and backend restarts. A balance at or below zero halts the bot.
-
-Keep the backend running for ongoing updates. **Pause bot** freezes the simulation; **Resume bot** processes missed completed candles in order, including the paused interval. Restarting a running saved session also catches up missed candles. Settings are frozen when a session starts. Pause and choose **Start new virtual session** to use changed settings; the preceding session is archived in `data/` before replacement.
-
-This is candle-based paper trading: stops and entries are evaluated only after the execution candle closes, with the same simulated close/gap fills as the BB backtest. It is not tick-by-tick exchange execution, and fees, funding, slippage and margin liquidation are not modeled. Equity is marked at the latest processed close. API: `GET /api/paper`, `POST /api/paper/start`, `POST /api/paper/pause`, `POST /api/paper/resume`. The start request accepts the BB backtest settings and ignores historical dates.
-
-## Hourly price downloads
-
-The backend catches up missing **1-minute XAG-USDT-SWAP candles** on startup and checks again 3,600 seconds after each refresh completes. Chart timeframes aggregate these minutes. The original CSV stays untouched; new confirmed candles are saved atomically to `data/OKX_XAG-USDT-SWAP_1m_updates.csv`. Downloads paginate from the latest available candle back to the local history boundary, skipping unfinished candles. No API key is required; internet access to `www.okx.com` is required.
-
-The dashboard shows download status, latest downloaded candle, errors and next check. **Download latest prices now** triggers an immediate check. The price chart reloads after a successful download. Backtests retain their last result until **Run backtest** is clicked; date selections are preserved as available history grows. Downloads run only while the backend is running and catch up on restart. Failures preserve existing data and retry on the next hourly run.
-
-API: `GET /api/market-status`, `POST /api/market-refresh`. One-off catch-up: `.venv/Scripts/python.exe -m server.market_refresh` (stop the backend first to avoid two cache writers).
-
-## BB Outer Band Reversal + Trailing SL
-
-Select **BB Outer Band Reversal + Trailing SL** in Strategy settings. Editable inputs include execution timeframe (default 5 minutes), leverage (1?100?), BB/ATR/ADX filters, rebound window, absolute stop and trailing distances, trend SMA, countertrend percentages. Trading direction is always Both. Charts show Bollinger bands, trend SMA, trade markers and selected-trade stop history. Exports include ADX, ATR and BB width.
-
-This strategy uses close-price entries, continuous calendar trading and zero modeled costs. Amount per trade can be a fixed dollar amount or a percentage (up to 100%) of current balance. Position notional is allocated amount ? selected leverage, with quantity recalculated at entry. Dollar amounts are capped at available balance after losses, and no new trade can open at zero or negative balance. The other strategies' risk sizing, fees, spread, funding, session and weekend filters do not apply. Filled entries alternate long and short, including after stop-outs. Trailing stops only tighten. Existing stops fill at the stop or adverse gap open; a newly calculated stop already crossed at close fills at close. Missing data closes the trade at the preceding candle and resets indicator warmup. Research and validation start flat, use earlier indicator history and close remaining positions at period end. Tick rounding, margin liquidation and TradingView bar magnifier are not modeled.
-
-API: `strategy: bb_outer_reversal`, `entry_timeframe: 1m|3m|5m|10m|15m|30m|1h|4h|1d`, and optional `bb_reversal` fields from `Settings` in `server/bb_outer_reversal.py`. Top-level `capital` and `tick_size` set account balance and minimum distance. Tests: `python -m unittest server.test_bb_outer_reversal server.test_market_refresh`.
+Local OKX XAG-USDT-SWAP research and virtual trading. This is the only active strategy. No exchange orders are submitted.
 
 ## Start
 
-Windows: run `start.cmd` or `start.ps1`, then open http://localhost:5173. Stop with Ctrl+C before starting another copy. Startup rejects occupied ports rather than silently connecting a new UI to an old backend. The backend shuts down when its launcher exits, including across WSL/Windows. Restart after Python code changes; frontend changes reload automatically.
+On Windows, run `start.cmd` or `start.ps1`, then open http://localhost:5173. Stop with Ctrl+C before restarting. Restart after backend code changes. Alternatively, install requirements in a Python virtual environment, run `npm install`, then `npm run dev`.
 
-Linux/macOS:
+## Workspace
+
+- **Strategy settings:** BB reversal parameters, virtual balance, trade allocation, leverage, timeframe and historical dates.
+- **Results & trades:** research/validation summaries, equity, position chart, stop adjustments and trade ledger together. Selecting a trade focuses its position. Export the full result as JSON.
+- **Paper trading:** virtual bot with Live and Backtest replay modes, moving price chart, equity, open position and trade ledger. This is the initial page.
+
+There is no separate Price chart page or strategy selector. The active backtest and paper APIs accept only `bb_outer_reversal`. Unused strategy implementations, components and their legacy tests/reports have been removed.
+
+## Strategy and sizing
+
+A lower/upper Bollinger touch arms one rebound opportunity. The first qualifying bullish/bearish inside-band candle consumes it even if a filter blocks entry. ATR, minimum BB width and strict ADX threshold filter entries. Filled trades alternate long and short. Both directions are always enabled.
+
+Execution timeframe defaults to 5m; choices are 1m, 3m, 5m, 10m, 15m, 30m, 1h, 4h and 1d. Leverage is selectable from 1x to 100x. Amount per trade is a dollar allocation or a percentage of current balance (up to 100%). Position notional is allocation times leverage. Dollar allocation is capped at available balance after losses. No new trades open at zero or negative balance, including after a reversal close.
+
+**Use SMA Trend Adjustment** defaults on: selected SMA length and slope lookback identify countertrend trades and reduce their stop/trailing distances. Off hides SMA controls and the chart line, skips SMA warmup, and uses normal exit distances.
+
+Entries fill at completed candle closes. Existing stops use OHLC with adverse gap-open fills. Trailing activation and distances use absolute price units and the trailing multiplier; stops never loosen. A newly tightened stop already crossed at close fills at close. Missing data forces a last-known-close exit and indicator warmup resets. Each historical research/validation period starts independently and closes remaining trades at its end.
+
+## Live and accelerated replay
+
+Configure BB settings, open **Paper trading**, choose a mode, then **Start virtual bot**. Session settings are frozen. Pause before starting a new session; old sessions are archived in `data/`.
+
+**Live** starts flat at the next full execution candle and follows real market time. The backend checks confirmed candles every 30 seconds. A separate public OKX minute-candle feed updates the forming price approximately every second. Network delays may reduce that rate. Pause freezes trading; Resume or backend restart catches up missed completed candles in order. Keep the backend running for updates.
+
+**Backtest replay** uses UTC start/end dates (end inclusive) and a frozen snapshot of downloaded history. Replay speeds are 1x, 10x, 60x, 300x, 1800x, 3600x and 10000x. At 300x, five market minutes pass per real second. Speed is adjustable while running. Pause and backend downtime freeze the virtual clock. Replay ends at the selected date or the last downloaded candle and closes any remaining position. Depleted balance halts it sooner.
+
+The chart combines 1-minute data into the selected timeframe's forming candle, including 5m from five minute candles. Historical animation uses a synthetic open -> nearest extreme -> other extreme -> close path at 0/20/40/60 seconds. This is not recorded tick data. The forming animation never feeds strategy indicators or changes fills: trading decisions use closed execution candles. Missing minutes do not produce fabricated candles.
+
+The chart shows the latest 1,000 revealed candles with buy/sell/exit markers, Bollinger bands, optional SMA, open entry and active stop. **Follow bot clock** scrolls to the latest price; disable it to inspect earlier visible candles. Current displayed equity follows the displayed price; equity history records completed candle closes. Session state and trades are saved atomically to `data/paper_trading.json` and restored across restarts without duplicating trades.
+
+All execution is virtual and candle-based. Fees, spread, slippage, funding, tick rounding and margin liquidation are not modeled.
+
+## Market data
+
+The original `data/OKX_XAG-USDT-SWAP_1m.csv` stays untouched. Startup catches up missing confirmed minute candles into `data/OKX_XAG-USDT-SWAP_1m_updates.csv`, then checks hourly. Live paper trading adds 30-second catch-ups. Downloads paginate back to the local boundary, validate OHLCV, skip unfinished minutes and replace the cache atomically. No API key is required; internet access to `www.okx.com` is required.
+
+Download status and **Download latest prices now** remain available above the workspace. Failures preserve prior data. One-off catch-up: `.venv/Scripts/python.exe -m server.market_refresh` with the backend stopped to avoid competing writers.
+
+## APIs and checks
+
+`GET /api/data-range`, `GET /api/market-status`, `POST /api/market-refresh`.
+
+`POST /api/backtest` accepts `strategy: bb_outer_reversal` (also the default), start/validation/end dates, `entry_timeframe`, `capital`, `max_leverage`, and optional `bb_reversal` fields documented by `Settings` in `server/bb_outer_reversal.py`.
+
+`GET /api/paper`, `POST /api/paper/start`, `POST /api/paper/pause`, `POST /api/paper/resume`. Start accepts BB settings plus `paper_mode: live|replay`. Replay also requires `replay_start`, `replay_end` and optional `replay_speed`. Historical backtest dates are ignored for paper start. Change replay speed with `POST /api/paper/speed` and `{"speed": 300}`.
 
 ```sh
-python3 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
-npm install
-npm run dev
-```
-
-WSL can also use an existing Windows `.venv/Scripts/python.exe`. Do not run Windows and Linux copies simultaneously.
-
-## Data and charts
-
-Select 1m, 3m, 5m, 10m, 15m, 30m, 1h, 4h, or UTC 1d bars and click **Load prices**. The chart starts with the latest 5,000 complete bars and 168 initially visible. Pan to the left edge to automatically load earlier candles in batches of 5,000, preserving the current viewport. **Load earlier** fetches another batch manually; **Latest** returns to the newest bars. The history counter indicates when the beginning of the CSV is reached. UTC OHLC hover remains available.
-
-The loader validates timestamps and OHLCV values, preserves gaps, and excludes incomplete bars. Source CSV and existing model data are left untouched.
-
-`POST /api/analyze` accepts `{"timeframe":"1m"}` and returns candles, data quality and a history cursor. `POST /api/candles` accepts `timeframe`, an optional exclusive `before` UNIX-seconds cursor, and `limit` (1–5,000); it returns ordered candles, `hasMore` and `nextBefore`. `GET /api/health` identifies the backend as `silver-price`, version 3.
-
-## Tabbed workspace and chart controls
-
-- **Price chart**: timeframe selection, candles, and older-history loading.
-- **Strategy settings**: dates, sessions, execution costs, and strategy rules.
-- **Results & equity**: performance summary and account balance graph.
-- **Trade positions**: entries/exits, stop/target zones, and the trade ledger.
-
-Tabs keep settings, results, selected trades, loaded history, and chart zoom in memory while switching; switching tabs does not rerun the backtest. Use arrow keys or Home/End to navigate tabs with the keyboard.
-
-Every chart has **Time + / −**, **Price + / −** (or **Amount + / −** on equity), and **Fit / reset**. Mouse wheel or pinch zooms time; drag the chart to pan, or drag an axis to scale it. Fit resets the amount/price axis to automatic scaling and shows the loaded history. Drag the lower-right corner of a chart to adjust its height. The equity graph initially fits the full selected period, and zoom persists when changing tabs.
-
-## Checks
-
-```sh
-python -m unittest server.test_data server.test_strategy server.test_mtf server.test_history server.test_exits server.test_indicator_settings server.test_atr -v
+python -m unittest discover -s server -t .
 npm run build
 ```
-
-## ChartArt RSI + Bollinger v1.2 long-only
-
-Select **ChartArt RSI + Bollinger v1.2 long-only** in Strategy settings. It implements the Pine v3 rules supplied by the user. Defaults are RSI 6, Bollinger length 200, and two population standard deviations. A long signal requires RSI crossing above 50 and close crossing above the lower band on the same completed candle. The buy stop is placed at the lower band for the next candle and canceled if unfilled. A long closes when RSI crosses below 50 and close crosses below the upper band on the same completed candle; the close fills at the next open. There are no short trades or profit targets. Stop loss is enabled by default at 1% below the filled entry price. The percentage is editable in Strategy settings, and the stop can be disabled.
-
-The app applies its selected session and weekend filter, modeled trading costs, 0.5% sizing reference, notional cap, and research/validation split. Weekend bars are omitted from this strategy's indicators and position chart. The price viewer hides UTC weekend candles. API: set `strategy` to `chartart_v12`, with optional `entry_timeframe`, `rsi_period`, and `bb_period`. Set `stop_mode` to `fixed` (default) or `none`, and `chartart_stop_pct` to a percentage greater than 0 and less than 100 (default 1).
-
-## Multi-timeframe EMA + RSI strategy
-
-In **Strategy settings**, select **Multi-timeframe EMA + RSI** (the new UI default). The original **Structure / liquidity sweep** strategy remains separately selectable.
-
-| Stage | Default | Options | Confirmation |
-|---|---|---|---|
-| Direction | Active, 1H | 15M, 30M, 1H, 4H | EMA20 above EMA50 for long; below for short |
-| Setup | Active, 15M | 5M, 15M, 30M, 1H | EMA alignment plus RSI20 above 50 for long; below 50 for short |
-| Entry | Active, 5M | 1M, 3M, 5M, 15M | Fresh EMA alignment plus RSI20 above/below 50 |
-
-Each stage has an independent **Active / Disabled** switch. Disabled stages retain their selected timeframe but are excluded from calculations and confirmations. Every active stage must agree. The execution timeframe is Entry when active, otherwise Setup, otherwise Direction. If all three are disabled, the form and API require a stage to be activated before running.
-
-**Entry signal:** on the execution timeframe, the combined EMA/RSI condition must first become true, having previously been neutral or opposite. If only Direction is active, its EMA-only alignment supplies that fresh signal. Higher-stage confirmations must already agree at that close; a later filter change alone does not create a new entry while the execution signal remains unchanged.
-
-Use only completed candles. An unfinished hourly candle cannot confirm a 5-minute signal. Candles that close at the same instant may confirm each other. EMA20/50 are seeded with the first 20/50 closes' simple average, then updated with `2/(period+1)`. RSI20 uses Wilder smoothing, seeded with the first 20 price changes; a flat market has RSI 50. Warmup restarts after gaps. Each active stage needs at least 50 completed candles.
-
-Confirmed signals enter at the **next execution candle's open**, plus the configured adverse spread/slippage. There is no profit target. An optional ATR stop loss can be activated alongside EMA reversal exits. Longs close when EMA20 crosses below EMA50; shorts close on the reverse crossover, using a completed execution candle and filling at the next open. RSI remains an entry filter only. The signal candle low/high is retained only as a sizing reference; 0.5% is not a maximum loss. Period-end and data-gap exits still apply. This strategy has no sweep or swing-resistance filter. It retains the existing 0.5% sizing reference, notional cap, costs/funding, independent research/validation balances, with no daily trade-count or loss-count limit. At most one buy and one sell may be open together. Fresh signals matching an already open direction are skipped, not queued for later; after that position closes, a fresh signal may open that direction again. The notional/equity cap applies to total open exposure, and equity includes all open positions. Each position retains its own fees, funding, and exit record. A persistent signal does not add a trade on every candle. Only execution candles fully contained in the selected session are tradable; a 4H candle crossing a session boundary is excluded from execution, while existing positions remain open. Drawdown is measured on the selected execution timeframe's closing equity.
-
-The position chart follows the effective execution timeframe and displays EMA20/50, an RSI20 pane with its 50 reference, signals, entries/exits, and stop/target zones. Selecting a trade shows each active stage's indicator values and the completed candle timestamp used for confirmation. Exports include these snapshots, the exact switch settings, `executionTimeframe`, `barSeconds`, and indicator series.
-
-API example (omitting `strategy` retains the legacy sweep API behavior):
-
-```json
-{
-  "strategy": "mtf",
-  "start_date": "2026-03-26",
-  "validation_date": "2026-08-02",
-  "end_date": "2026-09-27",
-  "direction_active": true, "direction_timeframe": "1h",
-  "setup_active": true, "setup_timeframe": "15m",
-  "entry_active": true, "entry_timeframe": "5m"
-}
-```
-
-The initial default run is recorded in [reports/mtf-backtest-summary.md](reports/mtf-backtest-summary.md). Tick size, fees, spread, slippage and funding remain editable modeled assumptions, not verified historical execution costs.
-
-## Indicator controls and weekdays
-
-In **Strategy settings → Indicator settings**, edit the fast EMA period (default 20), slow EMA period (50), RSI period (20), and RSI threshold (50). These values apply across all active timeframes and indicator exits. Fast EMA must be shorter than slow EMA. The EMA + RSI **RSI Active / Disabled** switch controls the Setup and Entry RSI filter; Direction remains EMA-only. Disabled RSI does not block entry or require RSI warmup, and its chart pane is hidden. EMA reversal remains the only indicator exit for this strategy.
-
-The sweep, EMA + RSI and ChartArt strategies exclude Saturday and Sunday according to the selected **session timezone**. Positions can remain open over the weekend, and pending orders cannot fill over the weekend. ChartArt v1.2 also omits weekend candles from its indicator calculations and position chart. The price viewer hides UTC weekend candles. This is a weekday filter, not an exchange holiday calendar. Existing historical reports predate this filter and should be rerun.
-
-API fields: `ema_fast`, `ema_slow`, `rsi_period`, `rsi_threshold`, `rsi_active`. Chart labels and confirmation values use the chosen settings. Exported `ema20`, `ema50`, and `rsi20` field names are retained for compatibility; they contain the configured fast EMA, slow EMA and RSI values, with periods recorded in `settings`.
-
-## Optional ATR stop for EMA + RSI
-
-In Strategy settings, turn **ATR Active** on to combine an ATR stop with EMA-reversal exits. Defaults are ATR period **14**, multiplier **2**, initially disabled. Long stop = actual entry price − ATR × multiplier; short stop = entry + ATR × multiplier. Each overlapping position gets its own fixed stop, shown on its chart, and keeps its EMA-reversal exit. No profit target is added.
-
-ATR uses the completed execution-timeframe signal candle, seeds from the average of the first period true ranges, then uses Wilder smoothing. True range includes gaps from the previous close; missing candles reset warmup. Signals without a positive warmed-up ATR are skipped. Stops are active on the entry candle; gap-through stops fill at the adverse opening price plus modeled costs. EMA exits still fill at the next open; a stop already breached at that open takes precedence. ATR distance is used in position sizing when enabled. Session, weekend and data-gap rules remain in force.
-
-API: `atr_active`, `atr_period`, `atr_multiplier`. Trade exports include the signal `atr`, `atrDistance`, and stop levels. Disabled ATR preserves EMA-only behavior.
-
-## Close conditions and stop management
-
-EMA + RSI uses EMA reversal exits with an optional fixed ATR stop and no profit target. The API normalizes its settings to `exit_condition: ema` and `stop_mode: none`. Earlier MTF reports describe the old stop/target rules and must be rerun for this version.
-
-The sweep strategy exposes **Close conditions & stop loss** in Strategy settings. Its defaults remain **Stop / target only** and **Fixed initial stop**.
-
-- **EMA reversal:** exit a long when EMA20 crosses below EMA50; reverse for shorts.
-- **RSI cross:** exit a long when RSI20 crosses below 50; reverse for shorts.
-- **Either:** close when either selected indicator crosses against the position.
-- **Breakeven after +1R:** move the stop to the entry price after price reaches the original entry-to-stop distance in profit.
-- **Trailing:** move a long stop one tick below the last completed candle’s low, or a short stop one tick above its high.
-- **Breakeven + trailing:** apply whichever gives the tighter stop. Stops never loosen. Position size, original risk and the 2R target stay unchanged.
-
-Conditions use the execution timeframe: 5M for sweep, or the effective active timeframe for EMA + RSI. A completed candle’s close signal fills at the next open; stop adjustments also take effect on the next candle. Existing stop/target fills take precedence during the signal candle, and protective stop/target gaps take precedence at the next open. Period-end and data-gap exits still apply. Breakeven means entry price before costs, so net P&L can still be negative.
-
-Results show counts by exit reason. Select a position to see its initial/final stop, stop-adjustment history and indicator close signal. The chart displays the moving stop and close-signal marker; the shaded risk zone retains the original stop. JSON exports include `initialStop`, `finalStop`, `initialRisk`, `stopHistory` and, where applicable, `exitSignal`.
-
-API settings: `exit_condition` is `none`, `ema`, `rsi` or `either`; `stop_mode` is `fixed`, `breakeven`, `trailing` or `breakeven_trailing`. These selectable modes apply to sweep; EMA + RSI always uses `ema` and `none`.
-
-## Sweep strategy backtest
-
-The dashboard runs a **15-minute market structure / 5-minute liquidity sweep** hypothesis. The price viewer also supports **5m and 10m**. Its timeframe selector does not change the strategy's fixed timeframes.
-
-- Confirm a swing high only when its high is strictly above the two candles on either side; reverse for lows. Use it only after the second following 15m candle closes.
-- Long direction requires the last two confirmed highs and lows both rising. Short direction requires both falling; otherwise stay flat.
-- A long setup trades below the lowest low of the previous six completed 5m candles and closes above that level. Reverse for shorts.
-- Submit a stop order one tick beyond the sweep candle's high/low, starting on the next candle. It expires after three candles. Stop is one tick beyond the other extreme; target is twice actual entry-to-stop distance.
-- Skip when the nearest opposing, confirmed 15m swing level leaves less than 2R. Keep levels until a completed 15m candle closes through them; recheck the captured level on a gap entry.
-- Risk budget is 0.5% of current account equity, including estimated stop fill costs and fees. The editable notional/equity cap can reduce actual risk. One position/pending order at a time, maximum two fills per session, stop after two net losses. Session/period boundaries close positions and cancel orders.
-
-The initial run splits the available calendar history 70%/30% into **Research** and **Validation**. Both use identical settings and each starts with its own account balance. Earlier bars warm up indicators without carrying trades or equity across the split. The dashboard reports separately whether each period has at least 100 trades. Repeated tuning against validation would make it no longer a fresh holdout.
-
-### Execution assumptions
-
-Defaults are illustrative and editable: 2,000 USDT capital, 00:00–24:00 UTC sessions, 0.01 tick, 5 bps fee on each fill, 0.01 full spread, 0.01 slippage per fill, 1× notional cap, and +1 bp funding at UTC 00:00/08:00/16:00 for positions already open. Positive funding charges longs and credits shorts. These are **not verified exchange specifications or historical cost observations**; the CSV has no historical funding, bid/ask spread or order book.
-
-Spread/2 plus slippage is adverse on every entry and exit, including targets. Gap entries use the worse of trigger/open; gap stops use the worse of stop/open. If OHLC cannot resolve stop/target ordering, stop comes first. A stop touched anywhere on the entry candle is assumed to occur after entry, without using a pre-entry opening gap as a stop fill. Actual fills can differ. Missing bars cancel orders and flatten positions at the last known close. Trade times identify the containing candle, not exact intrabar times.
-
-Sizing uses continuous silver-equivalent units, not exchange contract lot rounding. Liquidation is not simulated. Funding and gaps can make realized risk exceed the budget. R values divide net P&L by the account's 0.5% risk budget; leverage-capped positions may have smaller planned risk. Drawdown uses 5m closing equity marked to modeled liquidation prices, not intrabar extremes. Profit factor is unavailable when there are no losing trades.
-
-### Results and position charts
-
-Open **Strategy settings** and use **Run backtest** to refresh after editing dates, session or cost assumptions. A completed manual run opens **Results & equity**. Switch between Research and Validation to inspect net return, equity, win rate, drawdown, profit factor, fees, funding, and spread/slippage cost. Select a trade in the ledger or click an entry/exit candle to focus the position: sweep marker, buy/sell arrow, exit marker, entry line, shaded stop zone and shaded 2R target zone. The **Trade positions** chart contains all candles in the selected research or validation period. Selecting a trade focuses its surrounding candles without removing earlier or later history; keep dragging or zooming to explore beyond the selected trade. **Export result JSON** includes settings, all trades, equity and 5m candles.
-
-Initial local-data results and assumptions are saved in [reports/sweep-backtest-summary.md](reports/sweep-backtest-summary.md), with a CSV trade ledger. The tested strategy lost money under these assumptions; this is a testable hypothesis, not evidence of an edge.
-
-`POST /api/backtest` accepts the date range, validation date and settings defined in `server/strategy.py`. Example:
-
-```json
-{"start_date":"2026-03-26","validation_date":"2026-08-02","end_date":"2026-09-27","capital":2000}
-```
-
-Run the execution tests with:
-
-```sh
-python -m unittest server.test_data server.test_strategy server.test_mtf server.test_history server.test_exits server.test_indicator_settings server.test_atr -v
-npm run build
-```
-
-Support/resistance background: [CME Group](https://www.cmegroup.com/education/courses/trading-and-analysis/support-and-resistance.html). Sweeps in candle data do not prove the location of order clusters.

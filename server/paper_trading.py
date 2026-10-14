@@ -10,6 +10,7 @@ import pandas as pd
 from .bb_outer_reversal import Settings, run_backtest
 from .data import TIMEFRAMES, load_bars
 from .market_refresh import refresh_service
+from .forming_candle import forming_candle, fetch_live_minutes
 
 STATE = Path(__file__).resolve().parents[1] / 'data' / 'paper_trading.json'
 
@@ -20,6 +21,8 @@ class PaperTrading:
         self.lock = threading.RLock()
         self.stop = threading.Event()
         self.thread = None
+        self.quote_thread = None
+        self.live_fetch = fetch_live_minutes
         self.error = None
         self.replay_tick = self.now()
         self.live_check = 0
@@ -39,8 +42,16 @@ class PaperTrading:
         with self.lock:
             if self.state is None:
                 return dict(session=None, error=self.error)
-            session = {k:v for k,v in self.state.items() if k not in ('candles','replayCandles')}
+            session = {k:v for k,v in self.state.items() if k not in ('candles','replayCandles','minuteCandles')}
             session['chartCandles'] = self.state['candles'][-1000:]
+            replay = self.state.get('mode','live') == 'replay'
+            clock = (self.state.get('virtualTime',0) if replay else self.state.get('quoteTime',0)) or 0
+            session['formingCandle'] = None if self.state.get('completed') else forming_candle(
+                self.state.get('minuteCandles',[]),clock,TIMEFRAMES[self.state['settings']['entry_timeframe']],synthetic=replay)
+            session['displayPrice'] = session['formingCandle']['close'] if session['formingCandle'] else self.state['latestPrice']
+            position = self.state['openPosition']
+            session['displayEquity'] = (self.state['balance']+(session['displayPrice']-position['entry_price'])*position['direction']*position['quantity']
+                if position and session['displayPrice'] is not None else self.state['equity'])
             return dict(session=session, error=self.error)
 
     def begin(self, request):
@@ -76,6 +87,12 @@ class PaperTrading:
                 replay_candles = self.encode(available)
                 candles = self.encode(history.loc[history.index+pd.Timedelta(seconds=duration) <=
                                       pd.Timestamp(first,unit='s',tz='UTC')].tail(warmup))
+            minutes,_ = self.loader('1m')
+            minutes = minutes.dropna(subset=['open','high','low','close'])
+            minute_start = first if mode == 'replay' else now//duration*duration
+            minutes = minutes.loc[minutes.index >= pd.Timestamp(minute_start,unit='s',tz='UTC')]
+            if replay_end is not None:
+                minutes = minutes.loc[minutes.index < pd.Timestamp(replay_end,unit='s',tz='UTC')]
             if self.state:
                 archive = self.path.with_name(f'paper_trading_{self.state["startedAt"]}_{time.time_ns()}.json')
                 archive.write_text(json.dumps(self.state,allow_nan=False),encoding='utf-8')
@@ -88,7 +105,8 @@ class PaperTrading:
                 equity=float(request.capital), openPosition=None, trades=[], equityHistory=[],
                 halted=False, latestPrice=None, signals=0, mode=mode,
                 speed=getattr(request,'replay_speed',300), virtualTime=float(first),
-                replayEnd=replay_end, replayCandles=replay_candles, completed=False)
+                replayEnd=replay_end, replayCandles=replay_candles, completed=False,
+                minuteCandles=self.encode(minutes),quoteTime=None,quoteError=None)
             self.replay_tick = self.now()
             self.error = None
             self.save()
@@ -223,6 +241,30 @@ class PaperTrading:
         except Exception as error:
             self.error = str(error)
 
+    def update_quote(self):
+        with self.lock:
+            if not self.state or not self.state['running'] or self.state.get('mode','live') != 'live':
+                return
+            identity = self.state['startedAt']
+            limit = 2 if self.state.get('quoteTime') else 300
+        try:
+            rows = self.live_fetch(limit)
+            with self.lock:
+                if not self.state or self.state['startedAt'] != identity or not self.state['running'] or self.state.get('mode','live') != 'live':
+                    return
+                now = int(self.now())
+                duration = TIMEFRAMES[self.state['settings']['entry_timeframe']]
+                bucket = now//duration*duration
+                merged={r['time']:r for r in self.state.get('minuteCandles',[]) if r['time']>=bucket}
+                merged.update({r['time']:r for r in rows if bucket<=r['time']<=now})
+                self.state.update(minuteCandles=sorted(merged.values(),key=lambda r:r['time']),
+                                  quoteTime=now,quoteError=None)
+                self.save()
+        except Exception as error:
+            with self.lock:
+                if self.state and self.state['startedAt']==identity:
+                    self.state['quoteError']=str(error)
+
     def start(self):
         def loop():
             while not self.stop.is_set():
@@ -230,11 +272,20 @@ class PaperTrading:
                 self.stop.wait(1)
         self.thread = threading.Thread(target=loop,name='paper-trading',daemon=True)
         self.thread.start()
+        def quotes():
+            while not self.stop.is_set():
+                before=time.monotonic()
+                self.update_quote()
+                self.stop.wait(max(.05,1-(time.monotonic()-before)))
+        self.quote_thread=threading.Thread(target=quotes,name='paper-live-price',daemon=True)
+        self.quote_thread.start()
 
     def shutdown(self):
         self.stop.set()
         if self.thread:
             self.thread.join(timeout=1)
+        if self.quote_thread:
+            self.quote_thread.join(timeout=1)
 
 
 paper_service = PaperTrading()

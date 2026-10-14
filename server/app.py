@@ -6,9 +6,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from .data import load_bars
-from .strategy import BacktestRequest, run_backtest
-from .mtf import active_stages, run_mtf_backtest
-from .chartart_v12 import run_chartart_v12_backtest
+from .strategy import BacktestRequest
 from .bb_reversal_adapter import run_bb_reversal_backtest
 from .market_refresh import refresh_service
 from .paper_trading import paper_service
@@ -51,7 +49,11 @@ def paper_status():
     return paper_service.status()
 
 
-class PaperStartRequest(BacktestRequest):
+class BBBacktestRequest(BacktestRequest):
+    strategy: Literal['bb_outer_reversal'] = 'bb_outer_reversal'
+
+
+class PaperStartRequest(BBBacktestRequest):
     """Reuse strategy validation while excluding historical date restrictions."""
     paper_mode: Literal['live','replay'] = 'live'
     replay_start: str | None = None
@@ -122,21 +124,26 @@ def run(parameters: Parameters):
         raise HTTPException(status_code=400, detail=str(error)) from error
 
 
-@app.post('/api/backtest')
-def backtest(parameters: BacktestRequest):
+@app.get('/api/data-range')
+def data_range():
     try:
-        if parameters.strategy == 'mtf':
-            frames = {timeframe: load_bars(timeframe)[0] for timeframe in {tf for _, tf in active_stages(parameters)}}
-            return run_mtf_backtest(frames, parameters)
-        if parameters.strategy == 'chartart_v12':
-            frame, _ = load_bars(parameters.entry_timeframe)
-            return run_chartart_v12_backtest(frame, parameters)
-        if parameters.strategy == 'bb_outer_reversal':
-            frame, _ = load_bars(parameters.entry_timeframe)
-            return run_bb_reversal_backtest(frame, parameters)
-        five, _ = load_bars('5m')
-        fifteen, _ = load_bars('15m')
-        return run_backtest(five, fifteen, parameters)
+        frame, _ = load_bars('1m')
+        complete = frame.dropna(subset=['open','high','low','close'])
+        if complete.empty:
+            raise ValueError('No complete market candles available')
+        return dict(startDate=complete.index[0].strftime('%Y-%m-%d'),
+                    endDate=complete.index[-1].strftime('%Y-%m-%d'))
+    except (ValueError, OSError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.post('/api/backtest')
+def backtest(parameters: BBBacktestRequest):
+    try:
+        if parameters.strategy != 'bb_outer_reversal':
+            raise ValueError('Only BB Outer Band Reversal + Trailing SL is supported')
+        frame, _ = load_bars(parameters.entry_timeframe)
+        return run_bb_reversal_backtest(frame, parameters)
     except (ValueError, OSError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
