@@ -3,7 +3,7 @@ import {CandlestickSeries, ColorType, createChart, createSeriesMarkers, LineSeri
 import ChartTools,{chartInteraction,resizeChart} from './ChartTools';
 import {fmt, type Analysis, type PeriodResult, type Trade, type IndicatorPoint, type BacktestSettings} from './types';
 
-export function EquityChart({period}: {period: PeriodResult}) {
+export function EquityChart({period}: {period: Pick<PeriodResult,'name'|'equity'>}) {
   const ref = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi|null>(null);
   useEffect(() => {

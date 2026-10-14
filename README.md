@@ -2,6 +2,20 @@
 
 Price research dashboard using the original OKX CSV plus hourly public candle downloads. No exchange orders are placed.
 
+## Live paper trading
+
+The **Paper trading** page offers two modes: **Live** and **Backtest replay**. Live follows fresh downloaded candles. Replay uses a frozen snapshot of downloaded historical candles, with UTC start/end dates (end date inclusive) and a virtual clock. Choose 1×, 10×, 60×, 300×, 1,800×, 3,600× or 10,000×. At 300×, five market minutes pass per real second. Speed can be changed while running or paused. Actual speed can be lower when processing takes longer.
+
+Replay reveals candles to the strategy only when they have closed by the virtual clock, using earlier candles only for indicator warmup. It does not need network downloads. Pause and backend downtime freeze the replay clock; resume continues from the saved time. Replay finishes at the chosen end or the last downloaded candle, closes any remaining position at the last close, and stops. A depleted balance halts it sooner. Pause the existing session before starting a new session or switching modes. Prior sessions are archived. API: start with `paper_mode: replay`, `replay_start: YYYY-MM-DD`, `replay_end: YYYY-MM-DD`, `replay_speed: 300`; change speed with `POST /api/paper/speed` and `{"speed": 1800}`. Omit these fields for Live mode.
+
+Select the BB strategy and configure its timeframe, virtual starting balance, amount per trade, leverage and indicators under **Strategy settings**. Open **Paper trading** and click **Start virtual bot**. It starts flat at the next full execution candle and continues forward with real OKX data; historical start/end dates and research splits are ignored. No exchange orders are submitted.
+
+While the virtual bot runs, the backend checks for missing candles every 30 seconds in addition to the hourly download job. The page updates every five seconds and shows balance, closing equity, unrealized/realized P&L, the open position and its stop, and the latest 100 trades. Trades and state are saved atomically in `data/paper_trading.json`. Earlier processed candles stay fixed, and replay reconstructs state without duplicating trades. Open positions carry across candles, dates, and backend restarts. A balance at or below zero halts the bot.
+
+Keep the backend running for ongoing updates. **Pause bot** freezes the simulation; **Resume bot** processes missed completed candles in order, including the paused interval. Restarting a running saved session also catches up missed candles. Settings are frozen when a session starts. Pause and choose **Start new virtual session** to use changed settings; the preceding session is archived in `data/` before replacement.
+
+This is candle-based paper trading: stops and entries are evaluated only after the execution candle closes, with the same simulated close/gap fills as the BB backtest. It is not tick-by-tick exchange execution, and fees, funding, slippage and margin liquidation are not modeled. Equity is marked at the latest processed close. API: `GET /api/paper`, `POST /api/paper/start`, `POST /api/paper/pause`, `POST /api/paper/resume`. The start request accepts the BB backtest settings and ignores historical dates.
+
 ## Hourly price downloads
 
 The backend catches up missing **1-minute XAG-USDT-SWAP candles** on startup and checks again 3,600 seconds after each refresh completes. Chart timeframes aggregate these minutes. The original CSV stays untouched; new confirmed candles are saved atomically to `data/OKX_XAG-USDT-SWAP_1m_updates.csv`. Downloads paginate from the latest available candle back to the local history boundary, skipping unfinished candles. No API key is required; internet access to `www.okx.com` is required.

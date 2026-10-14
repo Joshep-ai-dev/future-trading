@@ -4,20 +4,23 @@ from contextlib import asynccontextmanager
 import pandas as pd
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.gzip import GZipMiddleware
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from .data import load_bars
 from .strategy import BacktestRequest, run_backtest
 from .mtf import active_stages, run_mtf_backtest
 from .chartart_v12 import run_chartart_v12_backtest
 from .bb_reversal_adapter import run_bb_reversal_backtest
 from .market_refresh import refresh_service
+from .paper_trading import paper_service
 
 @asynccontextmanager
 async def lifespan(app):
     refresh_service.start()
+    paper_service.start()
     try:
         yield
     finally:
+        paper_service.shutdown()
         refresh_service.shutdown()
 
 
@@ -41,6 +44,66 @@ def market_status():
 @app.post('/api/market-refresh')
 def market_refresh():
     return refresh_service.refresh()
+
+
+@app.get('/api/paper')
+def paper_status():
+    return paper_service.status()
+
+
+class PaperStartRequest(BacktestRequest):
+    """Reuse strategy validation while excluding historical date restrictions."""
+    paper_mode: Literal['live','replay'] = 'live'
+    replay_start: str | None = None
+    replay_end: str | None = None
+    replay_speed: float = Field(default=300,ge=1,le=10000)
+
+    @model_validator(mode='after')
+    def replay_dates(self):
+        if self.paper_mode == 'replay':
+            from datetime import date
+            try:
+                start, end = date.fromisoformat(self.replay_start or ''), date.fromisoformat(self.replay_end or '')
+            except ValueError as error:
+                raise ValueError('Choose valid replay start and end dates') from error
+            if end < start:
+                raise ValueError('Replay end date must be on or after the start date')
+        return self
+    @model_validator(mode='before')
+    @classmethod
+    def ignore_historical_dates(cls, value):
+        if isinstance(value, dict):
+            return {**value, 'start_date':'2000-01-01',
+                    'validation_date':'2000-01-02', 'end_date':'2000-01-02'}
+        return value
+
+
+@app.post('/api/paper/start')
+def paper_start(parameters: PaperStartRequest):
+    try:
+        return paper_service.begin(parameters)
+    except (ValueError, OSError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+class ReplaySpeed(BaseModel):
+    speed: float = Field(ge=1,le=10000)
+
+
+@app.post('/api/paper/speed')
+def paper_speed(parameters: ReplaySpeed):
+    try:
+        return paper_service.set_speed(parameters.speed)
+    except (ValueError, OSError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.post('/api/paper/{action}')
+def paper_action(action: Literal['pause', 'resume']):
+    try:
+        return paper_service.set_running(action == 'resume')
+    except (ValueError, OSError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
 @app.post('/api/analyze')
 def run(parameters: Parameters):
