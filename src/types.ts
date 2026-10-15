@@ -49,7 +49,11 @@ export type IndicatorPoint = {time: number; ema20: number | null; ema50: number 
 export type BacktestResult = {strategyName: string; executionTimeframe: string; barSeconds: number; indicators: IndicatorPoint[]; settings: BacktestSettings; backtest: PeriodResult; candles: Analysis['candles']};
 export type TuneMetrics = {score:number;trades:number;wins:number;losses:number;winRate:number;netPnl:number;returnPct:number;maxDrawdownPct:number;averageLossPct:number};
 export type FineTuneCase = {
+<<<<<<< HEAD
   id:string;rank:number;improvesAll?:boolean;mode?:string;label?:string;description?:string;bestSettings:BacktestSettings;
+=======
+  id:string;rank:number;bestSettings:BacktestSettings;
+>>>>>>> parent of f3036aa (advance)
   bestParameters:Partial<BacktestSettings['bb_reversal']>&{leverage?:number};
   periods:{train:{metrics:TuneMetrics};validation:{metrics:TuneMetrics};forwardTest:{metrics:TuneMetrics}};
 };

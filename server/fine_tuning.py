@@ -193,6 +193,7 @@ def _score(result, capital):
                 maxDrawdownPct=round(drawdown, 3), averageLossPct=round(average_loss_pct, 3))
 
 
+<<<<<<< HEAD
 MODES = (
     ('balanced', 'Balanced', 'Equal emphasis on profit, loss size, losing trade count and activity.'),
     ('defensive', 'Defensive balance', 'More weight on smaller and fewer losses while retaining profit and activity.'),
@@ -239,6 +240,8 @@ def _select_models(rows):
     return results
 
 
+=======
+>>>>>>> parent of f3036aa (advance)
 def fine_tune(frame, request, progress=None):
     """Search strategy and allocation settings; validate before reporting holdout."""
     report = progress or (lambda percent, message: None)
@@ -286,14 +289,6 @@ def fine_tune(frame, request, progress=None):
                f'{phase}: evaluated {phase_counts[phase]} settings')
 
     initial_candidates = _candidate_set(base, TRIALS, seed=1729)
-    # Search substantially smaller allocations as well as nearby settings.
-    # Stops alone cannot control dollar losses when position exposure is large.
-    original = {name: getattr(base, name) for name in PARAMETERS}
-    for allocation in (5., 10., 25.):
-        defensive = {**original, 'amount_unit': 'percent',
-                     'amount_per_trade': allocation, 'leverage': 1.}
-        if _parameter_key(defensive) not in {_parameter_key(p) for p in initial_candidates}:
-            initial_candidates.append(defensive)
     report(3, f'Testing {len(initial_candidates)} starting settings')
     for params in initial_candidates:
         evaluate(params, 'Initial search', 3, 44, len(initial_candidates))
@@ -333,6 +328,7 @@ def fine_tune(frame, request, progress=None):
         if len(shortlist) == SHORTLIST:
             break
 
+<<<<<<< HEAD
     # Shortlist on the same combined objectives used for recommendations.
     training_rows = list(evaluated.values())
     for mode, _, _ in MODES:
@@ -347,10 +343,12 @@ def fine_tune(frame, request, progress=None):
     if _parameter_key(original) not in seen_shortlist:
         shortlist.append(original)
 
+=======
+>>>>>>> parent of f3036aa (advance)
     report(75, 'Rechecking finalists and validating their settings')
     for index, params in enumerate(shortlist):
         if _parameter_key(params) not in evaluated:
-            evaluate(params, 'Finalist check', 75, 9, len(shortlist))
+            evaluate(params, 'Finalist check', 75 + index * 2, 2, 1)
 
     validated = []
     for index, params in enumerate(shortlist):
@@ -361,19 +359,28 @@ def fine_tune(frame, request, progress=None):
                           evaluated[_parameter_key(params)][1], params))
         report(85 + int(8 * (index + 1) / len(shortlist)),
                f'Validation: checked {index + 1} of {len(shortlist)} finalists')
+<<<<<<< HEAD
     recommendations = _select_models(validated)
     baseline_metrics = next(row[0] for row in validated if _parameter_key(row[2]) == _parameter_key(original))
+=======
+    validated.sort(key=lambda item: (item[0]['score'], item[0]['netPnl'],
+                                     item[0]['maxDrawdownPct']), reverse=True)
+>>>>>>> parent of f3036aa (advance)
     candidate_results = []
-    for index, (validation_metrics, train_metrics, params, mode, label, description) in enumerate(recommendations, start=1):
+    for index, (validation_metrics, train_metrics, params) in enumerate(validated, start=1):
         config = replace(base, **params)
         _, _, forward = candidate_segments(config)
         forward_result = run_backtest(forward, config, close_at_end=True, prepared_bars=forward)
         candidate_results.append(dict(
+<<<<<<< HEAD
             id=mode, rank=index, mode=mode, label=label, description=description,
             improvesAll=(validation_metrics['netPnl'] > baseline_metrics['netPnl'] and
                          validation_metrics['averageLossPct'] < baseline_metrics['averageLossPct'] and
                          validation_metrics['losses'] < baseline_metrics['losses'] and
                          validation_metrics['trades'] > baseline_metrics['trades']),
+=======
+            id=f'case-{index}', rank=index,
+>>>>>>> parent of f3036aa (advance)
             bestParameters=params,
             bestSettings=request.model_copy(update={
                 'bb_reversal': {**request.bb_reversal, **{key: value for key, value in params.items()
@@ -384,8 +391,8 @@ def fine_tune(frame, request, progress=None):
                          validation=dict(metrics=validation_metrics),
                          forwardTest=dict(metrics=_score(forward_result, request.capital))),
         ))
-        report(95 + index, f'Forward-tested recommendation {index} of {len(recommendations)}')
-    validation_metrics, train_metrics, best_params = recommendations[0][:3]
+        report(95 + index, f'Forward-tested selected candidate {index} of {len(validated)}')
+    validation_metrics, train_metrics, best_params = validated[0]
     forward_metrics = candidate_results[0]['periods']['forwardTest']['metrics']
     timestamps = [int(reference.index[0].timestamp()), int(reference.index[train_end].timestamp()),
                   int(reference.index[validation_end].timestamp()),
@@ -395,8 +402,13 @@ def fine_tune(frame, request, progress=None):
     return dict(
         bestSettings=best_settings, bestParameters=best_params,
         model='scikit-learn VotingRegressor: RandomForestRegressor + ExtraTreesRegressor + HistGradientBoostingRegressor',
+<<<<<<< HEAD
         objective='Every model balances higher net profit, smaller average losses, fewer losing trades and more total trades. Distinct parameter sets selected on validation data; profitable samples with at least 20 trades preferred. All four improvements are measured against your current setup, not guaranteed. Forward data is reporting only.',
         baselineMetrics=baseline_metrics, candidates=candidate_results, modelHyperparameters=model_hyperparameters,
+=======
+        objective='35% win rate, 35% profit, 20% drawdown control, 10% average loss control; small samples are discounted.',
+        candidates=candidate_results, modelHyperparameters=model_hyperparameters,
+>>>>>>> parent of f3036aa (advance)
         modelCrossValidationRmse=model_cv_rmse,
         candidatesEvaluated=len(evaluated), seedCandidates=len(initial_candidates),
         adaptiveCandidatesEvaluated=adaptive_evaluated, shortlisted=len(validated),
