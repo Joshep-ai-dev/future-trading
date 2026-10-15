@@ -1,16 +1,18 @@
 import {useEffect,useState,type FormEvent} from 'react';
 import {api} from './api';
+import ExchangeOverview from './ExchangeOverview';
 import {EXCHANGES,saveExchangeVenue,useExchangeVenue,type ExchangeVenue} from './exchangeVenue';
 import type {BacktestSettings} from './types';
 
 type Venue=ExchangeVenue;
-type VenueStatus={venue:Venue;connected:boolean;symbol:string;contractSize?:number;position?:{side?:string;quantity?:number;entryPrice?:number;markPrice?:number;unrealizedPnl?:number;error?:string}|null};
+type VenueStatus={executionError?:string|null;venue:Venue;connected:boolean;symbol:string;contractSize?:number;position?:{side?:string;quantity?:number;entryPrice?:number;markPrice?:number;unrealizedPnl?:number;error?:string}|null};
 type BotStatus={running:boolean;venue:Venue|null;timeframe:string|null;position:{direction:string;quantity:number;entryPrice:number;stop:number}|null;error:string|null;lastProcessed:number|null};
 const leverageOptions=[...Array.from({length:20},(_,index)=>index+1),...Array.from({length:16},(_,index)=>(index+5)*5)];
 
 export default function LiveExecution({view,settings,onSettingsChange,onConfigure,onManageAccount}:{view:'account'|'terminal';settings:BacktestSettings;onSettingsChange?:(settings:BacktestSettings)=>void;onConfigure?:()=>void;onManageAccount?:()=>void}){
   const [statuses,setStatuses]=useState<VenueStatus[]>([]),[bot,setBot]=useState<BotStatus>({running:false,venue:null,timeframe:null,position:null,error:null,lastProcessed:null});
   const venue=useExchangeVenue();
+  const [savedVenues,setSavedVenues]=useState<Venue[]>([]);
   const [key,setKey]=useState(''),[secret,setSecret]=useState(''),[passphrase,setPassphrase]=useState('');
   const [mode,setMode]=useState<'manual'|'bot'>('manual'),[direction,setDirection]=useState<'long'|'short'>('long');
   const [quantity,setQuantity]=useState('1'),[stop,setStop]=useState(''),[manualConfirm,setManualConfirm]=useState(false),[autoConfirm,setAutoConfirm]=useState(false);
@@ -19,13 +21,13 @@ export default function LiveExecution({view,settings,onSettingsChange,onConfigur
   const account=statuses.find(item=>item.venue===venue);
   const connected=!!account?.connected;
   const positionOpen=!!account?.position?.side;
-  const positionCheckFailed=!!account?.position?.error;
+  const positionCheckFailed=!!account?.position?.error||!!account?.executionError;
   const botForVenue=bot.running&&bot.venue===venue;
 
   async function refresh(){
     try{
-      const value=await api<{venues:VenueStatus[];bot:BotStatus}>('/api/exchange/status');
-      setStatuses(value.venues);setBot(value.bot);
+      const value=await api<{venues:VenueStatus[];bot:BotStatus;savedVenues:Venue[]}>('/api/exchange/status');
+      setStatuses(value.venues);setBot(value.bot);setSavedVenues(value.savedVenues??[]);
     }catch{/* Keep the last known account display while the backend restarts. */}
   }
   useEffect(()=>{void refresh();const timer=setInterval(()=>void refresh(),3000);return()=>clearInterval(timer);},[]);
@@ -48,21 +50,23 @@ export default function LiveExecution({view,settings,onSettingsChange,onConfigur
   function changeVenue(value:Venue){saveExchangeVenue(value);setKey('');setSecret('');setPassphrase('');setManualConfirm(false);setAutoConfirm(false);}
 
   return <div className={`live-account-content live-${view}-view`}>
+    {view==='account'&&connected&&<ExchangeOverview key={venue} venue={venue} accountView/>}
     {view==='account'&&<div className="live-connect-section">
       <div className="live-section-heading"><div><div><h3>Choose venue &amp; API access</h3><p>Select the exchange that issued this API key.</p></div></div><span className={`live-badge ${connected?'connected':''}`}>{connected?'CONNECTED':'NOT CONNECTED'}</span></div>
       <div className="exchange-radio-list" role="radiogroup" aria-label="Exchange account"><span className="exchange-radio-heading">Select exchange</span>{EXCHANGES.map(item=>{const status=statuses.find(value=>value.venue===item.id);return <label key={item.id} className={venue===item.id?'selected':''}><input type="radio" name="live-exchange" value={item.id} checked={venue===item.id} onChange={()=>changeVenue(item.id)}/><span>{item.name}<small>{status?.connected?'Connected':'Set API access'}</small></span></label>;})}</div>
-      {connected?<div className="connected-account-row"><div className="connected-account-details"><strong>{selected.name} · {account.symbol}</strong><span>API credentials held in memory until disconnect or backend restart</span></div><div className="connected-position">{account.position?.error?<span className="error">{account.position.error}</span>:account.position?.side?<><strong className={account.position.side==='long'?'positive':'negative'}>{account.position.side.toUpperCase()} · {account.position.quantity} XAG</strong><span>Entry {account.position.entryPrice??'—'} · Mark {account.position.markPrice??'—'} · uPnL {account.position.unrealizedPnl??'—'} USDT</span></>:<span className="muted">No open XAG position</span>}</div>{account.position?.side&&<button type="button" className="secondary close-position-button" disabled={busy||botForVenue} onClick={()=>{if(window.confirm('Send a reduce-only market order to close the XAG/USDT position?'))void run('/api/exchange/close',{venue,confirmation:'CLOSE LIVE POSITION'});}}>Close position</button>}<button type="button" className="text-button disconnect-button" disabled={busy||botForVenue||!!account.position?.side} title={account.position?.side?'Close the position before disconnecting':''} onClick={()=>void run('/api/exchange/disconnect',{venue})}>Disconnect</button></div>:<form className="live-connect-form" onSubmit={connect}>
+      {savedVenues.includes(venue)&&<div className="credential-note">Saved API credentials available. {!connected&&<button type="button" className="secondary" disabled={busy} onClick={()=>void run('/api/exchange/reconnect',{venue})}>Connect saved account</button>} <button type="button" className="text-button" disabled={busy} onClick={()=>void run('/api/exchange/forget',{venue})}>Forget saved keys</button></div>}
+      {connected?<div className="connected-account-row"><div className="connected-account-details"><strong>{selected.name} · {account.symbol}</strong><span>{savedVenues.includes(venue)?'API credentials saved encrypted in the local database':'API credentials held in memory; no saved keys'}</span></div><div className="connected-position">{account.position?.error?<span className="error">{account.position.error}</span>:account.position?.side?<><strong className={account.position.side==='long'?'positive':'negative'}>{account.position.side.toUpperCase()} · {account.position.quantity} XAG</strong><span>Entry {account.position.entryPrice??'—'} · Mark {account.position.markPrice??'—'} · uPnL {account.position.unrealizedPnl??'—'} USDT</span></>:<span className="muted">No open XAG position</span>}</div>{account.position?.side&&<button type="button" className="secondary close-position-button" disabled={busy||botForVenue} onClick={()=>{if(window.confirm('Send a reduce-only market order to close the XAG/USDT position?'))void run('/api/exchange/close',{venue,confirmation:'CLOSE LIVE POSITION'});}}>Close position</button>}<button type="button" className="text-button disconnect-button" disabled={busy||botForVenue||!!account.position?.side} title={account.position?.side?'Close the position before disconnecting':''} onClick={()=>void run('/api/exchange/disconnect',{venue})}>Disconnect</button></div>:<form className="live-connect-form" onSubmit={connect}>
         <label>API key<input autoComplete="off" spellCheck={false} value={key} onChange={event=>setKey(event.target.value)} required/></label>
         <label>API secret<input autoComplete="new-password" type="password" value={secret} onChange={event=>setSecret(event.target.value)} required/></label>
         {selected.passphrase&&<label>API passphrase<input autoComplete="new-password" type="password" value={passphrase} onChange={event=>setPassphrase(event.target.value)} required/></label>}
         <button className="secondary connect-button" disabled={busy}>{busy?'Connecting…':'Connect account'}</button>
-        <p className="credential-note">Use a dedicated key with read and trade access only. Disable withdrawals and restrict by IP where supported. Credentials are never saved in the browser.</p>
+        <p className="credential-note">Use a dedicated key with read and trade access only. Disable withdrawals and restrict by IP where supported. Successful connections save credentials encrypted in the local database for reuse after restart. Credentials are never saved in the browser. Disconnect keeps saved keys; Forget saved keys deletes them.</p>
       </form>}
     </div>}
 
     {view==='terminal'&&<div className="live-method-section">
       <div className="live-section-heading"><div><div><h2>Bot &amp; manual</h2><p>Choose how to manage live XAG/USDT orders.</p></div></div><div className="live-terminal-heading-actions">{!connected&&<button type="button" className="text-button" onClick={onManageAccount}>Connect exchange ↗</button>}<span className={`live-badge ${connected?'connected':''}`}>{connected?selected.name.toUpperCase()+' CONNECTED':'NO EXCHANGE'}</span></div></div>
-      {connected&&<div className={`live-position-strip ${positionOpen?'has-position':''}`}>{account.position?.error?<span className="error">{account.position.error}</span>:positionOpen?<><div><strong className={account.position!.side==='long'?'positive':'negative'}>{account.position!.side!.toUpperCase()} · {account.position!.quantity} XAG</strong><span>Entry {account.position!.entryPrice??'—'} · Mark {account.position!.markPrice??'—'} · uPnL {account.position!.unrealizedPnl??'—'} USDT</span></div><button type="button" className="secondary" disabled={busy||botForVenue} onClick={()=>{if(window.confirm('Send a reduce-only market order to close the XAG/USDT position?'))void run('/api/exchange/close',{venue,confirmation:'CLOSE LIVE POSITION'});}}>Close position</button></>:<span>No open XAG position · ready for a new order</span>}</div>}
+      {account?.executionError&&<p className="exchange-inline-error">{account.executionError}</p>}
       <div className="execution-mode-switch" role="radiogroup" aria-label="Live execution mode">
         <label className={mode==='manual'?'selected':''}><input type="radio" name="live-execution-mode" value="manual" checked={mode==='manual'} disabled={botForVenue} onChange={()=>setMode('manual')}/><span>Manual order</span><small>You control each entry</small></label>
         <label className={mode==='bot'?'selected':''}><input type="radio" name="live-execution-mode" value="bot" checked={mode==='bot'} onChange={()=>setMode('bot')}/><span>Strategy bot</span><small>BB Outer Band Reversal</small></label>

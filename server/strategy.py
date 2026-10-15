@@ -34,7 +34,7 @@ class BacktestRequest(BaseModel):
     chartart_stop_pct: float = Field(default=1., gt=0, lt=100)
     capital: float = Field(default=2000, gt=0, le=1e9)
     tick_size: float = Field(default=.01, gt=0, le=10)
-    fee_bps: float = Field(default=5, ge=0, le=100)
+    fee_bps: float = Field(default=6, ge=0, le=100)
     spread: float = Field(default=.01, ge=0, le=10)
     slippage: float = Field(default=.01, ge=0, le=10)
     funding_bps: float = Field(default=1, ge=-100, le=100)
@@ -49,7 +49,7 @@ class BacktestRequest(BaseModel):
             raise ValueError('End date must be on or after the start date.')
         from .bb_outer_reversal import Settings
         # Ignore the removed option in older saved browser configurations.
-        self.bb_reversal = {k: v for k, v in self.bb_reversal.items() if k != 'hedge_mode'}
+        self.bb_reversal = {k: v for k, v in self.bb_reversal.items() if k not in ('hedge_mode', 'reward_risk', 'risk_per_trade_pct')}
         try:
             config = Settings(**self.bb_reversal)
             if config.amount_unit == 'price' and config.amount_per_trade > self.capital:

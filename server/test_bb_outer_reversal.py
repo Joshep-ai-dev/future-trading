@@ -41,16 +41,6 @@ class BBOuterReversalTests(unittest.TestCase):
         self.assertGreater(trade.pnl, 0)
         self.assertAlmostEqual(result['cash'], 10000+trade.pnl)
 
-    def test_two_to_one_mode_holds_past_small_profit(self):
-        bars = self.bars([(99.5, 100.5, 98.9, 100.),
-                          (100., 100.8, 99.8, 100.5),
-                          (100.5, 101.2, 100.4, 101.)])
-        result = self.run_bars(bars, reward_risk=2, initial_capital=1000, leverage=10)
-        trade = result['trades'].iloc[0]
-        self.assertEqual(trade.exit_reason, 'profit_target')
-        self.assertAlmostEqual(trade.pnl, 10.)
-        self.assertAlmostEqual(trade.quantity*.5, 5.)
-
     def test_wilder_seed_and_population_deviation(self):
         np.testing.assert_allclose(_rma([np.nan, 2, 4, 6], 2), [np.nan, np.nan, 3, 4.5], equal_nan=True)
         frame = pd.DataFrame(dict(open=[1., 3., 5.], high=[2., 4., 6.],

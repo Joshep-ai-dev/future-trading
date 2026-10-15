@@ -19,8 +19,6 @@ from .indicators import atr, rsi
 
 @dataclass(frozen=True)
 class Settings:
-    reward_risk: float = 0.0
-    risk_per_trade_pct: float = 0.5
     trade_mode: str = 'Both'
     bb_length: int = 20
     bb_mult: float = 3.0
@@ -53,10 +51,6 @@ class Settings:
     rsi_exit_long: float = 85.
 
     def __post_init__(self):
-        if not np.isfinite(self.reward_risk) or not 0 <= self.reward_risk <= 10:
-            raise ValueError('Reward/risk must be between 0 and 10')
-        if not np.isfinite(self.risk_per_trade_pct) or not 0 < self.risk_per_trade_pct <= 5:
-            raise ValueError('Risk per trade must be between 0 and 5 percent')
         if not isinstance(self.rsi_exit_enabled, bool):
             raise ValueError('RSI exit enabled must be boolean')
         if isinstance(self.rsi_exit_length, bool) or not isinstance(self.rsi_exit_length, int) or not 1 <= self.rsi_exit_length <= 500:
@@ -229,12 +223,7 @@ def run_backtest(frame, settings=None, *, start=None, close_at_end=False, bar_se
             elif direction == -1 and bar.high >= stop:
                 close_position(time, max(bar.open, stop), 'stop')
 
-        if position is not None and s.reward_risk > 0:
-            target = position['target']
-            if (position['direction'] == 1 and bar.high >= target) or (position['direction'] == -1 and bar.low <= target):
-                close_position(time, target, 'profit_target')
-
-        if position is not None and s.rsi_exit_enabled and s.reward_risk == 0:
+        if position is not None and s.rsi_exit_enabled:
             exit_rsi = getattr(bar, 'exit_rsi', np.nan)
             # User-defined upward price difference for BOTH sides, not directional profit.
             price_condition = bar.close > position['entry_price']+s.rsi_exit_move
@@ -265,8 +254,6 @@ def run_backtest(frame, settings=None, *, start=None, close_at_end=False, bar_se
             direction = 1
         elif allowed and short_rebound and last_direction != -1 and s.trade_mode != 'Long Only':
             direction = -1
-        if position is not None and s.reward_risk > 0:
-            direction = 0
         activated = False
         if direction:
             if position is not None:
@@ -281,12 +268,9 @@ def run_backtest(frame, settings=None, *, start=None, close_at_end=False, bar_se
             amount = cash*s.amount_per_trade/100 if s.amount_unit == 'percent' else min(s.amount_per_trade, cash)
             quantity = s.quantity if s.leverage is None else amount*s.leverage/bar.close
             entry = float(bar.close)+direction*adverse
-            if s.reward_risk > 0:
-                quantity = min(quantity, cash*s.risk_per_trade_pct/100/(sl+2*adverse+2*abs(entry)*fee_bps/10000))
             entry_fee = abs(entry*quantity)*fee_bps/10000
             cash -= entry_fee
             position = dict(reference_entry=float(bar.close), entry_fee=entry_fee, funding=0., funding_time=float(time.timestamp()) if hasattr(time, 'timestamp') else float(time),
-                            target=(entry+direction*(s.reward_risk*sl+2*adverse+2*abs(entry)*fee_bps/10000)) if s.reward_risk > 0 else None,
                             direction=direction, entry_time=time, entry_price=entry, quantity=float(quantity),
                             stop=float(entry-direction*sl), initial_stop=float(entry-direction*sl), extreme=float(bar.close),
                             trailing_active=False, countertrend=bool(counter),
@@ -295,7 +279,7 @@ def run_backtest(frame, settings=None, *, start=None, close_at_end=False, bar_se
             position['stop_history'] = [dict(time=int(time.timestamp()) if hasattr(time, 'timestamp') else int(time),
                                              price=position['stop'], reason='initial')]
             last_direction = direction
-        elif position is not None and s.reward_risk == 0:
+        elif position is not None:
             p = position
             d = p['direction']
             p['extreme'] = max(p['extreme'], bar.high) if d == 1 else min(p['extreme'], bar.low)

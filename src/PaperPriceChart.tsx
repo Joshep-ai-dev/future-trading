@@ -19,7 +19,7 @@ import type {PaperTrade,Position} from './PaperTrading';
 
 type Point={time:number;bbBasis:number|null;bbUpper:number|null;bbLower:number|null;trendSma:number|null};
 type Data={candles:Analysis['candles'];indicators:Point[];stops:{time:number;price:number|null}[];trades:PaperTrade[];position:Position|null;indicatorClock:number};
-type Props=Data&{sessionId:number;showSma:boolean;timeframe:string;atrLength:number;adxLength:number};
+type Props=Data&{sessionId:number;showSma:boolean;timeframe:string;atrLength:number;adxLength:number;allowLocalHistory?:boolean};
 
 export default function PaperPriceChart(props:Props) {
   const container=useRef<HTMLDivElement>(null),chartRef=useRef<IChartApi|null>(null);
@@ -120,9 +120,9 @@ export default function PaperPriceChart(props:Props) {
     };
     let byTime=new Map<number,Analysis['candles'][number]>(),previousTime:number|undefined,previous:Data|null=null;
     let cached:Data['candles']=[],indicators:Point[]=[],latestData:Data|null=null;
-    let pending=false,more=true,failed=false,disposed=false,timer:ReturnType<typeof setTimeout>|undefined;
+    let pending=false,more=props.allowLocalHistory!==false,failed=false,disposed=false,timer:ReturnType<typeof setTimeout>|undefined;
     const abort=new AbortController();
-    setLoading(false);setHasMore(true);setHistoryError('');
+    setLoading(false);setHasMore(more);setHistoryError('');
     async function earlier(){
       const before=cached[0]?.time;
       if(pending||!more||before===undefined||!latestData)return;
@@ -208,10 +208,10 @@ export default function PaperPriceChart(props:Props) {
     });
     const stopResize=resizeChart(chart,container.current,()=>{if(following.current)latest();});
     return ()=>{paneResize?.disconnect();cancelAnimationFrame(paneFrame);updateVisibility.current=()=>{};disposed=true;abort.abort();if(timer)clearTimeout(timer);chart.timeScale().unsubscribeVisibleLogicalRangeChange(scheduleHistory);stopResize();changePanels.current=()=>{};loadEarlier.current=()=>{};update.current=()=>{};chartRef.current=null;chart.remove();};
-  },[props.sessionId,props.showSma,props.timeframe]);
+  },[props.sessionId,props.showSma,props.timeframe,props.allowLocalHistory]);
   useEffect(()=>{chartRef.current?.applyOptions({localization:chartTimeOptions(timeZone).localization,timeScale:chartTimeOptions(timeZone).timeScale});},[timeZone]);
   useEffect(()=>{update.current(props);},[props]);
   useEffect(()=>{updateVisibility.current();},[hiddenIndicators]);
   useEffect(()=>{changePanels.current(selectedIndicators,indicatorConfig);},[selectedIndicators,indicatorConfig,props.sessionId,props.showSma,props.timeframe]);
-  return <><ChartTools chartRef={chartRef} onLatest={latest} onNavigate={holdView} onEarlier={()=>loadEarlier.current()} loading={loading} hasMore={hasMore} showEarlier indicators={selectedIndicators} onToggleIndicator={toggleIndicator} follow={follow} onFollowChange={setFollow}/>{settingsOpen&&<IndicatorSettings key={settingsOpen} kind={settingsOpen} value={indicatorConfig} onApply={applyIndicatorConfig} onClose={()=>setSettingsOpen(null)}/>}<p className="readout">{readout}</p>{historyError&&<p className="chart-history-status error" role="alert">{historyError} <button type="button" className="text-button" onClick={()=>loadEarlier.current()}>Retry</button></p>}<div className="chart-history-status" role="status">{loading?"Loading earlier candles...":hasMore?"Pan left to load history":"Beginning of available history"}<span>Pan right for newer candles · Latest returns to the current price</span></div><div className="chart-resize">{paneHeaders.map(({kind,top})=><IndicatorHeader key={kind} kind={kind} top={top} config={indicatorConfig} value={paneValues[kind]} hidden={hiddenIndicators[kind]} onSettings={()=>setSettingsOpen(kind)} onVisibility={()=>setHiddenIndicators(old=>({...old,[kind]:!old[kind]}))} onRemove={()=>{setHiddenIndicators(old=>({...old,[kind]:false}));toggleIndicator(kind);}}/>)}<div ref={container} onWheelCapture={holdView} onPointerDownCapture={holdView} className="chart-container position-chart" aria-label="Virtual bot price chart with buys, sells, exits and trailing stops"/></div></>;
+  return <><ChartTools chartRef={chartRef} onLatest={latest} onNavigate={holdView} onEarlier={props.allowLocalHistory===false?undefined:()=>loadEarlier.current()} loading={loading} hasMore={hasMore} showEarlier={props.allowLocalHistory!==false} indicators={selectedIndicators} onToggleIndicator={toggleIndicator} follow={follow} onFollowChange={setFollow}/>{settingsOpen&&<IndicatorSettings key={settingsOpen} kind={settingsOpen} value={indicatorConfig} onApply={applyIndicatorConfig} onClose={()=>setSettingsOpen(null)}/>}<p className="readout">{readout}</p>{historyError&&<p className="chart-history-status error" role="alert">{historyError} <button type="button" className="text-button" onClick={()=>loadEarlier.current()}>Retry</button></p>}<div className="chart-history-status" role="status">{loading?"Loading earlier candles...":props.allowLocalHistory===false?"Exchange candle history":hasMore?"Pan left to load history":"Beginning of available history"}<span>Pan right for newer candles · Latest returns to the current price</span></div><div className="chart-resize">{paneHeaders.map(({kind,top})=><IndicatorHeader key={kind} kind={kind} top={top} config={indicatorConfig} value={paneValues[kind]} hidden={hiddenIndicators[kind]} onSettings={()=>setSettingsOpen(kind)} onVisibility={()=>setHiddenIndicators(old=>({...old,[kind]:!old[kind]}))} onRemove={()=>{setHiddenIndicators(old=>({...old,[kind]:false}));toggleIndicator(kind);}}/>)}<div ref={container} onWheelCapture={holdView} onPointerDownCapture={holdView} className="chart-container position-chart" aria-label={props.allowLocalHistory===false?"Live exchange price chart":"Virtual bot price chart with buys, sells, exits and trailing stops"}/></div></>;
 }

@@ -17,7 +17,11 @@ from .market_refresh import refresh_service
 from .paper_trading import paper_service
 from .live_exchange import live_exchange, live_bot
 from .profile_store import profile_store
+from .credential_store import credential_store
+from .exchange_stream import ExchangeStreams
 from .fine_tuning import fine_tune
+
+exchange_streams = ExchangeStreams(live_exchange)
 
 @asynccontextmanager
 async def lifespan(app):
@@ -26,6 +30,7 @@ async def lifespan(app):
     try:
         yield
     finally:
+        await exchange_streams.close()
         paper_service.shutdown()
         refresh_service.shutdown()
 
@@ -63,6 +68,8 @@ class ProfileSaveRequest(BaseModel):
 
 
 class FineTuneRequest(BaseModel):
+    search_method: Literal['grid','ml'] = 'grid'
+    objective: Literal['profit','balanced'] = 'profit'
     model_config = ConfigDict(extra='forbid')
     settings: BBBacktestRequest
 
@@ -70,14 +77,6 @@ class FineTuneRequest(BaseModel):
 class LiveBotStartRequest(BBBacktestRequest):
     venue: Literal['okx','htx','mexc','binance']
     confirmation: Literal['START LIVE STRATEGY']
-
-    @model_validator(mode='after')
-    def supported_exits(self):
-        if self.bb_reversal.get('reward_risk', 0) > 0:
-            raise ValueError('Fixed reward/risk target mode currently supports backtests and paper sessions only')
-        return self
-
-
 
 @app.post('/api/chart-view')
 def session_chart(parameters: ChartViewRequest):
@@ -164,18 +163,54 @@ class ExchangeCloseRequest(BaseModel):
 
 @app.get('/api/exchange/status')
 def exchange_status():
-    return {'venues':live_exchange.status(),'bot':live_bot.status()}
+    return {'venues':live_exchange.status(),'bot':live_bot.status(),'savedVenues':credential_store.venues()}
 
 
 @app.post('/api/exchange/connect')
 def exchange_connect(parameters: ExchangeConnectRequest):
     try:
-        return live_exchange.connect(parameters.venue,parameters.api_key,parameters.secret,parameters.passphrase)
+        result = live_exchange.connect(parameters.venue,parameters.api_key,parameters.secret,parameters.passphrase)
+        credential_store.save(parameters.venue,parameters.api_key,parameters.secret,parameters.passphrase)
+        return result
     except ValueError as error:
         raise HTTPException(status_code=400,detail=str(error)) from error
     except Exception as error:
         # Exchange/library errors may echo request details. Never return credentials to the browser.
         raise HTTPException(status_code=502,detail=f'{parameters.venue.upper()} connection failed. Check API permissions, XAG contract access, account mode, and network availability.') from error
+
+
+@app.get('/api/exchange/overview')
+def exchange_overview(venue: Literal['okx','htx','mexc','binance']):
+    try:
+        return live_exchange.overview(venue)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.get('/api/exchange/stream')
+async def exchange_stream(venue: Literal['okx','htx','mexc','binance']):
+    try:
+        live_exchange._get(venue)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return StreamingResponse(exchange_streams.events(venue), media_type='text/event-stream',
+                             headers={'Cache-Control':'no-cache', 'X-Accel-Buffering':'no'})
+
+
+@app.get('/api/exchange/candles')
+def exchange_candles(venue: Literal['okx','htx','mexc','binance'],
+                     timeframe: Literal['1m','3m','5m','10m','15m','30m','1h','4h','1d'] = '1m'):
+    try:
+        exchange, market = live_exchange._get(venue)
+        durations = {'1m':60,'3m':180,'5m':300,'10m':600,'15m':900,'30m':1800,'1h':3600,'4h':14400,'1d':86400}
+        supported = [key for key in durations if key in exchange.timeframes
+                     and durations[key] <= durations[timeframe] and durations[timeframe] % durations[key] == 0]
+        source = max(supported, key=lambda key: durations[key]) if supported else '1m'
+        return {'candles': exchange.fetch_ohlcv(market['symbol'], source, limit=500)}
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(status_code=502, detail='Exchange candle history is unavailable.') from error
 
 
 @app.post('/api/exchange/disconnect')
@@ -184,10 +219,27 @@ def exchange_disconnect(parameters: ExchangeDisconnectRequest):
     return {'venue':parameters.venue,'connected':False}
 
 
+@app.post('/api/exchange/reconnect')
+def exchange_reconnect(parameters: ExchangeDisconnectRequest):
+    try:
+        credentials = credential_store.load(parameters.venue)
+        return live_exchange.connect(parameters.venue, **credentials)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(status_code=502, detail='Saved exchange connection failed. Check network and API access.') from error
+
+
+@app.post('/api/exchange/forget')
+def exchange_forget(parameters: ExchangeDisconnectRequest):
+    credential_store.delete(parameters.venue)
+    return {'message':'Saved API credentials deleted.'}
+
+
 @app.post('/api/exchange/order')
 def exchange_order(parameters: ExchangeOrderRequest):
     try:
-        exchange,market=live_exchange._get(parameters.venue)
+        exchange,market=live_exchange.execution_client(parameters.venue)
         exchange.set_margin_mode('isolated',market['symbol'])
         exchange.set_leverage(parameters.leverage,market['symbol'])
         return live_exchange.open_with_stop(parameters.venue,parameters.direction,parameters.quantity,parameters.stop_price)
@@ -324,7 +376,7 @@ def fine_tune_backtest(parameters: FineTuneRequest):
     def work():
         try:
             frame, _ = load_bars(parameters.settings.entry_timeframe)
-            result = fine_tune(frame, parameters.settings,
+            result = fine_tune(frame, parameters.settings, search_method=parameters.search_method, objective=parameters.objective,
                                progress=lambda percent, message: updates.put(
                                    {'type': 'progress', 'percent': percent, 'message': message}))
             updates.put({'type': 'result', 'result': result})
@@ -378,3 +430,12 @@ def history(parameters: CandleRequest):
         return candle_page(frame, parameters.before, parameters.limit)
     except (ValueError, OSError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.get('/api/costs/htx')
+def htx_cost_snapshot():
+    from .htx_costs import fetch_htx_costs
+    try:
+        return fetch_htx_costs()
+    except Exception as error:
+        raise HTTPException(status_code=502, detail='Could not fetch HTX XAG costs. Existing settings were preserved. '+str(error)) from error

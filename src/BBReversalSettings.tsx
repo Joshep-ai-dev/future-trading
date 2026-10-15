@@ -1,7 +1,9 @@
+import {useState} from 'react';
+import {api} from './api';
+import {htxCostDefaults} from './executionCostDefaults';
 import type {BacktestSettings} from './types';
 
 export const bbDefaults: BacktestSettings['bb_reversal'] = {
-  reward_risk:0,risk_per_trade_pct:.5,
   rsi_exit_enabled:false,rsi_exit_length:14,rsi_exit_move:.3,rsi_exit_short:15,rsi_exit_long:85,
   trade_mode:'Both',bb_length:20,bb_mult:3,min_bb_width_pct:.8,atr_length:14,min_atr:.03,
   adx_length:14,adx_threshold:20,pullback_bars:3,initial_sl:.5,trail_trigger:.6,
@@ -9,7 +11,6 @@ export const bbDefaults: BacktestSettings['bb_reversal'] = {
   counter_profit_pct:75,counter_sl_pct:75,quantity:1,use_sma_trend_adjustment:true,amount_per_trade:100,amount_unit:'percent',
 };
 const fields: [Exclude<keyof typeof bbDefaults,'trade_mode'|'rsi_exit_enabled'|'use_sma_trend_adjustment'|'amount_unit'|'amount_per_trade'>,string,number,number,number][] = [
-  ['reward_risk','Fixed target / stop ratio (0 = legacy exits)',0,10,.1],['risk_per_trade_pct','Planned risk per trade (%) in target mode',.01,5,.01],
   ['bb_length','BB length',1,1000,1],['bb_mult','BB multiplier',.1,100,.1],
   ['min_bb_width_pct','Minimum BB width (%)',0,100,.1],['atr_length','ATR length',1,500,1],
   ['min_atr','Minimum ATR',0,100,.01],['adx_length','ADX length',1,500,1],
@@ -23,6 +24,15 @@ const fields: [Exclude<keyof typeof bbDefaults,'trade_mode'|'rsi_exit_enabled'|'
 ];
 export default function BBReversalSettings({settings,onChange}:{settings:BacktestSettings;onChange:(s:BacktestSettings)=>void}) {
   const config=settings.bb_reversal;
+  const [costBusy,setCostBusy]=useState(false),[costMessage,setCostMessage]=useState('');
+  async function applyHtx(){
+    setCostBusy(true);setCostMessage('');
+    try{
+      const data=await api<{fee_bps:number;funding_bps:number;spread:number;actualFundingPct:number;intervalHours:number;feeNote:string}>('/api/costs/htx');
+      onChange({...settings,fee_bps:data.fee_bps,funding_bps:data.funding_bps,spread:data.spread});
+      setCostMessage(`HTX XAG-USDT snapshot applied: funding ${data.actualFundingPct.toFixed(6)}% / ${data.intervalHours}h, converted to the simulation's 8h equivalent. ${data.feeNote} Slippage preserved. Current funding is not historical funding.`);
+    }catch(error){setCostMessage(String(error));}finally{setCostBusy(false);}
+  }
   const renderFields=(keys:string[])=>fields.filter(([key])=>keys.includes(key)).map(([key,label,min,max])=><label key={key}>{label}<input type="number" required min={min} max={max} step="any" value={config[key]} onChange={e=>onChange({...settings,bb_reversal:{...config,[key]:Number(e.target.value)}})}/></label>);
   return <div className="exit-settings"><h3>BB Outer Band Reversal + Trailing SL</h3>
     <p>BB Outer Band Reversal + Trailing SL. Both directions, alternating entries, with ATR and ADX confirmation. Changes apply to your next backtest or new virtual session.</p>
@@ -33,8 +43,7 @@ export default function BBReversalSettings({settings,onChange}:{settings:Backtes
     <label>Amount per trade ({config.amount_unit==='percent'?'% of balance':'$'})<input aria-label="Amount per trade" type="number" required min={.01} max={config.amount_unit==='percent'?100:settings.capital} step="any" value={config.amount_per_trade} onChange={e=>onChange({...settings,bb_reversal:{...config,amount_per_trade:Number(e.target.value)}})}/></label>
     </div><p className="settings-help">Amount is allocated before leverage and capped at available balance. A depleted balance stops new trades.</p></div>
     <div className="settings-section" id="settings-filters"><h3>Entry filters</h3><div className="settings-grid">{renderFields(['bb_length','bb_mult','min_bb_width_pct','pullback_bars','atr_length','min_atr','adx_length','adx_threshold'])}</div></div>
-    <section className="settings-section"><h3>Costs & swap funding</h3><div className="settings-grid">{([['fee_bps','Fee per side (bps)',0,100],['slippage','Slippage per fill (price units)',0,10],['spread','Full bid/ask spread (price units)',0,10],['funding_bps','Signed funding / swap rate per 8h (bps)',-100,100]] as const).map(([key,label,min,max])=><label key={key}>{label}<input type="number" required min={min} max={max} step="any" value={settings[key]} onChange={e=>onChange({...settings,[key]:Number(e.target.value)})}/></label>)}</div><p className="settings-help">1 bp = 0.01%. Slippage plus half the spread worsens each fill. Positive perpetual funding: longs pay, shorts receive; negative reverses this. Funding is prorated over time at entry notional, not historical exchange settlement rates. Funding and swap refer to the same perpetual charge here.</p></section>
-    <section className="settings-section"><h3>Larger winners / smaller losses</h3><div className="settings-grid">{renderFields(['reward_risk','risk_per_trade_pct'])}</div><p className="settings-help">Target mode holds for the initial stop or fixed target and disables early trailing, RSI and reversal exits. Planned risk includes estimated execution costs. Funding, gaps and end-of-test exits can change the actual win/loss ratio. Applies to new backtests and new paper sessions.</p><button type="button" className="secondary" onClick={()=>onChange({...settings,max_leverage:1,bb_reversal:{...config,reward_risk:2,risk_per_trade_pct:.5,amount_unit:'percent',amount_per_trade:25}})}>Use 2:1 target with 0.5% planned risk</button></section>
+    <section className="settings-section"><h3>Costs & swap funding</h3><button type="button" className="secondary" onClick={()=>{onChange({...settings,...htxCostDefaults});setCostMessage('HTX simulation defaults applied: fee 0.06% per side; slippage 0.01; spread 0.02; funding +0.01% per 8h. Funding, spread and slippage are editable assumptions.');}}>Use HTX defaults</button><button type="button" className="secondary" disabled={costBusy} onClick={()=>void applyHtx()}>{costBusy?'Fetching HTX?':'Refresh HTX funding & spread'}</button>{costMessage&&<p role="status">{costMessage}</p>}<div className="settings-grid">{([['fee_bps','Fee per side (bps)',0,100],['slippage','Slippage per fill (price units)',0,10],['spread','Full bid/ask spread (price units)',0,10],['funding_bps','Signed funding / swap rate per 8h (bps)',-100,100]] as const).map(([key,label,min,max])=><label key={key}>{label}<input type="number" required min={min} max={max} step="any" value={settings[key]} onChange={e=>onChange({...settings,[key]:Number(e.target.value)})}/></label>)}</div><p className="settings-help">Defaults: fee 6 bps is a public taker estimate; slippage 0.01 and spread 0.02 are XAG price assumptions; funding 1 bp per 8h is a scenario, not a fixed HTX rate. Your account tier may differ. 1 bp = 0.01%. Slippage plus half the spread worsens each fill. Positive perpetual funding: longs pay, shorts receive; negative reverses this. Funding is prorated over time at entry notional, not historical exchange settlement rates. Funding and swap refer to the same perpetual charge here.</p></section>
     <div className="settings-section" id="settings-stops"><h3>Stop loss & trailing</h3><div className="settings-grid">{renderFields(['initial_sl','trail_trigger','trail_distance','trail_multiplier'])}</div><p className="settings-help">The multiplier scales both trailing activation and trailing distance. Price distances are per unit, not total account loss.</p></div>
     <div className="settings-section" id="settings-rsi-exit"><div className="section-heading"><h3>RSI + price exit</h3><label className="stage-switch"><input type="checkbox" role="switch" aria-label="Enable RSI and price exit" checked={config.rsi_exit_enabled??false} onChange={e=>onChange({...settings,bb_reversal:{...config,rsi_exit_enabled:e.target.checked}})}/>Enable optional exit</label></div>
       {config.rsi_exit_enabled?<><div className="settings-grid">{renderFields(['rsi_exit_length','rsi_exit_move','rsi_exit_short','rsi_exit_long'])}</div><p className="settings-help">Both sides: close price − entry price &gt; {config.rsi_exit_move}. Short: RSI &lt; {config.rsi_exit_short}. Long: RSI &gt; {config.rsi_exit_long}. Checked at the execution candle close. This upward price move is against a short position. Existing stop protection remains active.</p></>:<p className="settings-help">Off. Enable to close using your price-difference and RSI conditions.</p>}

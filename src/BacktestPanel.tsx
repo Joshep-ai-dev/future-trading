@@ -1,5 +1,6 @@
 import {useEffect,useState,type FormEvent} from 'react';
 import {api} from './api';
+import {htxCostDefaults} from './executionCostDefaults';
 import BBReversalSettings,{bbDefaults} from './BBReversalSettings';
 import PaperTrading from './PaperTrading';
 import ResultsWorkspace from './ResultsWorkspace';
@@ -9,9 +10,9 @@ import type {Page} from './Tabs';
 import {fmt,type BacktestSettings,type BacktestResult,type FineTuneCase,type FineTuneResult,type TuneMetrics} from './types';
 
 function initial(range:{startDate:string;endDate:string}):BacktestSettings {
-  return {bb_reversal:{...bbDefaults},atr_active:false,atr_period:14,atr_multiplier:2,ema_fast:20,ema_slow:50,rsi_period:20,rsi_threshold:50,rsi_active:true,bb_period:20,chartart_stop_pct:1,exit_condition:'none',stop_mode:'trailing',strategy:'bb_outer_reversal',direction_active:true,direction_timeframe:'1h',setup_active:true,setup_timeframe:'15m',entry_active:true,entry_timeframe:'5m',start_date:range.startDate,end_date:range.endDate,capital:2000,tick_size:.01,fee_bps:0,spread:0,slippage:0,funding_bps:0,max_leverage:1,session_start:0,session_end:24,session_timezone:'UTC'};
+  return {bb_reversal:{...bbDefaults},atr_active:false,atr_period:14,atr_multiplier:2,ema_fast:20,ema_slow:50,rsi_period:20,rsi_threshold:50,rsi_active:true,bb_period:20,chartart_stop_pct:1,exit_condition:'none',stop_mode:'trailing',strategy:'bb_outer_reversal',direction_active:true,direction_timeframe:'1h',setup_active:true,setup_timeframe:'15m',entry_active:true,entry_timeframe:'5m',start_date:range.startDate,end_date:range.endDate,capital:2000,tick_size:.01,...htxCostDefaults,max_leverage:1,session_start:0,session_end:24,session_timezone:'UTC'};
 }
-const settingsKey='silver.bb.settings.v1';
+const settingsKey='silver.bb.settings.v2';
 type SavedProfile={name:string;settings:BacktestSettings};
 function restoreSettings(raw:unknown,range:{startDate:string;endDate:string}){
   const defaults=initial(range);
@@ -29,7 +30,16 @@ function restoreSettings(raw:unknown,range:{startDate:string;endDate:string}){
   }catch{return defaults;}
 }
 function restore(range:{startDate:string;endDate:string}){
-  try{return restoreSettings(JSON.parse(localStorage.getItem(settingsKey)??'null'),range);}
+  try{
+    const current=localStorage.getItem(settingsKey);
+    const restored=restoreSettings(JSON.parse(current??localStorage.getItem('silver.bb.settings.v1')??'null'),range);
+    // One-time migration of the former zero-cost browser default. New intentional
+    // zero values and saved named profiles remain unchanged.
+    if(current===null&&restored.fee_bps===0&&restored.slippage===0&&restored.spread===0&&restored.funding_bps===0){
+      return {...restored,...htxCostDefaults};
+    }
+    return restored;
+  }
   catch{return initial(range);}
 }
 export default function BacktestPanel({range,view,onViewChange,accountMode,onAccountModeChange}:{range:{startDate:string;endDate:string};view:Page;onViewChange:(page:Page)=>void;accountMode:'live'|'paper';onAccountModeChange:(mode:'live'|'paper')=>void}) {
@@ -65,6 +75,7 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
   }
   const [result,setResult]=useState<BacktestResult|null>(null);
   const [busy,setBusy]=useState(false),[error,setError]=useState('');
+  const [searchObjective,setSearchObjective]=useState<'profit'|'balanced'>('profit');
   const [tuning,setTuning]=useState(false),[tuneError,setTuneError]=useState('');
   const [tuneResult,setTuneResult]=useState<FineTuneResult|null>(null);
   const [selectedTuneCaseId,setSelectedTuneCaseId]=useState('');
@@ -79,7 +90,7 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
   async function runFineTune(){
     setTuning(true);setTuneError('');setTuneResult(null);setTuneProgress({percent:0,message:'Connecting to the tuning worker'});
     try{
-      const response=await fetch('/api/backtest/fine-tune',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({settings})});
+      const response=await fetch('/api/backtest/fine-tune',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({settings,search_method:'grid',objective:searchObjective})});
       if(!response.ok)throw new Error(`Fine tuning request failed (${response.status})`);
       if(!response.body)throw new Error('Fine tuning progress stream is unavailable.');
       const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='',finalResult:FineTuneResult|null=null;
@@ -128,14 +139,14 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
         <section className="settings-section" id="settings-range"><div className="section-heading"><h3>Backtest range & account</h3><span className="paper-badge">SINGLE PERIOD</span></div><div className="settings-grid"><label>Starting balance ($)<input type="number" required min={1} max={1e9} step="any" value={settings.capital} onChange={e=>setSettings({...settings,capital:Number(e.target.value)})}/></label>
           {(['start_date','end_date'] as const).map((key,i)=><label key={key}>{['Start date (UTC)','End date (UTC, inclusive)'][i]}<input type="date" required min={key==='end_date'?settings.start_date:range.startDate} max={range.endDate} value={settings[key]} onChange={e=>setSettings({...settings,[key]:e.target.value})}/></label>)}
         </div><p className="settings-help">Available: {range.startDate} to {range.endDate}. One account balance runs through the full range. Live and replay dates are configured separately in the terminal.</p></section>
-        <div className="configuration-runbar"><div><strong>Ready to test your setup?</strong><small>Changes apply to the next run or new bot session.</small></div><div className="configuration-run-actions"><button type="button" className="secondary" disabled={busy||tuning} onClick={()=>void runFineTune()}>{tuning?'Searching candidates…':'Find best settings'}</button><button type="submit" disabled={busy||tuning}>{busy?'Running backtest...':'Run full backtest'}</button></div></div>
+        <div className="configuration-runbar"><div><strong>Ready to test your setup?</strong><small>Changes apply to the next run or new bot session.</small></div><div className="configuration-run-actions"><label>Search goal<select aria-label="Grid search ranking goal" value={searchObjective} disabled={busy||tuning} onChange={e=>setSearchObjective(e.target.value as 'profit'|'balanced')}><option value="profit">Higher net profit</option><option value="balanced">Balanced performance</option></select></label><button type="button" className="secondary" disabled={busy||tuning} onClick={()=>void runFineTune()}>{tuning?'Searching candidates…':searchObjective==='profit'?'Find higher-profit settings':'Run grid search'}</button><button type="submit" disabled={busy||tuning}>{busy?'Running backtest...':'Run full backtest'}</button></div></div>
       </fieldset>
       {(tuning||tuneError||tuneResult)&&<section className="fine-tune-panel" aria-live="polite">
-        {tuning&&<div className="tune-progress"><div className="tune-progress-heading"><strong>{tuneProgress.message||'Preparing fine tuning'}</strong><span>{tuneProgress.percent}%</span></div><div className="tune-progress-track"><span style={{width:`${tuneProgress.percent}%`}}/></div><small>Searching strategy settings and tuning ensemble hyperparameters across historical candles.</small></div>}
+        {tuning&&<div className="tune-progress"><div className="tune-progress-heading"><strong>{tuneProgress.message||'Preparing fine tuning'}</strong><span>{tuneProgress.percent}%</span></div><div className="tune-progress-track"><span style={{width:`${tuneProgress.percent}%`}}/></div><small>Evaluating every grid combination on training and validation data. Forward test is reserved for reporting.</small></div>}
         {tuneError&&<p className="error" role="alert">{tuneError}</p>}
         {tuneResult&&selectedTuneCase&&<>
-          <div className="fine-tune-heading"><div><h3>Historical search results</h3><p>Model: {tuneResult.model}. Evaluated {tuneResult.candidatesEvaluated} strategy candidates, including {tuneResult.adaptiveCandidatesEvaluated} ML guided settings. Six ensemble hyperparameter combinations were compared using training cross validation (RMSE {fmt(tuneResult.modelCrossValidationRmse??0,3)}).</p></div></div>
-          <div className="tune-case-picker"><label htmlFor="fine-tune-case">Select a candidate</label><select id="fine-tune-case" value={selectedTuneCase.id} onChange={event=>setSelectedTuneCaseId(event.target.value)}>{tuneCases.map(candidate=><option key={candidate.id} value={candidate.id}>Case {candidate.rank} · validation {fmt(candidate.periods.validation.metrics.winRate)}% win rate · {candidate.periods.validation.metrics.netPnl>=0?'+':''}${fmt(candidate.periods.validation.metrics.netPnl)} P&amp;L</option>)}</select><small>Cases are ranked by validation performance. Forward-test results are shown for comparison; choosing based on them can overfit that period.</small></div>
+          <div className="fine-tune-heading"><div><h3>Historical search results</h3><p>Model: {tuneResult.model}. Evaluated {tuneResult.candidatesEvaluated} strategy candidates, including {tuneResult.adaptiveCandidatesEvaluated} ML guided settings. {tuneResult.searchMethod==='grid'?'Every combination was evaluated. Allocation, leverage, dates and costs stay as configured.':`Model cross-validation RMSE: ${fmt(tuneResult.modelCrossValidationRmse??0,3)}.`}</p></div></div>
+          {tuneResult.gridAxes&&<details className="tune-model-details"><summary>Grid values searched</summary><div>{Object.entries(tuneResult.gridAxes).map(([name,values])=><span key={name}>{tuneLabels[name]??name}<b>{values.join(' / ')}</b></span>)}</div></details>}<div className="tune-case-picker"><label htmlFor="fine-tune-case">Select a candidate</label><select id="fine-tune-case" value={selectedTuneCase.id} onChange={event=>setSelectedTuneCaseId(event.target.value)}>{tuneCases.map(candidate=><option key={candidate.id} value={candidate.id}>Case {candidate.rank} · validation {fmt(candidate.periods.validation.metrics.winRate)}% win rate · {candidate.periods.validation.metrics.netPnl>=0?'+':''}${fmt(candidate.periods.validation.metrics.netPnl)} P&amp;L</option>)}</select><small>Cases are ranked by validation performance. Forward-test results are shown for comparison; choosing based on them can overfit that period.</small></div>
           <div className="fine-tune-heading tune-selected-heading"><div><h3>Selected case {selectedTuneCase.rank}</h3><p>Compare each case, then apply or save the selected settings using the setup name above.</p></div><div className="tune-result-actions"><button type="button" className="secondary" onClick={()=>setSettings(selectedTuneCase.bestSettings)}>Apply selected settings</button><button type="button" disabled={profileBusy||!profileName.trim()} onClick={()=>void saveProfile(selectedTuneCase.bestSettings)}>Save selected setup</button></div></div>
           {selectedTuneCase.periods.validation.metrics.netPnl<=0&&<p className="error">This candidate lost money in validation. It is a search result, not a profitable recommendation.</p>}<div className="tune-parameters"><strong>Selected candidate parameters</strong>{Object.entries(selectedTuneCase.bestParameters).map(([key,value])=><span key={key}>{tuneLabels[key]??key}<b>{typeof value==='number'?fmt(value,3):String(value)}</b></span>)}</div>
           <div className="tune-scorecards">{renderTuneMetrics('Training',selectedTuneCase.periods.train.metrics)}{renderTuneMetrics('Validation',selectedTuneCase.periods.validation.metrics)}{renderTuneMetrics('Forward test',selectedTuneCase.periods.forwardTest.metrics)}</div>

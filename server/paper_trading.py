@@ -195,7 +195,7 @@ class PaperTrading:
             combined = state['candles']+self.encode(history)
             frame = pd.DataFrame(combined)
             frame.index = pd.to_datetime(frame.pop('time'),unit='s',utc=True)
-            config = replace(Settings(**cfg['bb_reversal']), initial_capital=cfg['capital'],
+            config = replace(Settings(**{key:value for key,value in cfg['bb_reversal'].items() if key not in ('reward_risk', 'risk_per_trade_pct')}), initial_capital=cfg['capital'],
                 leverage=cfg['max_leverage'], trade_mode='Both', min_tick=cfg['tick_size'], min_tick_unit='price')
             result = run_backtest(frame, config, start=pd.Timestamp(state['tradingFrom'],unit='s',tz='UTC'),
                                   bar_seconds=duration, close_at_end=finished, fee_bps=cfg.get('fee_bps',0),

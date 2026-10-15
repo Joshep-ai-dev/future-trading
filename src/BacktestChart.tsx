@@ -13,6 +13,26 @@ import {fmt, type Analysis, type PeriodResult, type Trade, type IndicatorPoint, 
 export function EquityChart({period,initialValue=0,trades}: {
   period: Pick<PeriodResult,'name'>; initialValue?:number; trades:{pnl:number}[];
 }) {
+  const fullscreenRef=useRef<HTMLDivElement>(null);
+  const [fullscreen,setFullscreen]=useState(false);
+  const [fullscreenError,setFullscreenError]=useState('');
+  async function toggleFullscreen(){
+    setFullscreenError('');
+    try{
+      if(document.fullscreenElement===fullscreenRef.current)await document.exitFullscreen();
+      else if(fullscreenRef.current?.requestFullscreen)await fullscreenRef.current.requestFullscreen();
+      else setFullscreenError('Fullscreen is unavailable in this browser.');
+    }catch{setFullscreenError('The browser blocked fullscreen. Try opening the app in a browser tab.');}
+  }
+  useEffect(()=>{
+    const changed=()=>setFullscreen(document.fullscreenElement===fullscreenRef.current);
+    document.addEventListener('fullscreenchange',changed);
+    return ()=>document.removeEventListener('fullscreenchange',changed);
+  },[]);
+  useEffect(()=>{
+    const frame=requestAnimationFrame(()=>chartRef.current?.timeScale().fitContent());
+    return ()=>cancelAnimationFrame(frame);
+  },[fullscreen]);
   const ref=useRef<HTMLDivElement>(null);
   const chartRef=useRef<IChartApi|null>(null);
   const lineRef=useRef<ISeriesApi<'Line'>|null>(null);
@@ -24,11 +44,11 @@ export function EquityChart({period,initialValue=0,trades}: {
       localization:{timeFormatter:tradeLabel},
       layout:{background:{type:ColorType.Solid,color:'#10141d'},textColor:'#7d8da5'},
       rightPriceScale:{scaleMargins:{top:.16,bottom:.16},borderColor:'#263246'},
-      timeScale:{timeVisible:false,minBarSpacing:2,lockVisibleTimeRangeOnResize:true,tickMarkFormatter:tradeLabel},
+      timeScale:{timeVisible:false,minBarSpacing:2,lockVisibleTimeRangeOnResize:true,tickMarkMaxCharacterLength:5,tickMarkFormatter:(time:unknown)=>Number(time)===86400?'Start':`#${Math.round(Number(time)/86400)-1}`},
       grid:{vertLines:{visible:false},horzLines:{color:'#202836'}}});
     chartRef.current=chart;
     lineRef.current=chart.addSeries(LineSeries,{color:'#6ce4bc',lineWidth:2,priceLineVisible:false,lastValueVisible:false,
-      crosshairMarkerVisible:true,priceFormat:{type:'price',precision:2,minMove:.01},title:'Balance after trade'});
+      crosshairMarkerVisible:true,priceFormat:{type:'price',precision:2,minMove:.01},title:''});
     const stopResize=resizeChart(chart,ref.current,()=>chart.timeScale().fitContent());
     return ()=>{stopResize();lineRef.current=null;chartRef.current=null;hasData.current=false;chart.remove();};
   },[]);
@@ -41,7 +61,7 @@ export function EquityChart({period,initialValue=0,trades}: {
     lineRef.current?.setData(points);
     if(!hasData.current&&trades.length){chartRef.current?.timeScale().fitContent();hasData.current=true;}
   },[trades,initialValue]);
-  return <><ChartTools chartRef={chartRef} valueLabel="Amount" horizontalLabel="Trades"/><div className="chart-resize equity-resize"><div ref={ref} className="chart-container equity-chart" aria-label={`${period.name} account balance after each closed trade, including trading costs`}/></div></>;
+  return <div className="balance-chart-shell" ref={fullscreenRef}>{fullscreen&&<div className="balance-fullscreen-heading"><h2>Balance by trade</h2><span>Press Esc to return</span></div>}<ChartTools chartRef={chartRef} valueLabel="Amount" horizontalLabel="Trades" fullscreen={fullscreen} onFullscreen={()=>void toggleFullscreen()}/>{fullscreenError&&<p role="alert">{fullscreenError}</p>}<div className="chart-resize equity-resize"><div ref={ref} className="chart-container equity-chart" aria-label={`${period.name} account balance after each closed trade, including trading costs`}/></div></div>;
 }
 
 export default function BacktestChart({candles,trades,selected,onSelect,indicators,barSeconds,timeframe,indicatorSettings}: {indicatorSettings: BacktestSettings; indicators: IndicatorPoint[]; barSeconds: number; timeframe: string; candles: Analysis['candles']; trades: Trade[]; selected: Trade | null; onSelect: (trade: Trade)=>void}) {
@@ -153,8 +173,8 @@ export default function BacktestChart({candles,trades,selected,onSelect,indicato
       const c = typeof p.time==='number' ? byTime.get(p.time) : undefined;
       if(c) {
         const indicator=indicatorByTime.get(c.time);
-        const extra=indicatorSettings.strategy==='bb_outer_reversal'&&indicator?` · ADX ${fmt(indicator.adx??null)} · ATR ${fmt(indicator.atr??null,3)} · BB width ${fmt(indicator.bbWidthPct??null)}%`:'';
-        setReadout(`${formatChartTime(c.time,readChartTimeZone())} · O ${fmt(c.open,3)} H ${fmt(c.high,3)} L ${fmt(c.low,3)} C ${fmt(c.close,3)}${extra}${fillReadouts.has(c.time)?` | ${fillReadouts.get(c.time)!.join(" | ")}`:""}`);
+        const extra=indicatorSettings.strategy==='bb_outer_reversal'&&indicator?` Â· ADX ${fmt(indicator.adx??null)} Â· ATR ${fmt(indicator.atr??null,3)} Â· BB width ${fmt(indicator.bbWidthPct??null)}%`:'';
+        setReadout(`${formatChartTime(c.time,readChartTimeZone())} Â· O ${fmt(c.open,3)} H ${fmt(c.high,3)} L ${fmt(c.low,3)} C ${fmt(c.close,3)}${extra}${fillReadouts.has(c.time)?` | ${fillReadouts.get(c.time)!.join(" | ")}`:""}`);
       }
     });
     chart.subscribeClick(p=>{

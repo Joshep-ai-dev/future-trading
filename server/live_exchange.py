@@ -1,4 +1,4 @@
-"""Local-only exchange access. API credentials are kept in process memory."""
+"""Local exchange clients and execution; credential persistence lives in credential_store."""
 from __future__ import annotations
 
 import threading
@@ -9,6 +9,7 @@ import pandas as pd
 
 from .bb_outer_reversal import Settings, run_backtest
 from .data import TIMEFRAMES
+from .htx_account import classic_balance, classic_positions, classic_orders
 
 
 VENUES = {
@@ -55,14 +56,30 @@ class LiveExchange:
             credentials['password'] = passphrase
         if venue == 'okx' and not passphrase:
             raise ValueError('OKX requires the API key passphrase')
+        if venue == 'htx':
+            credentials['options'] = {'defaultType': 'swap', 'defaultSubType': 'linear'}
         exchange = exchange_type(credentials)
+        stage = 'loading XAG/USDT markets'
         try:
             market = self._market(exchange)
             if not exchange.has.get('fetchPositions'):
                 raise ValueError(f'{venue.upper()} adapter does not support position checks required for safe live orders')
-            balance = exchange.fetch_balance()
-        except Exception:
-            exchange.close()
+            stage = 'reading the futures account balance'
+            balance = self.account_balance(exchange, venue)
+        except Exception as error:
+            try:
+                exchange.close()
+            except Exception:
+                pass
+            # Only fixed messages reach the browser: exchange errors can contain secrets.
+            if isinstance(error, ccxt.PermissionDenied):
+                raise ValueError(f'{venue.upper()} denied access while {stage}. Check API futures permissions and the key IP allowlist.') from error
+            if isinstance(error, ccxt.AuthenticationError):
+                raise ValueError(f'{venue.upper()} authentication failed while {stage}. Check the API key/secret, key IP allowlist, and computer clock.') from error
+            if isinstance(error, ccxt.NetworkError):
+                raise ValueError(f'{venue.upper()} network request failed while {stage}. Check that this computer can reach the exchange API, then retry.') from error
+            if isinstance(error, ccxt.ExchangeError):
+                raise ValueError(f'{venue.upper()} rejected the request while {stage}. Check that the USDT perpetual account is enabled and its account mode is supported by the API.') from error
             raise
         with self.lock:
             previous = self.clients.pop(venue, None)
@@ -94,7 +111,8 @@ class LiveExchange:
             rows=[]
             for venue in self.clients:
                 row=dict(venue=venue, connected=True, symbol=self.markets[venue]['symbol'],
-                         contractSize=self.markets[venue].get('contractSize'),position=None)
+                         contractSize=self.markets[venue].get('contractSize'),position=None,
+                         executionError=self.execution_error(self.clients[venue]))
                 try:
                     active=[p for p in self.positions(venue) if float(p.get('contracts') or 0)!=0]
                     if len(active)==1:
@@ -115,11 +133,61 @@ class LiveExchange:
             raise ValueError(f'Connect {venue.upper()} before placing orders')
         return exchange, market
 
+    @staticmethod
+    def execution_error(exchange) -> str | None:
+        if exchange.options.get('localAccountApi') == 'classic':
+            return 'HTX classic account detected. Account monitoring is available; manage orders on HTX until classic execution is supported.'
+        return None
+
+    def execution_client(self, venue: str):
+        exchange, market = self._get(venue)
+        error = self.execution_error(exchange)
+        if error:
+            raise ValueError(error)
+        return exchange, market
+
+    def overview(self, venue: str) -> dict:
+        exchange, market = self._get(venue)
+        result = dict(venue=venue, symbol=market['symbol'], market=None,
+                      balance=None, positions=None, orders=None, errors={})
+        contract_size = float(market.get('contractSize') or 1)
+        # Isolate failures so a missing endpoint never looks like a flat account.
+        for section in ('market', 'balance', 'positions', 'orders'):
+            try:
+                if section == 'market':
+                    ticker = exchange.fetch_ticker(market['symbol'])
+                    result[section] = {key: ticker.get(key) for key in
+                                       ('last', 'bid', 'ask', 'high', 'low', 'percentage', 'quoteVolume', 'timestamp')}
+                elif section == 'balance':
+                    balance = self.account_balance(exchange, venue)
+                    if balance.get('total', {}).get('USDT') is None:
+                        raise ValueError('USDT balance unavailable')
+                    result[section] = {key: balance.get(key, {}).get('USDT') for key in ('total', 'free', 'used')}
+                elif section == 'positions':
+                    result[section] = [dict(side=p.get('side'),
+                        quantity=abs(float(p.get('contracts') or 0)) * contract_size,
+                        **{key: p.get(key) for key in ('entryPrice', 'markPrice', 'unrealizedPnl', 'leverage', 'liquidationPrice', 'marginMode', 'initialMargin', 'percentage')})
+                        for p in self.positions(venue) if float(p.get('contracts') or 0) != 0]
+                else:
+                    if not exchange.has.get('fetchOpenOrders'):
+                        result['errors'][section] = 'Open orders are unavailable through this exchange adapter.'
+                        continue
+                    result[section] = [dict(id=o.get('id'), side=o.get('side'), type=o.get('type'),
+                        price=o.get('price'), triggerPrice=o.get('triggerPrice') or o.get('stopPrice'),
+                        quantity=None if o.get('amount') is None else float(o['amount']) * contract_size,
+                        filled=None if o.get('filled') is None else float(o['filled']) * contract_size,
+                        status=o.get('status')) for o in self.open_orders(venue)]
+            except Exception:
+                result['errors'][section] = f'{section.capitalize()} could not be refreshed. Check exchange API access and retry.'
+        result['updatedAt'] = time.time() * 1000
+        result['executionError'] = self.execution_error(exchange)
+        return result
+
     def market_order(self, venue: str, side: Literal['buy', 'sell'], quantity: float,
                      *, reduce_only: bool = False):
         if side not in ('buy', 'sell') or not isinstance(quantity, (int, float)) or quantity <= 0:
             raise ValueError('Order side and XAG quantity must be valid and positive')
-        exchange, market = self._get(venue)
+        exchange, market = self.execution_client(venue)
         size = float(quantity) / float(market.get('contractSize') or 1)
         amount = float(exchange.amount_to_precision(market['symbol'], size))
         if amount <= 0 or amount < float(market.get('limits', {}).get('amount', {}).get('min') or 0):
@@ -171,7 +239,7 @@ class LiveExchange:
     def _close_position_locked(self, venue: str):
         if self.auto_bot and self.auto_bot.running and self.auto_bot.venue == venue:
             raise ValueError('Stop the automated strategy before manually closing its position')
-        exchange, market = self._get(venue)
+        exchange, market = self.execution_client(venue)
         positions = self.positions(venue)
         active = [position for position in positions if float(position.get('contracts') or 0) != 0]
         if not active:
@@ -211,10 +279,41 @@ class LiveExchange:
         exchange, market = self._get(venue)
         return exchange.cancel_order(order_id, market['symbol'], {'trigger': True})
 
+    @staticmethod
+    def account_balance(exchange, venue: str) -> dict:
+        if venue != 'htx':
+            return exchange.fetch_balance()
+        if exchange.options.get('localAccountApi') == 'classic':
+            return classic_balance(exchange)
+        import ccxt
+        try:
+            balance = exchange.fetch_balance({'type': 'swap', 'subType': 'linear'})
+        except (ccxt.AuthenticationError, ccxt.NotSupported) as v5_error:
+            # A classic-account key can be rejected by V5 before returning a balance.
+            # Confirm access through the classic API before declaring the key invalid.
+            try:
+                balance = classic_balance(exchange)
+            except Exception:
+                raise v5_error
+            exchange.options['localAccountApi'] = 'classic'
+            return balance
+        if balance.get('total', {}).get('USDT') is None:
+            balance = classic_balance(exchange)
+            exchange.options['localAccountApi'] = 'classic'
+        return balance
+
+    def open_orders(self, venue: str) -> list[dict]:
+        exchange, market = self._get(venue)
+        if venue == 'htx' and exchange.options.get('localAccountApi') == 'classic':
+            return classic_orders(exchange, market)
+        return exchange.fetch_open_orders(market['symbol'])
+
     def positions(self, venue: str):
         exchange, market = self._get(venue)
         if not exchange.has.get('fetchPositions'):
             raise ValueError(f'{venue.upper()} position query is not supported by the installed exchange adapter')
+        if venue == 'htx' and exchange.options.get('localAccountApi') == 'classic':
+            return classic_positions(exchange, market)
         return exchange.fetch_positions([market['symbol']])
 
 
@@ -244,7 +343,7 @@ class AutomaticLiveBot:
                         position=self.position,error=self.error)
 
     def start(self, venue, request):
-        exchange, market = self.service._get(venue)
+        exchange, market = self.service.execution_client(venue)
         if self.running:
             raise ValueError('Stop the current live strategy before starting another')
         active = [p for p in self.service.positions(venue) if float(p.get('contracts') or 0) != 0]
