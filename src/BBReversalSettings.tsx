@@ -1,3 +1,4 @@
+import {useState} from 'react';
 import type {BacktestSettings} from './types';
 
 export const bbDefaults: BacktestSettings['bb_reversal'] = {
@@ -7,6 +8,12 @@ export const bbDefaults: BacktestSettings['bb_reversal'] = {
   trail_distance:.3,trail_multiplier:2,sma_length:30,sma_slope_bars:3,
   counter_profit_pct:75,counter_sl_pct:75,quantity:1,use_sma_trend_adjustment:true,amount_per_trade:100,amount_unit:'percent',
 };
+const starterModes: {name:string;description:string;timeframe:BacktestSettings['entry_timeframe'];parameters:Partial<BacktestSettings['bb_reversal']>}[] = [
+  {name:'Smaller losses',description:'Small allocation and tighter initial stop. Tight stops can increase losing trade count.',timeframe:'15m',parameters:{amount_per_trade:10,initial_sl:.3,trail_trigger:.45,trail_distance:.2,bb_mult:3,min_bb_width_pct:1,adx_threshold:25}},
+  {name:'Profit potential',description:'Allows winners more room before trailing. Can give back more open profit.',timeframe:'15m',parameters:{amount_per_trade:15,initial_sl:.4,trail_trigger:1.2,trail_distance:.4,bb_mult:2.8,min_bb_width_pct:.8,adx_threshold:22}},
+  {name:'Win-rate focus',description:'Stricter entry filters and earlier trailing. May produce fewer trades and smaller winners.',timeframe:'15m',parameters:{amount_per_trade:10,initial_sl:.5,trail_trigger:.35,trail_distance:.2,bb_mult:3.2,min_bb_width_pct:1.2,adx_threshold:28}},
+  {name:'More trades',description:'Shorter candles and looser filters. More activity can increase losses and execution costs.',timeframe:'5m',parameters:{amount_per_trade:5,initial_sl:.3,trail_trigger:.45,trail_distance:.2,bb_mult:2.3,min_bb_width_pct:.5,adx_threshold:15}},
+];
 const fields: [Exclude<keyof typeof bbDefaults,'trade_mode'|'rsi_exit_enabled'|'use_sma_trend_adjustment'|'amount_unit'|'amount_per_trade'>,string,number,number,number][] = [
   ['bb_length','BB length',1,1000,1],['bb_mult','BB multiplier',.1,100,.1],
   ['min_bb_width_pct','Minimum BB width (%)',0,100,.1],['atr_length','ATR length',1,500,1],
@@ -21,9 +28,11 @@ const fields: [Exclude<keyof typeof bbDefaults,'trade_mode'|'rsi_exit_enabled'|'
 ];
 export default function BBReversalSettings({settings,onChange}:{settings:BacktestSettings;onChange:(s:BacktestSettings)=>void}) {
   const config=settings.bb_reversal;
+  const [modeMessage,setModeMessage]=useState('');
   const renderFields=(keys:string[])=>fields.filter(([key])=>keys.includes(key)).map(([key,label,min,max])=><label key={key}>{label}<input type="number" required min={min} max={max} step="any" value={config[key]} onChange={e=>onChange({...settings,bb_reversal:{...config,[key]:Number(e.target.value)}})}/></label>);
   return <div className="exit-settings"><h3>BB Outer Band Reversal + Trailing SL</h3>
     <p>BB Outer Band Reversal + Trailing SL. Both directions, alternating entries, with ATR and ADX confirmation. Changes apply to your next backtest or new virtual session.</p>
+    <section className="settings-section" aria-label="Starter parameter modes"><h3>Choose a starting mode</h3><p>Four unvalidated starting configurations for the original BB bot. All use 1? leverage and limited allocation. Stop distances are XAG price units; actual losses can exceed planned stops on gaps. Compare the same date range before selecting a mode.</p><div className="tune-candidate-grid">{starterModes.map(mode=><article className="tune-candidate-card" key={mode.name}><h3>{mode.name}</h3><p>{mode.description}</p><dl><div><dt>Timeframe</dt><dd>{mode.timeframe}</dd></div><div><dt>Allocation</dt><dd>{mode.parameters.amount_per_trade}%</dd></div><div><dt>Initial stop</dt><dd>{mode.parameters.initial_sl}</dd></div><div><dt>Trail activation / distance</dt><dd>{mode.parameters.trail_trigger} / {mode.parameters.trail_distance}</dd></div></dl><button type="button" className="secondary" onClick={()=>{onChange({...settings,entry_timeframe:mode.timeframe,max_leverage:1,bb_reversal:{...bbDefaults,...mode.parameters,amount_unit:'percent',trail_multiplier:1}});setModeMessage(`${mode.name} applied to your draft. Run a full backtest to measure its results.`);}}>Apply {mode.name.toLowerCase()}</button></article>)}</div>{modeMessage&&<p role="status">{modeMessage}</p>}</section>
     <div className="settings-section" id="settings-execution"><h3>Execution & allocation</h3>
     <div className="settings-grid"><label>Execution timeframe<select value={settings.entry_timeframe} onChange={e=>onChange({...settings,entry_timeframe:e.target.value as BacktestSettings['entry_timeframe']})}>{['1m','3m','5m','10m','15m','30m','1h','4h','1d'].map(tf=><option key={tf}>{tf}</option>)}</select></label>
     <label>Leverage (x)<input aria-label="Leverage" type="number" required min={1} max={100} step={.5} value={settings.max_leverage} onChange={e=>onChange({...settings,max_leverage:Number(e.target.value)})}/></label>
