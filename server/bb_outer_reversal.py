@@ -5,7 +5,7 @@ Input: chronological, completed OHLC candles in a pandas DataFrame.
 Output: bars (indicators/signals/equity), closed trades, and any open position.
 Market entries/reversals fill at close. Previously submitted stops fill intrabar,
 at open on gaps. Trailing stops calculated at close apply from that close onward;
-if already crossed they fill at close. No commission, slippage or margin model.
+if already crossed they fill at close. Configurable commission, adverse fills and prorated funding; no margin model.
 Prices/distances are in instrument price units; quantity defaults to one unit.
 Missing candles are rejected. No weekend/session filter is added by this strategy.
 """
@@ -19,6 +19,8 @@ from .indicators import atr, rsi
 
 @dataclass(frozen=True)
 class Settings:
+    reward_risk: float = 0.0
+    risk_per_trade_pct: float = 0.5
     trade_mode: str = 'Both'
     bb_length: int = 20
     bb_mult: float = 3.0
@@ -51,6 +53,10 @@ class Settings:
     rsi_exit_long: float = 85.
 
     def __post_init__(self):
+        if not np.isfinite(self.reward_risk) or not 0 <= self.reward_risk <= 10:
+            raise ValueError('Reward/risk must be between 0 and 10')
+        if not np.isfinite(self.risk_per_trade_pct) or not 0 < self.risk_per_trade_pct <= 5:
+            raise ValueError('Risk per trade must be between 0 and 5 percent')
         if not isinstance(self.rsi_exit_enabled, bool):
             raise ValueError('RSI exit enabled must be boolean')
         if isinstance(self.rsi_exit_length, bool) or not isinstance(self.rsi_exit_length, int) or not 1 <= self.rsi_exit_length <= 500:
@@ -164,13 +170,16 @@ def calculate(frame, settings=None, *, bar_seconds=None):
 
 
 def run_backtest(frame, settings=None, *, start=None, close_at_end=False, bar_seconds=None,
-                prepared_bars=None):
+                prepared_bars=None, fee_bps=0., slippage=0., spread=0., funding_bps=0.):
     """Run completed bars; retain open positions at the end (as Pine does).
 
     Does not reproduce TradingView margin liquidation, bar magnifier, or tick
     rounding. Set min_tick to the instrument's syminfo.mintick equivalent.
     """
+    if not all(np.isfinite(v) for v in (fee_bps, slippage, spread, funding_bps)) or min(fee_bps, slippage, spread) < 0:
+        raise ValueError('Execution costs must be finite; fees, slippage and spread must be nonnegative')
     s = settings or Settings()
+    adverse = slippage+spread/2
     bars = prepared_bars if prepared_bars is not None else calculate(frame, s, bar_seconds=bar_seconds)
     if start is not None:
         bars = bars.loc[bars.index >= start]
@@ -179,28 +188,54 @@ def run_backtest(frame, settings=None, *, start=None, close_at_end=False, bar_se
     cash, last_direction = s.initial_capital, 0
     lower_touch = upper_touch = None
 
+    def accrue_funding(time):
+        nonlocal cash
+        if position is None:
+            return
+        stamp = float(time.timestamp()) if hasattr(time, 'timestamp') else float(time)
+        elapsed = stamp-position['funding_time']
+        charge = position['entry_price']*position['quantity']*funding_bps/10000*position['direction']*max(0, elapsed)/(8*3600)
+        cash -= charge
+        position['funding'] += charge
+        position['funding_time'] = stamp
+
     def close_position(time, price, reason):
         nonlocal cash, position
-        pnl = (price-position['entry_price']) * position['direction'] * position['quantity']
-        cash += pnl
-        trades.append(dict(**position, exit_time=time, exit_price=float(price),
-                           exit_reason=reason, pnl=float(pnl)))
+        accrue_funding(time)
+        d, q = position['direction'], position['quantity']
+        fill = price-d*adverse
+        exit_fee = abs(fill*q)*fee_bps/10000
+        filled_gross = (fill-position['entry_price'])*d*q
+        fees = position['entry_fee']+exit_fee
+        pnl = filled_gross-fees-position['funding']
+        cash += filled_gross-exit_fee
+        gross = (price-position['reference_entry'])*d*q
+        trades.append(dict(**position, exit_time=time, exit_price=float(fill),
+                           exit_reason=reason, pnl=float(pnl), gross_pnl=float(gross),
+                           fees=float(fees), execution_cost=float(gross-filled_gross)))
         position = None
 
-    for i, (time, bar) in enumerate(bars.iterrows()):
+    for i, bar in enumerate(bars.itertuples()):
+        time = bar.Index
         if bar_seconds and i and (time-bars.index[i-1]).total_seconds() > bar_seconds:
             if position is not None:
                 close_position(bars.index[i-1], bars.close.iloc[i-1], 'data_gap')
             lower_touch = upper_touch = None
         if position is not None:
+            accrue_funding(time)
             stop, direction = position['stop'], position['direction']
             if direction == 1 and bar.low <= stop:
                 close_position(time, min(bar.open, stop), 'stop')
             elif direction == -1 and bar.high >= stop:
                 close_position(time, max(bar.open, stop), 'stop')
 
-        if position is not None and s.rsi_exit_enabled:
-            exit_rsi = bar.get('exit_rsi', np.nan)
+        if position is not None and s.reward_risk > 0:
+            target = position['target']
+            if (position['direction'] == 1 and bar.high >= target) or (position['direction'] == -1 and bar.low <= target):
+                close_position(time, target, 'profit_target')
+
+        if position is not None and s.rsi_exit_enabled and s.reward_risk == 0:
+            exit_rsi = getattr(bar, 'exit_rsi', np.nan)
             # User-defined upward price difference for BOTH sides, not directional profit.
             price_condition = bar.close > position['entry_price']+s.rsi_exit_move
             rsi_condition = (exit_rsi < s.rsi_exit_short if position['direction'] == -1
@@ -230,6 +265,8 @@ def run_backtest(frame, settings=None, *, start=None, close_at_end=False, bar_se
             direction = 1
         elif allowed and short_rebound and last_direction != -1 and s.trade_mode != 'Long Only':
             direction = -1
+        if position is not None and s.reward_risk > 0:
+            direction = 0
         activated = False
         if direction:
             if position is not None:
@@ -243,15 +280,22 @@ def run_backtest(frame, settings=None, *, start=None, close_at_end=False, bar_se
             scale = s.counter_profit_pct/100 if counter else 1
             amount = cash*s.amount_per_trade/100 if s.amount_unit == 'percent' else min(s.amount_per_trade, cash)
             quantity = s.quantity if s.leverage is None else amount*s.leverage/bar.close
-            position = dict(direction=direction, entry_time=time, entry_price=float(bar.close), quantity=float(quantity),
-                            stop=float(bar.close-direction*sl), initial_stop=float(bar.close-direction*sl), extreme=float(bar.close),
+            entry = float(bar.close)+direction*adverse
+            if s.reward_risk > 0:
+                quantity = min(quantity, cash*s.risk_per_trade_pct/100/(sl+2*adverse+2*abs(entry)*fee_bps/10000))
+            entry_fee = abs(entry*quantity)*fee_bps/10000
+            cash -= entry_fee
+            position = dict(reference_entry=float(bar.close), entry_fee=entry_fee, funding=0., funding_time=float(time.timestamp()) if hasattr(time, 'timestamp') else float(time),
+                            target=(entry+direction*(s.reward_risk*sl+2*adverse+2*abs(entry)*fee_bps/10000)) if s.reward_risk > 0 else None,
+                            direction=direction, entry_time=time, entry_price=entry, quantity=float(quantity),
+                            stop=float(entry-direction*sl), initial_stop=float(entry-direction*sl), extreme=float(bar.close),
                             trailing_active=False, countertrend=bool(counter),
                             trail_trigger=max(minimum, s.trail_trigger*s.trail_multiplier*scale),
                             trail_distance=max(minimum, s.trail_distance*s.trail_multiplier*scale))
             position['stop_history'] = [dict(time=int(time.timestamp()) if hasattr(time, 'timestamp') else int(time),
                                              price=position['stop'], reason='initial')]
             last_direction = direction
-        elif position is not None:
+        elif position is not None and s.reward_risk == 0:
             p = position
             d = p['direction']
             p['extreme'] = max(p['extreme'], bar.high) if d == 1 else min(p['extreme'], bar.low)

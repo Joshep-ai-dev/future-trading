@@ -18,6 +18,39 @@ class BBOuterReversalTests(unittest.TestCase):
         with patch('server.bb_outer_reversal.calculate', return_value=bars):
             return run_backtest(bars, Settings(**kwargs))
 
+    def test_costs_reduce_net_pnl_and_reconcile_cash(self):
+        bars = self.bars([(99.5, 100.5, 98.9, 100.), (100., 100.2, 99.8, 100.)])
+        bars.index = pd.date_range('2026-01-01', periods=2, freq='8h', tz='UTC')
+        cfg = Settings(initial_capital=1000, leverage=1, amount_per_trade=100)
+        result = run_backtest(bars, cfg, prepared_bars=bars, close_at_end=True,
+                              fee_bps=5, slippage=.01, spread=.02, funding_bps=1)
+        trade = result['trades'].iloc[0]
+        self.assertAlmostEqual(trade.execution_cost, .4)
+        self.assertGreater(trade.fees, 0)
+        self.assertGreater(trade.funding, 0)
+        self.assertAlmostEqual(trade.pnl, trade.gross_pnl-trade.execution_cost-trade.fees-trade.funding)
+        self.assertAlmostEqual(result['cash'], 1000+trade.pnl)
+
+    def test_positive_funding_credits_short_positions(self):
+        bars = self.bars([(100.5, 101.2, 99.8, 100.), (100., 100.2, 99.8, 100.)])
+        bars.index = pd.date_range('2026-01-01', periods=2, freq='8h', tz='UTC')
+        result = run_backtest(bars, Settings(use_sma_trend_adjustment=False), prepared_bars=bars,
+                              close_at_end=True, funding_bps=10)
+        trade = result['trades'].iloc[0]
+        self.assertLess(trade.funding, 0)
+        self.assertGreater(trade.pnl, 0)
+        self.assertAlmostEqual(result['cash'], 10000+trade.pnl)
+
+    def test_two_to_one_mode_holds_past_small_profit(self):
+        bars = self.bars([(99.5, 100.5, 98.9, 100.),
+                          (100., 100.8, 99.8, 100.5),
+                          (100.5, 101.2, 100.4, 101.)])
+        result = self.run_bars(bars, reward_risk=2, initial_capital=1000, leverage=10)
+        trade = result['trades'].iloc[0]
+        self.assertEqual(trade.exit_reason, 'profit_target')
+        self.assertAlmostEqual(trade.pnl, 10.)
+        self.assertAlmostEqual(trade.quantity*.5, 5.)
+
     def test_wilder_seed_and_population_deviation(self):
         np.testing.assert_allclose(_rma([np.nan, 2, 4, 6], 2), [np.nan, np.nan, 3, 4.5], equal_nan=True)
         frame = pd.DataFrame(dict(open=[1., 3., 5.], high=[2., 4., 6.],

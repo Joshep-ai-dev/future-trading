@@ -10,35 +10,38 @@ import {readIndicatorSettings} from './IndicatorSettings';
 import {useChartIndicatorSelection,toggleChartIndicator} from './chartIndicatorSelection';
 import {fmt, type Analysis, type PeriodResult, type Trade, type IndicatorPoint, type BacktestSettings} from './types';
 
-export function EquityChart({period,initialValue,intervalSeconds=60}: {
-  period: Pick<PeriodResult,'name'|'equity'>; initialValue?:number; intervalSeconds?:number;
+export function EquityChart({period,initialValue=0,trades}: {
+  period: Pick<PeriodResult,'name'>; initialValue?:number; trades:{pnl:number}[];
 }) {
-  const timeZone=useChartTimeZone();
-  const ref = useRef<HTMLDivElement>(null);
-  const chartRef = useRef<IChartApi|null>(null);
-  const lineRef = useRef<ISeriesApi<'Line'>|null>(null);
-  const hasData = useRef(false);
-  const seriesName = useRef(period.name);
-  useEffect(() => {
-    if (!ref.current) return;
-    const chart = createChart(ref.current, {autoSize:false, ...chartInteraction, localization:chartTimeOptions(readChartTimeZone()).localization, layout:{background:{type:ColorType.Solid,color:'#10141d'},textColor:'#7d8da5'},rightPriceScale:{scaleMargins:{top:.16,bottom:.16},borderColor:'#263246'},timeScale:{timeVisible:true,minBarSpacing:2,lockVisibleTimeRangeOnResize:true,...chartTimeOptions(readChartTimeZone()).timeScale},grid:{vertLines:{visible:false},horzLines:{color:'#202836'}}});
+  const ref=useRef<HTMLDivElement>(null);
+  const chartRef=useRef<IChartApi|null>(null);
+  const lineRef=useRef<ISeriesApi<'Line'>|null>(null);
+  const hasData=useRef(false);
+  const tradeLabel=(time:unknown)=>Number(time)===86400?'Start':`Trade #${Math.round(Number(time)/86400)-1}`;
+  useEffect(()=>{
+    if(!ref.current)return;
+    const chart=createChart(ref.current,{autoSize:false,...chartInteraction,
+      localization:{timeFormatter:tradeLabel},
+      layout:{background:{type:ColorType.Solid,color:'#10141d'},textColor:'#7d8da5'},
+      rightPriceScale:{scaleMargins:{top:.16,bottom:.16},borderColor:'#263246'},
+      timeScale:{timeVisible:false,minBarSpacing:2,lockVisibleTimeRangeOnResize:true,tickMarkFormatter:tradeLabel},
+      grid:{vertLines:{visible:false},horzLines:{color:'#202836'}}});
     chartRef.current=chart;
     lineRef.current=chart.addSeries(LineSeries,{color:'#6ce4bc',lineWidth:2,priceLineVisible:false,lastValueVisible:false,
-      crosshairMarkerVisible:true,priceFormat:{type:'price',precision:2,minMove:.01},title:'Net equity'});
+      crosshairMarkerVisible:true,priceFormat:{type:'price',precision:2,minMove:.01},title:'Balance after trade'});
     const stopResize=resizeChart(chart,ref.current,()=>chart.timeScale().fitContent());
     return ()=>{stopResize();lineRef.current=null;chartRef.current=null;hasData.current=false;chart.remove();};
   },[]);
-  useEffect(()=>{const options=chartTimeOptions(timeZone);chartRef.current?.applyOptions({localization:options.localization,timeScale:options.timeScale});},[timeZone]);
   useEffect(()=>{
-    const points=period.equity.map(p=>({...p,time:p.time as UTCTimestamp}));
-    if(points.length&&initialValue!==undefined&&Math.abs(points[0].value-initialValue)>.000001){
-      points.unshift({time:(points[0].time-intervalSeconds) as UTCTimestamp,value:initialValue});
-    }
+    let balance=initialValue;
+    const points=[{time:86400 as UTCTimestamp,value:balance},...trades.map((trade,index)=>{
+      balance+=trade.pnl;
+      return {time:((index+2)*86400) as UTCTimestamp,value:balance};
+    })];
     lineRef.current?.setData(points);
-    if((!hasData.current||seriesName.current!==period.name)&&period.equity.length){chartRef.current?.timeScale().fitContent();hasData.current=true;}
-    seriesName.current=period.name;
-  },[period.equity,period.name,initialValue,intervalSeconds]);
-  return <><ChartTools chartRef={chartRef} valueLabel="Amount"/><div className="chart-resize equity-resize"><div ref={ref} className="chart-container equity-chart" aria-label={`${period.name} equity after trading costs`}/></div></>;
+    if(!hasData.current&&trades.length){chartRef.current?.timeScale().fitContent();hasData.current=true;}
+  },[trades,initialValue]);
+  return <><ChartTools chartRef={chartRef} valueLabel="Amount" horizontalLabel="Trades"/><div className="chart-resize equity-resize"><div ref={ref} className="chart-container equity-chart" aria-label={`${period.name} account balance after each closed trade, including trading costs`}/></div></>;
 }
 
 export default function BacktestChart({candles,trades,selected,onSelect,indicators,barSeconds,timeframe,indicatorSettings}: {indicatorSettings: BacktestSettings; indicators: IndicatorPoint[]; barSeconds: number; timeframe: string; candles: Analysis['candles']; trades: Trade[]; selected: Trade | null; onSelect: (trade: Trade)=>void}) {

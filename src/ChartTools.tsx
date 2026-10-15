@@ -18,9 +18,9 @@ export function resizeChart(chart:IChartApi,element:HTMLDivElement,initialView:(
   return ()=>observer.disconnect();
 }
 
-export default function ChartTools({chartRef,valueLabel='Price',endLabel='Latest',onLatest,onEarlier,onNavigate,loading=false,hasMore=false,indicators,onToggleIndicator,follow,onFollowChange,showEarlier=false}: {
+export default function ChartTools({chartRef,valueLabel='Price',horizontalLabel='Time',endLabel='Latest',onLatest,onEarlier,onNavigate,loading=false,hasMore=false,indicators,onToggleIndicator,follow,onFollowChange,showEarlier=false}: {
   chartRef: {current:IChartApi|null}; valueLabel?:string; onLatest?:()=>void;
-  endLabel?:string;
+  endLabel?:string;horizontalLabel?:string;
   onEarlier?:()=>void; loading?:boolean; hasMore?:boolean;
   onNavigate?:()=>void;
   indicators?:{atr:boolean;adx:boolean;rsi:boolean};onToggleIndicator?:(key:'atr'|'adx'|'rsi')=>void;
@@ -47,7 +47,7 @@ export default function ChartTools({chartRef,valueLabel='Price',endLabel='Latest
   }
   return <div className="chart-actions">
     <div className="chart-toolbar" role="group" aria-label={`${valueLabel} chart controls`}>
-      <div><span>Time</span><button className="secondary" type="button" aria-label="Zoom in time" onClick={()=>zoomTime(.7)}>+</button><button className="secondary" type="button" aria-label="Zoom out time" onClick={()=>zoomTime(1/.7)}>−</button></div>
+      <div><span>{horizontalLabel}</span><button className="secondary" type="button" aria-label={`Zoom in ${horizontalLabel.toLowerCase()}`} onClick={()=>zoomTime(.7)}>+</button><button className="secondary" type="button" aria-label={`Zoom out ${horizontalLabel.toLowerCase()}`} onClick={()=>zoomTime(1/.7)}>−</button></div>
       <div><span>{valueLabel}</span><button className="secondary" type="button" aria-label={`Zoom in ${valueLabel.toLowerCase()}`} onClick={()=>zoomValue(.7)}>+</button><button className="secondary" type="button" aria-label={`Zoom out ${valueLabel.toLowerCase()}`} onClick={()=>zoomValue(1/.7)}>−</button></div>
       <button className="secondary" type="button" onClick={reset}>Fit / reset</button>
       {onLatest&&<button className="secondary" type="button" onClick={onLatest}>{endLabel}</button>}

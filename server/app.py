@@ -71,6 +71,13 @@ class LiveBotStartRequest(BBBacktestRequest):
     venue: Literal['okx','htx','mexc','binance']
     confirmation: Literal['START LIVE STRATEGY']
 
+    @model_validator(mode='after')
+    def supported_exits(self):
+        if self.bb_reversal.get('reward_risk', 0) > 0:
+            raise ValueError('Fixed reward/risk target mode currently supports backtests and paper sessions only')
+        return self
+
+
 
 @app.post('/api/chart-view')
 def session_chart(parameters: ChartViewRequest):

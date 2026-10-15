@@ -106,7 +106,7 @@ class PaperTradingTests(unittest.TestCase):
                 clock[0]=int(index[2].timestamp())
                 service.advance()
                 self.assertEqual(service.state['openPosition']['direction'],1)
-                self.assertEqual(service.state['balance'],1000)
+                self.assertAlmostEqual(service.state['balance'],1000-service.state['openPosition']['entry_fee'])
                 service.advance()
                 self.assertEqual(service.state['trades'],[])
                 restarted=PaperTrading(path,loader=loader,now=lambda:clock[0])

@@ -22,7 +22,8 @@ def run_bb_reversal_backtest(frame, settings):
     def period(left, right, name):
         subset = clean.loc[clean.index + pd.Timedelta(seconds=duration) <= pd.Timestamp(right, unit='s', tz='UTC')]
         result = run_backtest(subset, config, start=pd.Timestamp(left, unit='s', tz='UTC'),
-                              close_at_end=True, bar_seconds=duration)
+                              close_at_end=True, bar_seconds=duration, fee_bps=settings.fee_bps,
+                              slippage=settings.slippage, spread=settings.spread, funding_bps=settings.funding_bps)
         trades, balance = [], settings.capital
         for i, trade in enumerate(result['trades'].to_dict('records')):
             balance += trade['pnl']
@@ -34,9 +35,9 @@ def run_bb_reversal_backtest(frame, settings):
                 entryTime=entry_time, exitTime=exit_time, entry=trade['entry_price'], exit=trade['exit_price'],
                 stop=initial_stop, initialStop=initial_stop, finalStop=trade['stop'], stopHistory=history,
                 trailActivationPrice=trade['entry_price']+trade['direction']*trade['trail_trigger'],
-                initialRisk=risk, target=None, trigger=None, sweepLevel=None, quantity=trade['quantity'],
-                riskBudget=risk, plannedRisk=risk, netPnl=trade['pnl'], grossPnl=trade['pnl'],
-                fees=0., funding=0., executionCost=0., netR=trade['pnl']/risk, balance=balance,
+                initialRisk=risk, target=trade.get('target'), trigger=None, sweepLevel=None, quantity=trade['quantity'],
+                riskBudget=risk, plannedRisk=risk, netPnl=trade['pnl'], grossPnl=trade['gross_pnl'],
+                fees=trade['fees'], funding=trade['funding'], executionCost=trade['execution_cost'], netR=trade['pnl']/risk, balance=balance,
                 exitReason=trade['exit_reason'], session='continuous', ambiguous=False, obstacle=None,
                 signalLabel='BB outer-band rebound', signalCloseTime=entry_time+duration,
                 swingHighs=[], swingLows=[], period=name))

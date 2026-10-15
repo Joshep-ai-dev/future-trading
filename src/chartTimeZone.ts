@@ -37,10 +37,10 @@ function subscribe(listener:()=>void){
 }
 
 export function useChartTimeZone(){
-  return useSyncExternalStore(subscribe,readChartTimeZone,()=> 'UTC');
+  return useSyncExternalStore<ChartTimeZone>(subscribe,readChartTimeZone,()=> 'UTC');
 }
 
-function timestamp(time:Time):number{
+function timestamp(time:Time|number):number{
   if(typeof time==='number')return time;
   if(typeof time==='string')return Date.parse(`${time}T00:00:00Z`)/1000;
   return Date.UTC(time.year,time.month-1,time.day)/1000;
@@ -48,7 +48,7 @@ function timestamp(time:Time):number{
 
 function zone(value:ChartTimeZone):string{return value;}
 
-export function formatChartTime(time:Time,value:ChartTimeZone,locale?:string){
+export function formatChartTime(time:Time|number,value:ChartTimeZone,locale?:string){
   return new Intl.DateTimeFormat(locale,{timeZone:zone(value),year:'numeric',month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23',timeZoneName:'short'}).format(new Date(timestamp(time)*1000));
 }
 

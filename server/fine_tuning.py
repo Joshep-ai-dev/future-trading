@@ -15,7 +15,7 @@ from .strategy import seconds
 
 TRIALS = 64
 ADAPTIVE_TRIALS = 16
-SHORTLIST = 5
+SHORTLIST = 4
 ML_HYPERPARAMETER_TRIALS = 6
 PARAMETERS = (
     'bb_length', 'bb_mult', 'min_bb_width_pct',
@@ -42,7 +42,7 @@ def _candidate_space(base):
             space[name] = list(CATEGORIES[name])
         elif isinstance(value, bool):
             space[name] = [False, True]
-        elif isinstance(value, int):
+        elif name in INTEGER_PARAMETERS:
             maximum = INTEGER_PARAMETERS[name]
             space[name] = sorted({
                 min(maximum, max(1, round(value * factor)))
@@ -179,6 +179,9 @@ def _score(result, capital):
         peak = max(peak, value)
         if peak > 0:
             drawdown = min(drawdown, (value / peak - 1) * 100)
+    winners = pnl[pnl > 0]
+    average_win = float(winners.mean()) if len(winners) else 0.
+    average_loss = float(abs(losses.mean())) if len(losses) else 0.
     average_loss_pct = float(abs(losses.mean()) / capital * 100) if len(losses) else 0.
     profit_component = min(100., max(0., 50. + return_pct / 2))
     drawdown_component = max(0., 100. - abs(drawdown))
@@ -186,7 +189,9 @@ def _score(result, capital):
     score = (0.35 * win_rate + 0.35 * profit_component +
              0.20 * drawdown_component + 0.10 * loss_component)
     score *= min(1., count / 20)
-    return dict(score=round(score, 3), trades=count, wins=wins,
+    return dict(averageWin=round(average_win,4), averageLoss=round(average_loss,4),
+                payoffRatio=round(average_win/average_loss,3) if average_loss else None,
+                score=round(score, 3), trades=count, wins=wins,
                 losses=int((pnl < 0).sum()), winRate=round(win_rate, 2),
                 netPnl=round(net_pnl, 4), returnPct=round(return_pct, 3),
                 maxDrawdownPct=round(drawdown, 3), averageLossPct=round(average_loss_pct, 3))
@@ -216,13 +221,15 @@ def fine_tune(frame, request, progress=None):
     if train_end == 0 or validation_end <= train_end or validation_end >= len(reference):
         raise ValueError('Selected range is too short to make train, validation and forward-test periods.')
 
-    def candidate_segments(config):
-        calculated = calculate(clean, config, bar_seconds=duration)
+    def candidate_segments(config, training_only=False):
+        source = clean.loc[clean.index < boundaries[1]] if training_only else clean
+        calculated = calculate(source, config, bar_seconds=duration)
         calculated = calculated.loc[calculated.index >= start]
         return (calculated.loc[(calculated.index >= boundaries[0]) & (calculated.index < boundaries[1])],
                 calculated.loc[(calculated.index >= boundaries[1]) & (calculated.index < boundaries[2])],
                 calculated.loc[(calculated.index >= boundaries[2]) & (calculated.index <= boundaries[3])])
 
+    costs = dict(fee_bps=request.fee_bps, slippage=request.slippage, spread=request.spread, funding_bps=request.funding_bps)
     evaluated = {}
     phase_counts = {}
     def evaluate(params, phase, start_pct, span_pct, total):
@@ -230,8 +237,8 @@ def fine_tune(frame, request, progress=None):
         next_count = phase_counts.get(phase, 0) + 1
         report(min(94, start_pct + int(span_pct * (next_count - .5) / max(1, total))),
                f'{phase}: preparing setting {next_count} of {total}')
-        train, _, _ = candidate_segments(config)
-        result = run_backtest(train, config, close_at_end=True, prepared_bars=train)
+        train, _, _ = candidate_segments(config, training_only=True)
+        result = run_backtest(train, config, close_at_end=True, prepared_bars=train, **costs)
         metrics = _score(result, request.capital)
         evaluated[_parameter_key(params)] = (params, metrics)
         phase_counts[phase] = phase_counts.get(phase, 0) + 1
@@ -239,6 +246,10 @@ def fine_tune(frame, request, progress=None):
                f'{phase}: evaluated {phase_counts[phase]} settings')
 
     initial_candidates = _candidate_set(base, TRIALS, seed=1729)
+    original = {name: getattr(base, name) for name in PARAMETERS}
+    for allocation in (5., 10., 25.):
+        initial_candidates.append({**original, 'amount_unit': 'percent',
+                                   'amount_per_trade': allocation, 'leverage': 1.})
     report(3, f'Testing {len(initial_candidates)} starting settings')
     for params in initial_candidates:
         evaluate(params, 'Initial search', 3, 44, len(initial_candidates))
@@ -287,18 +298,18 @@ def fine_tune(frame, request, progress=None):
     for index, params in enumerate(shortlist):
         config = replace(base, **params)
         _, validation, _ = candidate_segments(config)
-        result = run_backtest(validation, config, close_at_end=True, prepared_bars=validation)
+        result = run_backtest(validation, config, close_at_end=True, prepared_bars=validation, **costs)
         validated.append((_score(result, request.capital),
                           evaluated[_parameter_key(params)][1], params))
         report(85 + int(8 * (index + 1) / len(shortlist)),
                f'Validation: checked {index + 1} of {len(shortlist)} finalists')
-    validated.sort(key=lambda item: (item[0]['score'], item[0]['netPnl'],
+    validated.sort(key=lambda item: (item[0]['netPnl'] > 0 and item[0]['trades'] >= 20, item[0]['score'], item[0]['netPnl'],
                                      item[0]['maxDrawdownPct']), reverse=True)
     candidate_results = []
     for index, (validation_metrics, train_metrics, params) in enumerate(validated, start=1):
         config = replace(base, **params)
         _, _, forward = candidate_segments(config)
-        forward_result = run_backtest(forward, config, close_at_end=True, prepared_bars=forward)
+        forward_result = run_backtest(forward, config, close_at_end=True, prepared_bars=forward, **costs)
         candidate_results.append(dict(
             id=f'case-{index}', rank=index,
             bestParameters=params,

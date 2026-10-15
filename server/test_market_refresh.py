@@ -115,7 +115,7 @@ class BBIntegrationTests(unittest.TestCase):
         self.assertEqual(result['backtest']['name'],'Backtest')
         self.assertIn('bbUpper',result['indicators'][0])
         self.assertIn('trendSma',result['indicators'][0])
-        self.assertEqual(result['backtest']['summary']['fees'],0)
+        self.assertGreater(result['backtest']['summary']['fees'],0)
 
     def test_unknown_or_invalid_strategy_parameters_are_rejected(self):
         from .strategy import BacktestRequest

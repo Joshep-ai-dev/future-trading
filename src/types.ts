@@ -11,7 +11,7 @@ export type BacktestSettings = {
   atr_active: boolean; atr_period: number; atr_multiplier: number;
   ema_fast: number; ema_slow: number; rsi_period: number; rsi_threshold: number; rsi_active: boolean;
   strategy: 'sweep'|'mtf'|'chartart_v12'|'bb_outer_reversal'; bb_period: number; chartart_stop_pct: number;
-  bb_reversal: {rsi_exit_enabled:boolean; rsi_exit_length:number; rsi_exit_move:number; rsi_exit_short:number; rsi_exit_long:number; amount_per_trade:number; amount_unit:'price'|'percent'; use_sma_trend_adjustment:boolean; trade_mode: 'Both'|'Long Only'|'Short Only'; bb_length:number; bb_mult:number; min_bb_width_pct:number; atr_length:number; min_atr:number; adx_length:number; adx_threshold:number; pullback_bars:number; initial_sl:number; trail_trigger:number; trail_distance:number; trail_multiplier:number; sma_length:number; sma_slope_bars:number; counter_profit_pct:number; counter_sl_pct:number; quantity:number};
+  bb_reversal: {reward_risk:number;risk_per_trade_pct:number;rsi_exit_enabled:boolean; rsi_exit_length:number; rsi_exit_move:number; rsi_exit_short:number; rsi_exit_long:number; amount_per_trade:number; amount_unit:'price'|'percent'; use_sma_trend_adjustment:boolean; trade_mode: 'Both'|'Long Only'|'Short Only'; bb_length:number; bb_mult:number; min_bb_width_pct:number; atr_length:number; min_atr:number; adx_length:number; adx_threshold:number; pullback_bars:number; initial_sl:number; trail_trigger:number; trail_distance:number; trail_multiplier:number; sma_length:number; sma_slope_bars:number; counter_profit_pct:number; counter_sl_pct:number; quantity:number};
   exit_condition: 'none'|'ema'|'rsi'|'either';
   stop_mode: 'none'|'fixed'|'breakeven'|'trailing'|'breakeven_trailing';
   direction_active: boolean; direction_timeframe: '15m'|'30m'|'1h'|'4h';
@@ -47,7 +47,7 @@ export type PeriodResult = {
 export type Confirmation = {stage: string; timeframe: string; closeTime: number; ema20: number; ema50: number; rsi20: number | null};
 export type IndicatorPoint = {time: number; ema20: number | null; ema50: number | null; rsi20: number | null; bbBasis?: number | null; bbUpper?: number | null; bbLower?: number | null; trendSma?:number|null; adx?:number|null; atr?:number|null; bbWidthPct?:number|null};
 export type BacktestResult = {strategyName: string; executionTimeframe: string; barSeconds: number; indicators: IndicatorPoint[]; settings: BacktestSettings; backtest: PeriodResult; candles: Analysis['candles']};
-export type TuneMetrics = {score:number;trades:number;wins:number;losses:number;winRate:number;netPnl:number;returnPct:number;maxDrawdownPct:number;averageLossPct:number};
+export type TuneMetrics = {averageWin?:number;averageLoss?:number;payoffRatio?:number|null;score:number;trades:number;wins:number;losses:number;winRate:number;netPnl:number;returnPct:number;maxDrawdownPct:number;averageLossPct:number};
 export type FineTuneCase = {
   id:string;rank:number;bestSettings:BacktestSettings;
   bestParameters:Partial<BacktestSettings['bb_reversal']>&{leverage?:number};

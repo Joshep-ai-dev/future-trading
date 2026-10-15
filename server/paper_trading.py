@@ -198,7 +198,8 @@ class PaperTrading:
             config = replace(Settings(**cfg['bb_reversal']), initial_capital=cfg['capital'],
                 leverage=cfg['max_leverage'], trade_mode='Both', min_tick=cfg['tick_size'], min_tick_unit='price')
             result = run_backtest(frame, config, start=pd.Timestamp(state['tradingFrom'],unit='s',tz='UTC'),
-                                  bar_seconds=duration, close_at_end=finished)
+                                  bar_seconds=duration, close_at_end=finished, fee_bps=cfg.get('fee_bps',0),
+                                  slippage=cfg.get('slippage',0), spread=cfg.get('spread',0), funding_bps=cfg.get('funding_bps',0))
             if result['bars'].empty:
                 state['candles'] = combined
                 self.save()
