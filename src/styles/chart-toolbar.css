@@ -387,3 +387,37 @@
     align-self: stretch;
   }
 }
+
+/* Indicator pane labels: actions appear on hover, like TradingView. */
+.indicator-pane-header {
+  border-color: transparent;
+  background: transparent;
+  transition: background .15s, border-color .15s;
+}
+
+.indicator-pane-header .indicator-pane-actions {
+  display: flex;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity .15s;
+}
+
+.indicator-pane-header:hover,
+.indicator-pane-header:focus-within {
+  border-color: var(--border-strong);
+  background: #12161ce6;
+}
+
+.indicator-pane-header:hover .indicator-pane-actions,
+.indicator-pane-header:focus-within .indicator-pane-actions,
+.indicator-pane-header.is-hidden .indicator-pane-actions {
+  opacity: 1;
+  visibility: visible;
+}
+
+@media (hover: none) {
+  .indicator-pane-header .indicator-pane-actions {
+    opacity: 1;
+    visibility: visible;
+  }
+}
