@@ -491,3 +491,15 @@
 .saved-runs td:last-child {
   width: 1%;
 }
+
+/* Headers and cells share alignment: text left, numbers right */
+.saved-runs th,
+.saved-runs td {
+  text-align: left !important;
+  vertical-align: middle;
+}
+
+.saved-runs th:nth-child(n+5):not(:last-child),
+.saved-runs td:nth-child(n+5):not(:last-child) {
+  text-align: right !important;
+}
