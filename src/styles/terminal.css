@@ -598,23 +598,6 @@ table tbody tr:hover td {
   height: 38px;
 }
 
-.bot-start,
-.bot-start-action {
-  height: 42px;
-  border-radius: 6px;
-  background: var(--green) !important;
-  border-color: var(--green) !important;
-  color: #0b0e11 !important;
-  font-weight: 700;
-}
-
-.bot-pause {
-  height: 42px;
-  background: var(--surface-raised) !important;
-  border: 1px solid var(--border-strong) !important;
-  color: var(--text) !important;
-}
-
 .ticket-segment {
   padding: 3px;
   border-radius: 7px;
@@ -630,20 +613,6 @@ table tbody tr:hover td {
 .ticket-segment button[aria-pressed=true] {
   background: var(--surface-raised) !important;
   color: var(--text) !important;
-}
-
-.ticket-buy {
-  background: var(--green) !important;
-  border-color: var(--green) !important;
-  color: #0b0e11 !important;
-  font-weight: 700;
-}
-
-.ticket-sell {
-  background: var(--red) !important;
-  border-color: var(--red) !important;
-  color: #fff !important;
-  font-weight: 700;
 }
 
 .ticket-market-price,
@@ -842,4 +811,85 @@ table tbody tr:hover td {
 
 .price-panel .chart-history-status:not(.error) {
   display: none;
+}
+
+/* One button system across pages. Primary = blue, secondary = outlined
+   dark; only Open Long / Open Short keep exchange green and red. */
+.ui-button,
+button.secondary,
+.bot-start,
+.bot-pause,
+.resume-button,
+.bot-start-action,
+.ticket-buy,
+.ticket-sell,
+.setup-run,
+.configuration-run-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
+  transition: background .15s, border-color .15s, color .15s;
+}
+
+.ui-button--primary,
+.bot-start,
+.bot-start-action,
+.setup-run {
+  border-color: var(--accent) !important;
+  background: var(--accent) !important;
+  color: #fff !important;
+}
+
+.ui-button--primary:hover:not(:disabled),
+.bot-start:hover:not(:disabled),
+.bot-start-action:hover:not(:disabled),
+.setup-run:hover:not(:disabled) {
+  border-color: #2f6ef5 !important;
+  background: #2f6ef5 !important;
+}
+
+button.secondary,
+.ui-button--secondary,
+.bot-pause,
+.resume-button {
+  border-color: var(--border-strong) !important;
+  background: var(--surface-raised) !important;
+  color: var(--text) !important;
+}
+
+button.secondary:hover:not(:disabled),
+.ui-button--secondary:hover:not(:disabled),
+.bot-pause:hover:not(:disabled),
+.resume-button:hover:not(:disabled) {
+  border-color: #3a424e !important;
+  background: #202630 !important;
+}
+
+.bot-start,
+.bot-pause,
+.resume-button,
+.bot-start-action,
+.setup-run {
+  width: 100%;
+  min-height: 40px;
+}
+
+.ticket-buy {
+  border-color: var(--green) !important;
+  background: var(--green) !important;
+  color: #0b0e11 !important;
+}
+
+.ticket-sell {
+  border-color: var(--red) !important;
+  background: var(--red) !important;
+  color: #fff !important;
 }

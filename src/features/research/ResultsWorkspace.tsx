@@ -21,6 +21,7 @@ export default function ResultsWorkspace({result,busy,stale,onRun,onConfigure,on
   const currentPage=Math.min(page,pages-1);
   const [testerTab,setTesterTab]=useState<'trades'|'balance'|'exits'>('trades');
   const costs=s?s.fees+s.executionCost+s.funding:0;
+  const drawdown=Math.abs(s?.maxDrawdownPct??0),risk=drawdown<10?'Low':drawdown<25?'Moderate':'High';
   const days=p?Math.max(1,Math.round((p.end-p.start)/86400)):0;
   const exits=useMemo(()=>Object.entries((p?.trades??[]).reduce<Record<string,number>>((counts,t)=>{counts[t.exitReason]=(counts[t.exitReason]??0)+1;return counts;},{})),[p]);
   return <>
@@ -28,15 +29,26 @@ export default function ResultsWorkspace({result,busy,stale,onRun,onConfigure,on
     {stale&&<p className="notice">Settings have changed. These results use the previous configuration.</p>}
     {result&&p&&s?<>
       <div className="result-run-line"><span>{result.executionTimeframe} candles</span><span>{result.settings.max_leverage}× leverage</span><span>${fmt(result.settings.capital)} start</span><span>{utc(p.start)} → {utc(p.end)} UTC · {days} days</span><span className="is-muted">Simulated</span></div>
-      <div className="result-strip" role="list" aria-label="Backtest summary">
-        <div role="listitem"><span>Net profit</span><strong className={s.netPnl>=0?'positive':'negative'}>{money(s.netPnl)}</strong><small className={s.returnPct>=0?'positive':'negative'}>{s.returnPct>=0?'+':''}{fmt(s.returnPct)}%</small></div>
-        <div role="listitem"><span>Ending balance</span><strong>${fmt(s.endingBalance)}</strong><small>from ${fmt(result.settings.capital)}</small></div>
-        <div role="listitem"><span>Closed trades</span><strong>{s.trades}</strong><small>{s.wins} W · {s.losses} L</small></div>
-        <div role="listitem"><span>Win rate</span><strong>{fmt(s.winRate)}%</strong><small className="strip-bar" aria-hidden="true"><i style={{width:`${Math.min(100,Math.max(0,s.winRate))}%`}}/></small></div>
-        <div role="listitem" title="Gross wins divided by gross losses. Above 1 is profitable."><span>Profit factor</span><strong className={s.profitFactor===null?'':s.profitFactor>=1?'positive':'negative'}>{s.profitFactor===null?'—':fmt(s.profitFactor)}</strong><small>above 1 = profitable</small></div>
-        <div role="listitem" title="Largest fall of the balance from a previous peak."><span>Max drawdown</span><strong className="negative">{fmt(Math.abs(s.maxDrawdownPct))}%</strong><small>peak to trough</small></div>
-        <div role="listitem" title="Average trade result in units of the planned risk."><span>Avg trade</span><strong className={s.averageR>=0?'positive':'negative'}>{s.averageR>=0?'+':''}{fmt(s.averageR)}R</strong><small>{money(s.trades?s.netPnl/s.trades:0)} per trade</small></div>
-        <div role="listitem" title="Fees plus slippage/spread plus funding over the whole test."><span>Trading costs</span><strong>${fmt(Math.abs(costs))}</strong><small>{costs<0?'net funding received':`fees $${fmt(s.fees)} · funding ${s.funding<0?'+':''}$${fmt(Math.abs(s.funding))}`}</small></div>
+      <div className="result-answers">
+        <section className="result-answer">
+          <header><span>Did it make money?</span><em className={s.netPnl>=0?'tag-good':'tag-bad'}>{s.netPnl>=0?'Profit':'Loss'}</em></header>
+          <strong className={s.netPnl>=0?'positive':'negative'}>{money(s.netPnl)}<small>{s.returnPct>=0?'+':''}{fmt(s.returnPct)}%</small></strong>
+          <p>${fmt(result.settings.capital)} {s.netPnl>=0?'grew':'fell'} to <b>${fmt(s.endingBalance)}</b> in {days} days.</p>
+          <dl><div><dt>Average per trade</dt><dd className={s.netPnl>=0?'positive':'negative'}>{money(s.trades?s.netPnl/s.trades:0)}</dd></div><div><dt>Trading costs</dt><dd>{costs<0?`$${fmt(-costs)} received`:`$${fmt(costs)} paid`}</dd></div></dl>
+        </section>
+        <section className="result-answer">
+          <header><span>How often did it win?</span><em className={s.profitFactor!==null&&s.profitFactor>=1?'tag-good':'tag-bad'}>{s.trades} trades</em></header>
+          <strong>{fmt(s.winRate)}%<small>win rate</small></strong>
+          <div className="answer-bar" aria-hidden="true"><i style={{width:`${Math.min(100,Math.max(0,s.winRate))}%`}}/></div>
+          <div className="answer-bar-legend"><span className="positive">{s.wins} wins</span><span className="negative">{s.losses} losses</span></div>
+          <p>{s.profitFactor===null?'No losing trades to compare against.':<>For every <b>$1</b> lost, winning trades made <b className={s.profitFactor>=1?'positive':'negative'}>${fmt(s.profitFactor)}</b>{s.profitFactor>=1?'.':' — less than was lost.'}</>}</p>
+        </section>
+        <section className="result-answer">
+          <header><span>How risky was it?</span><em className={risk==='Low'?'tag-good':risk==='Moderate'?'tag-warn':'tag-bad'}>{risk} risk</em></header>
+          <strong className="negative">−{fmt(Math.abs(s.maxDrawdownPct))}%<small>max drawdown</small></strong>
+          <p>At its worst, the balance was <b>{fmt(Math.abs(s.maxDrawdownPct))}%</b> below its previous high{result.settings.max_leverage>1?` while using ${result.settings.max_leverage}× leverage`:''}.</p>
+          <dl><div><dt>Average result</dt><dd className={s.averageR>=0?'positive':'negative'}>{s.averageR>=0?'+':''}{fmt(s.averageR)}R <small>(× planned risk)</small></dd></div></dl>
+        </section>
       </div>
       <div className="results-layout result-workspace"><div className="results-main">
         <section className="terminal-panel result-chart price-panel"><TradingChartHeader timeframe={result.executionTimeframe} mode="BACKTEST" caption=""/>

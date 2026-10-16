@@ -1,4 +1,4 @@
-/* Compact TradingView-style performance strip for backtest results. */
+/* Backtest summary: one line of run facts and three plain-language answers. */
 
 .result-run-line {
   display: flex;
@@ -25,93 +25,127 @@
   color: var(--faint);
 }
 
-.result-strip {
+.result-answers {
   display: grid;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
   margin-bottom: 12px;
+}
+
+.result-answer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 20px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--panel);
 }
 
-.result-strip > div {
+.result-answer header {
   display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-  padding: 12px 16px;
-  border-left: 1px solid var(--border);
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
-.result-strip > div:first-child {
-  border-left: 0;
+.result-answer header span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
 }
 
-.result-strip span {
-  color: var(--faint);
+.result-answer header em {
+  padding: 3px 9px;
+  border-radius: 999px;
   font-size: 11px;
-  white-space: nowrap;
+  font-style: normal;
+  font-weight: 600;
 }
 
-.result-strip strong {
-  font-size: 17px;
+.tag-good { background: #0ecb811f; color: var(--green); }
+.tag-warn { background: #f0b90b1f; color: var(--warning); }
+.tag-bad { background: #f6465d1f; color: var(--red); }
+
+.result-answer > strong {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.result-answer > strong small {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.result-answer p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.result-answer p b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.result-answer dl {
+  display: grid;
+  gap: 6px;
+  margin: auto 0 0;
+  padding: 10px 0 0;
+  border-top: 1px solid var(--border);
+}
+
+.result-answer dl > div {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12.5px;
+}
+
+.result-answer dt {
+  color: var(--faint);
+}
+
+.result-answer dd {
+  margin: 0;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
 }
 
-.result-strip small {
+.result-answer dd small {
+  color: var(--faint);
+  font-weight: 400;
+}
+
+.answer-bar {
+  height: 6px;
   overflow: hidden;
-  color: var(--muted);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  border-radius: 6px;
+  background: #f6465d80;
 }
 
-.result-strip .strip-bar {
-  display: block;
-  height: 4px;
-  margin-top: 6px;
-  overflow: hidden;
-  border-radius: 4px;
-  background: #f6465d66;
-}
-
-.result-strip .strip-bar i {
+.answer-bar i {
   display: block;
   height: 100%;
   background: var(--green);
 }
 
-@media (max-width: 1300px) {
-  .result-strip {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
-  .result-strip > div:nth-child(4n+1) {
-    border-left: 0;
-  }
-
-  .result-strip > div:nth-child(n+5) {
-    border-top: 1px solid var(--border);
-  }
+.answer-bar-legend {
+  display: flex;
+  justify-content: space-between;
+  margin-top: -4px;
+  font-size: 12px;
+  font-weight: 500;
 }
 
-@media (max-width: 600px) {
-  .result-strip {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .result-strip > div:nth-child(odd) {
-    border-left: 0;
-  }
-
-  .result-strip > div:nth-child(even) {
-    border-left: 1px solid var(--border);
-  }
-
-  .result-strip > div:nth-child(n+3) {
-    border-top: 1px solid var(--border);
+@media (max-width: 1100px) {
+  .result-answers {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

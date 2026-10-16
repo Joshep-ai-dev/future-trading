@@ -135,9 +135,7 @@
 }
 
 .setup-grid--nested {
-  margin: 14px 0 4px 13px;
-  padding-left: 16px;
-  border-left: 2px solid var(--border-strong);
+  margin-top: 16px;
 }
 
 .setup-field {
@@ -480,11 +478,6 @@
   .setup-grid {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 14px 12px;
-  }
-
-  .setup-grid--nested {
-    margin-left: 0;
-    padding-left: 12px;
   }
 
   .setup-option {
