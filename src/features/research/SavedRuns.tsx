@@ -29,7 +29,7 @@ export default function SavedRuns({activeId,refreshKey,onOpen,compact=false}:{ac
       <td>{when(run.createdAt)}</td><td>{day(run.start)} → {day(run.end-1)}</td><td>{run.timeframe}</td>
       <td className={run.summary.netPnl>=0?'positive':'negative'}>{run.summary.netPnl>=0?'+':'-'}${fmt(Math.abs(run.summary.netPnl))} <small>{fmt(run.summary.returnPct)}%</small></td>
       <td>{fmt(run.summary.winRate)}%</td><td className="negative">{fmt(Math.abs(run.summary.maxDrawdownPct))}%</td><td>{run.summary.trades}</td>
-      <td className="saved-run-actions">{run.id===activeId?<span className="saved-run-viewing">Viewing</span>:<button type="button" className="secondary" onClick={()=>onOpen(run.id)}>Open</button>}<button type="button" className="tv-icon" aria-label={`Delete run ${run.id}`} title="Delete" onClick={()=>void remove(run)}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 5h12M8 3h4M6 5l1 12h6l1-12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg></button></td>
+      <td className="saved-run-actions"><div>{run.id===activeId?<span className="saved-run-viewing">Viewing</span>:<button type="button" className="secondary" onClick={()=>onOpen(run.id)}>Open</button>}<button type="button" className="tv-icon" aria-label={`Delete run ${run.id}`} title="Delete" onClick={()=>void remove(run)}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 5h12M8 3h4M6 5l1 12h6l1-12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg></button></div></td>
     </tr>)}
   </tbody></table>{compact&&runs.length>5&&<p className="saved-runs-more">{runs.length-5} more in the results page</p>}</div>;
 }

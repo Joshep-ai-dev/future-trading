@@ -388,8 +388,9 @@
   height: 30px;
 }
 
-.saved-run-actions {
+.saved-run-actions > div {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 4px;
 }
