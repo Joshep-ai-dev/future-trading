@@ -1,6 +1,7 @@
 import TradeView from '../../shared/ui/TradeView';
 import {Button,EmptyState,PageHeader,Panel,TabBar} from '../../shared/ui/ui';
-import {useMemo,useState} from 'react';
+import {useEffect,useMemo,useState} from 'react';
+import {api} from '../../shared/api/api';
 import BacktestChart,{EquityChart} from '../../shared/charts/BacktestChart';
 import {fmt,type BacktestResult,type Trade} from '../../shared/types/types';
 import {formatTradingTime,useTradingTimeZone,type TradingTimeZone} from '../../shared/charts/tradingTime';
@@ -22,6 +23,16 @@ export default function ResultsWorkspace({result,busy,stale,onRun,onConfigure,on
   const pages=Math.max(1,Math.ceil((p?.trades.length??0)/15));
   const currentPage=Math.min(page,pages-1);
   const [testerTab,setTesterTab]=useState<'trades'|'balance'|'exits'|'saved'>('trades');
+  const [savedName,setSavedName]=useState<string|null>(null),[savedTick,setSavedTick]=useState(0);
+  useEffect(()=>{setSavedName(null);},[result?.runId]);
+  function showHistory(){setTesterTab('saved');requestAnimationFrame(()=>document.querySelector('.result-tester')?.scrollIntoView({behavior:'smooth',block:'start'}));}
+  async function saveAs(){
+    if(!result?.runId)return;
+    const name=window.prompt('Name this backtest result',savedName??'')?.trim();
+    if(!name)return;
+    await api(`/api/backtests/${result.runId}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});
+    setSavedName(name);setSavedTick(value=>value+1);
+  }
   const costs=s?s.fees+s.executionCost+s.funding:0;
   const drawdown=Math.abs(s?.maxDrawdownPct??0),risk=drawdown<10?'Low':drawdown<25?'Moderate':'High';
   const pnls=useMemo(()=>(p?.trades??[]).map(t=>t.netPnl),[p]);
@@ -37,7 +48,7 @@ export default function ResultsWorkspace({result,busy,stale,onRun,onConfigure,on
   const days=p?Math.max(1,Math.round((p.end-p.start)/86400)):0;
   const exits=useMemo(()=>Object.entries((p?.trades??[]).reduce<Record<string,number>>((counts,t)=>{counts[t.exitReason]=(counts[t.exitReason]??0)+1;return counts;},{})),[p]);
   return <>
-    <PageHeader eyebrow="BB OUTER BAND REVERSAL" title="Backtest results" actions={<><Button variant="secondary" onClick={onConfigure}>Edit settings</Button>{result&&<Button variant="secondary" onClick={onExport}>Export results</Button>}<Button disabled={busy} onClick={onRun}>{busy?'Running…':'Run backtest'}</Button></>}/>
+    <PageHeader eyebrow="BB OUTER BAND REVERSAL" title="Backtest results" actions={<><Button variant="secondary" onClick={onConfigure}>Edit settings</Button>{result&&<Button variant="secondary" onClick={showHistory}>History</Button>}{result?.runId&&<Button variant="secondary" onClick={()=>void saveAs()}>{savedName?`Saved: ${savedName}`:'Save as…'}</Button>}{result&&<Button variant="secondary" onClick={onExport}>Export results</Button>}<Button disabled={busy} onClick={onRun}>{busy?'Running…':'Run backtest'}</Button></>}/>
     {stale&&<p className="notice result-stale">Your current bot settings differ from this run.<button type="button" className="secondary" onClick={onApplySettings}>Use these settings</button></p>}
     {result&&p&&s?<>
       <div className="result-run-line"><span>{result.executionTimeframe} candles</span><span>{result.settings.max_leverage}× leverage</span><span>${fmt(result.settings.capital)} start</span><span>{utc(p.start)} → {utc(p.end)} UTC · {days} days</span><span className="is-muted">Simulated</span></div>
@@ -87,7 +98,7 @@ export default function ResultsWorkspace({result,busy,stale,onRun,onConfigure,on
         <TabBar items={[{value:'trades',label:'List of trades',count:p.trades.length,controls:'tester-trades'},{value:'balance',label:'Balance curve',controls:'tester-balance'},{value:'exits',label:'Why trades closed',controls:'tester-exits'},{value:'saved',label:'Saved runs',controls:'tester-saved'}] as const} value={testerTab} onChange={setTesterTab} label="Backtest details" idPrefix="tester-tab"/>
         <div id="tester-trades" role="tabpanel" aria-labelledby="tester-tab-trades" hidden={testerTab!=='trades'}><TradeView scope="Backtest" capital={result.settings.capital} timeZone={tradingTimeZone} trades={p.trades.map(t=>({id:t.id,direction:t.direction,pnl:t.netPnl,entry:t.entry,exit:t.exit,quantity:t.quantity,exitTime:t.exitTime+result.barSeconds}))} onSelect={setSelectedId}>{p.trades.length?<><div className="table-scroll"><table><thead><tr>{['Trade','Side',`Entry candle (${tradingTimeZone})`,'Entry','Exit','Net P&L','R','Exit reason'].map(label=><th key={label}>{label}</th>)}</tr></thead><tbody>{p.trades.slice(currentPage*15,currentPage*15+15).map(t=><tr key={t.id} className={selectedId===t.id?'selected-row':''} onClick={()=>select(t)}><td><button className="trade-link" onClick={()=>select(t)}>#{t.id}</button></td><td><span className={`side-badge ${t.direction===1?'long':'short'}`}>{t.direction===1?'LONG':'SHORT'}</span></td><td>{tradeTime(t.entryTime,tradingTimeZone)}</td><td>{fmt(t.entry,3)}</td><td>{fmt(t.exit,3)}</td><td className={t.netPnl>=0?'positive':'negative'}>{t.netPnl>=0?'+':''}{fmt(t.netPnl)}</td><td>{fmt(t.netR)}</td><td>{reason(t.exitReason)}</td></tr>)}</tbody></table></div><div className="pagination"><button className="secondary" disabled={!currentPage} onClick={()=>setPage(currentPage-1)}>Previous</button><span>{currentPage+1} / {pages}</span><button className="secondary" disabled={currentPage+1>=pages} onClick={()=>setPage(currentPage+1)}>Next</button></div></>:<div className="empty-position"><h3>No qualified trades</h3><p>{p.status==='no_complete_bars'?'No complete candles are available in this date range.':'No candles met all the entry conditions during this backtest.'}</p></div>}</TradeView></div>
         <div id="tester-balance" role="tabpanel" aria-labelledby="tester-tab-balance" hidden={testerTab!=='balance'}>{testerTab==='balance'&&<EquityChart key={`${p.start}:${p.end}`} period={p} initialValue={result.settings.capital} trades={p.trades.map(t=>({pnl:t.netPnl}))}/>}</div>
-        <div id="tester-saved" role="tabpanel" aria-labelledby="tester-tab-saved" hidden={testerTab!=='saved'}>{testerTab==='saved'&&<SavedRuns activeId={result.runId} refreshKey={result.runId} onOpen={onOpenRun}/>}</div>
+        <div id="tester-saved" role="tabpanel" aria-labelledby="tester-tab-saved" hidden={testerTab!=='saved'}>{testerTab==='saved'&&<SavedRuns activeId={result.runId} refreshKey={`${result.runId}:${savedTick}`} onOpen={onOpenRun}/>}</div>
         <div id="tester-exits" role="tabpanel" aria-labelledby="tester-tab-exits" hidden={testerTab!=='exits'}><div className="exit-bars">{exits.sort((x,y)=>y[1]-x[1]).map(([key,count])=><div key={key}><span>{reason(key)}</span><div className="exit-bar"><i style={{width:`${count/Math.max(1,p.trades.length)*100}%`}}/></div><b>{count}</b><small>{fmt(count/Math.max(1,p.trades.length)*100)}%</small></div>)}{!exits.length&&<p>No closed trades.</p>}</div>
           <dl className="exit-facts"><div><dt>Confirmed signals</dt><dd>{p.diagnostics.signals}</dd></div><div><dt>Closed trades</dt><dd>{s.trades}</dd></div><div><dt>Position sizing</dt><dd>Amount × leverage</dd></div></dl></div>
       </section>

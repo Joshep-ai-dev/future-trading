@@ -438,3 +438,15 @@
   margin: 0 0 8px;
   font-size: 14px;
 }
+
+.saved-run-viewing {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: #8fb3ff;
+  font-size: 12px;
+  font-weight: 600;
+}
