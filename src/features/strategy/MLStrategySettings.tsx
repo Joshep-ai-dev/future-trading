@@ -1,0 +1,66 @@
+import type {BacktestSettings,MLConfig} from '../../shared/types/types';
+import {Field,SettingsCard,TIMEFRAME_CHOICES} from './BBReversalSettings';
+import {useStrategyCatalog} from './useStrategyCatalog';
+
+type NumberKey={[K in keyof MLConfig]:MLConfig[K] extends number?K:never}[keyof MLConfig];
+
+/** Guided settings for the ML Ensemble strategy. */
+export default function MLStrategySettings({settings,onChange}:{settings:BacktestSettings;onChange:(s:BacktestSettings)=>void}){
+  const config=settings.ml,{catalog,error}=useStrategyCatalog();
+  const setMl=(patch:Partial<MLConfig>)=>onChange({...settings,ml:{...config,...patch}});
+  const num=(key:NumberKey,label:string,min:number,max:number,step:number|'any',hint?:string,unit?:string)=>
+    <Field key={key} label={label} hint={hint} unit={unit}><input type="number" required min={min} max={max} step={step} value={config[key]} onChange={event=>setMl({[key]:Number(event.target.value)} as Partial<MLConfig>)}/></Field>;
+  const toggleGroup=(key:string)=>setMl({feature_groups:config.feature_groups.includes(key)?config.feature_groups.filter(item=>item!==key):[...config.feature_groups,key]});
+  const activeModels=Object.values(config.models).filter(weight=>weight>0).length;
+
+  return <>
+    <SettingsCard step={1} id="settings-execution" title="Position size" description="How much the bot puts into each trade and which candles the models learn from.">
+      <div className="setup-field setup-field--wide"><span className="setup-label">Timeframe</span><div className="chip-group" role="radiogroup" aria-label="Execution timeframe">{TIMEFRAME_CHOICES.map(tf=><button key={tf} type="button" role="radio" aria-checked={settings.entry_timeframe===tf} onClick={()=>onChange({...settings,entry_timeframe:tf})}>{tf}</button>)}</div><small>Short timeframes have small moves relative to trading costs; 15m or higher usually suits ML signals better.</small></div>
+      <div className="setup-grid">
+        <Field label="Amount per trade" hint={config.amount_unit==='percent'?'Share of your current balance, before leverage.':'Fixed dollars, capped at your available balance.'}>
+          <input aria-label="Amount per trade" type="number" required min={.01} max={config.amount_unit==='percent'?100:settings.capital} step="any" value={config.amount_per_trade} onChange={event=>setMl({amount_per_trade:Number(event.target.value)})}/>
+          <span className="unit-switch" role="group" aria-label="Amount unit">{(['percent','price'] as const).map(unit=><button key={unit} type="button" aria-pressed={config.amount_unit===unit} onClick={()=>setMl({amount_unit:unit})}>{unit==='percent'?'%':'$'}</button>)}</span>
+        </Field>
+        <Field label="Leverage" unit="×" hint={`Position size = amount × ${settings.max_leverage}.`}><input aria-label="Leverage" type="number" required min={1} max={100} step={.5} value={settings.max_leverage} onChange={event=>onChange({...settings,max_leverage:Number(event.target.value)})}/></Field>
+        <Field label="Direction"><select value={config.trade_mode} onChange={event=>setMl({trade_mode:event.target.value as MLConfig['trade_mode']})}><option value="Both">Long and short</option><option value="Long Only">Long only</option><option value="Short Only">Short only</option></select></Field>
+      </div>
+    </SettingsCard>
+
+    <SettingsCard step={2} id="settings-features" title="Indicators" description={`The models learn from these indicator groups (${config.feature_groups.length} selected). All are computed from closed candles only.`}>
+      {error&&<p className="error">{error}</p>}
+      <div className="feature-picker">{(catalog?.featureGroups??[]).map(group=><button key={group.key} type="button" aria-pressed={config.feature_groups.includes(group.key)} onClick={()=>toggleGroup(group.key)}><strong>{group.label}</strong><small>{group.description}</small></button>)}</div>
+    </SettingsCard>
+
+    <SettingsCard step={3} id="settings-models" title="Models" description={`${activeModels} model${activeModels===1?'':'s'} in the ensemble. Each model votes with its weight; probabilities are averaged.`}>
+      <div className="model-picker">{(catalog?.models??[]).map(model=>{
+        const weight=config.models[model.key]??0,enabled=weight>0;
+        return <div key={model.key} className={`model-row ${enabled?'is-on':''} ${model.available?'':'is-unavailable'}`}>
+          <label className="setup-toggle"><input type="checkbox" role="switch" aria-label={`Use ${model.label}`} checked={enabled} disabled={!model.available} onChange={event=>setMl({models:{...config.models,[model.key]:event.target.checked?1:0}})}/><i aria-hidden="true"/></label>
+          <div className="model-copy"><strong>{model.label}<em>{model.family}</em></strong><small>{model.available?model.description:`Install "${model.requires}" to enable.`}</small></div>
+          <label className="model-weight"><span>Weight</span><input type="range" min={0} max={1} step={.05} value={weight} disabled={!model.available} aria-label={`${model.label} weight`} onChange={event=>setMl({models:{...config.models,[model.key]:Number(event.target.value)}})}/><b>{weight.toFixed(2)}</b></label>
+        </div>;
+      })}</div>
+    </SettingsCard>
+
+    <SettingsCard step={4} id="settings-signals" title="Signals & exits" description="Each trade gets an ATR-based take profit and stop, and closes after the horizon if neither is hit. The models learn exactly this outcome.">
+      <div className="setup-grid">
+        {num('horizon','Horizon',1,500,1,'Candles a trade may stay open.','bars')}
+        {num('take_profit_atr','Take profit',.1,20,'any','Distance in ATR.','× ATR')}
+        {num('stop_atr','Stop loss',.1,20,'any','Distance in ATR.','× ATR')}
+        {num('atr_length','ATR length',2,500,1,undefined,'bars')}
+        {num('entry_threshold','Entry probability',.34,.99,'any','Model probability needed to enter.')}
+        {num('min_edge','Edge over opposite side',0,.99,'any','Long minus short probability.')}
+        {num('min_reward_cost','Reward ÷ cost',0,50,'any','Skip trades whose target is too small for costs.','×')}
+      </div>
+      <div className="setup-option"><div><strong>Reverse on opposite signal</strong><p>Close and flip the position when the models confidently call the other direction.</p></div><label className="setup-toggle"><input type="checkbox" role="switch" aria-label="Reverse on opposite signal" checked={config.reverse_on_signal} onChange={event=>setMl({reverse_on_signal:event.target.checked})}/><i aria-hidden="true"/><span>{config.reverse_on_signal?'On':'Off'}</span></label></div>
+    </SettingsCard>
+
+    <SettingsCard step={5} id="settings-training" title="Walk-forward training" description="Models retrain on past data only and are tested on the next block they have never seen. The backtest reports only these unseen blocks.">
+      <div className="setup-grid">
+        {num('train_bars','Training window',500,200000,1,'Past candles used for each model.','bars')}
+        {num('retrain_every','Retrain every',50,50000,1,'Size of each unseen test block.','bars')}
+      </div>
+      <p className="setup-note">Trained blocks are cached, so re-running the same settings or extending the date range only trains new blocks. The first run with new settings can take up to a minute.</p>
+    </SettingsCard>
+  </>;
+}

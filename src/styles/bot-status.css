@@ -313,3 +313,46 @@
   color: var(--text);
   font-weight: 600;
 }
+
+.bot-probabilities {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--field);
+}
+
+.bot-probabilities > div {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr) 52px;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.bot-probabilities span,
+.bot-probabilities small {
+  color: var(--faint);
+}
+
+.bot-probabilities i {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--surface-raised);
+}
+
+.bot-probabilities b {
+  display: block;
+  height: 100%;
+}
+
+.bot-probabilities .is-long { background: var(--green); }
+.bot-probabilities .is-none { background: var(--muted); }
+.bot-probabilities .is-short { background: var(--red); }
+
+.bot-probabilities strong {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}

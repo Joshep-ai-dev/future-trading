@@ -2,8 +2,10 @@ import {Button,PageHeader} from '../shared/ui/ui';
 import {lazy,Suspense,useEffect,useState,type FormEvent} from 'react';
 import {api} from '../shared/api/api';
 import {htxCostDefaults} from '../features/strategy/executionCostDefaults';
-import {bbDefaults} from '../features/strategy/strategyDefaults';
+import {STRATEGY_LABELS,bbDefaults,mlDefaults} from '../features/strategy/strategyDefaults';
 import BBReversalSettings,{Field} from '../features/strategy/BBReversalSettings';
+import MLStrategySettings from '../features/strategy/MLStrategySettings';
+import TradingCostsCard from '../features/strategy/TradingCostsCard';
 
 import LiveTrading from '../features/trading/LiveTrading';
 
@@ -18,7 +20,7 @@ const AccountPage=lazy(()=>import('../features/account/AccountPage'));
 
 
 function initial(range:{startDate:string;endDate:string}):BacktestSettings {
-  return {bb_reversal:{...bbDefaults},atr_active:false,atr_period:14,atr_multiplier:2,ema_fast:20,ema_slow:50,rsi_period:20,rsi_threshold:50,rsi_active:true,bb_period:20,chartart_stop_pct:1,exit_condition:'none',stop_mode:'trailing',strategy:'bb_outer_reversal',direction_active:true,direction_timeframe:'1h',setup_active:true,setup_timeframe:'15m',entry_active:true,entry_timeframe:'5m',start_date:range.startDate,end_date:range.endDate,capital:2000,tick_size:.01,...htxCostDefaults,max_leverage:1,session_start:0,session_end:24,session_timezone:'UTC'};
+  return {bb_reversal:{...bbDefaults},ml:{...mlDefaults,models:{...mlDefaults.models},feature_groups:[...mlDefaults.feature_groups]},atr_active:false,atr_period:14,atr_multiplier:2,ema_fast:20,ema_slow:50,rsi_period:20,rsi_threshold:50,rsi_active:true,bb_period:20,chartart_stop_pct:1,exit_condition:'none',stop_mode:'trailing',strategy:'bb_outer_reversal',direction_active:true,direction_timeframe:'1h',setup_active:true,setup_timeframe:'15m',entry_active:true,entry_timeframe:'5m',start_date:range.startDate,end_date:range.endDate,capital:2000,tick_size:.01,...htxCostDefaults,max_leverage:1,session_start:0,session_end:24,session_timezone:'UTC'};
 }
 const settingsKey='silver.bb.settings.v2';
 type SavedProfile={name:string;settings:BacktestSettings};
@@ -26,12 +28,14 @@ function restoreSettings(raw:unknown,range:{startDate:string;endDate:string}){
   const defaults=initial(range);
   try{
     const saved=raw as Partial<BacktestSettings>|null;
-    if(!saved||saved.strategy!=='bb_outer_reversal')return defaults;
+    if(!saved||(saved.strategy!=='bb_outer_reversal'&&saved.strategy!=='ml_ensemble'))return defaults;
     const savedValues=saved as Record<string,unknown>;
     const savedBb=(saved.bb_reversal??{}) as Record<string,unknown>;
-    const values=Object.fromEntries(Object.entries(defaults).filter(([key,value])=>key!=='bb_reversal'&&typeof savedValues[key]===typeof value&&(typeof value!=='number'||Number.isFinite(savedValues[key]))).map(([key])=>[key,savedValues[key]]));
+    const values=Object.fromEntries(Object.entries(defaults).filter(([key,value])=>key!=='bb_reversal'&&key!=='ml'&&typeof savedValues[key]===typeof value&&(typeof value!=='number'||Number.isFinite(savedValues[key]))).map(([key])=>[key,savedValues[key]]));
     const bb=Object.fromEntries(Object.entries(defaults.bb_reversal).filter(([key,value])=>typeof savedBb[key]===typeof value&&(typeof value!=='number'||Number.isFinite(savedBb[key]))).map(([key])=>[key,savedBb[key]]));
-    const restored={...defaults,...values,bb_reversal:{...defaults.bb_reversal,...bb}};
+    const savedMl=(saved.ml??{}) as Record<string,unknown>;
+    const ml=Object.fromEntries(Object.entries(defaults.ml).filter(([key,value])=>typeof savedMl[key]===typeof value&&(typeof value!=='number'||Number.isFinite(savedMl[key]))).map(([key])=>[key,savedMl[key]]));
+    const restored={...defaults,...values,strategy:saved.strategy,bb_reversal:{...defaults.bb_reversal,...bb},ml:{...defaults.ml,...ml}};
     if(!/^\d{4}-\d{2}-\d{2}$/.test(restored.start_date)||restored.start_date<range.startDate||restored.start_date>range.endDate)restored.start_date=range.startDate;
     if(!/^\d{4}-\d{2}-\d{2}$/.test(restored.end_date)||restored.end_date<restored.start_date||restored.end_date>range.endDate)restored.end_date=range.endDate;
     return restored;
@@ -141,10 +145,12 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
 
     {view==='account'&&<AccountPage settings={settings} onBack={()=>onViewChange('paper')} accountMode={accountMode} onAccountModeChange={onAccountModeChange}/>}
     {view==='strategy'&&<div id="page-strategy" className="setup-page" role="tabpanel" aria-labelledby="tab-strategy">
-      <PageHeader eyebrow="BB OUTER BAND REVERSAL" title="Bot settings" description="Set how the bot sizes, enters and exits trades. Changes apply to the next backtest or new bot session." actions={<><Button variant="ghost" disabled={busy} onClick={()=>setSettings(initial(range))}>Restore defaults</Button><Button variant="secondary" onClick={()=>onViewChange('paper')}>Open terminal</Button></>}/>
+      <PageHeader eyebrow={(STRATEGY_LABELS[settings.strategy]??"").toUpperCase()} title="Bot settings" description="Set how the bot sizes, enters and exits trades. Changes apply to the next backtest or new bot session." actions={<><Button variant="ghost" disabled={busy} onClick={()=>setSettings(initial(range))}>Restore defaults</Button><Button variant="secondary" onClick={()=>onViewChange('paper')}>Open terminal</Button></>}/>
       <form className="setup-layout" onSubmit={run}>
         <fieldset className="setup-main" disabled={busy||tuning}>
-          <BBReversalSettings settings={settings} onChange={setSettings}/>
+          <div className="strategy-picker" role="radiogroup" aria-label="Strategy">{([['bb_outer_reversal','BB Outer Band Reversal','Rule-based: buys and sells Bollinger band rebounds with a trailing stop. Paper and live.'],['ml_ensemble','ML Ensemble','Machine learning: indicator features and an ensemble of models predict the next move. Backtest and paper.']] as const).map(([key,label,text])=><button key={key} type="button" role="radio" aria-checked={settings.strategy===key} onClick={()=>setSettings({...settings,strategy:key})}><span className="strategy-picker-icon" aria-hidden="true">{key==='ml_ensemble'?'ML':'BB'}</span><span><strong>{label}</strong><small>{text}</small></span></button>)}</div>
+          {settings.strategy==='ml_ensemble'?<MLStrategySettings settings={settings} onChange={setSettings}/>:<BBReversalSettings settings={settings} onChange={setSettings}/>}
+          <TradingCostsCard settings={settings} onChange={setSettings} step={settings.strategy==='ml_ensemble'?6:4}/>
           <details className="setup-assumptions"><summary>How the simulation works</summary><p>Signals use completed candles and fill at close. Stops include adverse gaps; trailing stops never loosen. Position size is the allocated amount times leverage. A depleted balance blocks new trades. Fees, slippage, spread and prorated funding are included; liquidation is not modeled.</p></details>
         </fieldset>
         <aside className="setup-aside" aria-label="Setup summary">
@@ -152,11 +158,21 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
             <h2>Your setup</h2>
             <dl>
               <div><dt>Timeframe</dt><dd>{settings.entry_timeframe}</dd></div>
-              <div><dt>Per trade</dt><dd>{settings.bb_reversal.amount_unit==='percent'?`${settings.bb_reversal.amount_per_trade}% of balance`:`$${fmt(settings.bb_reversal.amount_per_trade)}`}</dd></div>
-              <div><dt>Leverage</dt><dd>{settings.max_leverage}×</dd></div>
-              <div><dt>Stop / trail</dt><dd>{settings.bb_reversal.initial_sl} / {settings.bb_reversal.trail_distance}</dd></div>
-              <div><dt>Trend adjustment</dt><dd>{settings.bb_reversal.use_sma_trend_adjustment?'On':'Off'}</dd></div>
-              <div><dt>RSI exit</dt><dd>{settings.bb_reversal.rsi_exit_enabled?'On':'Off'}</dd></div>
+              <div><dt>Strategy</dt><dd>{STRATEGY_LABELS[settings.strategy]??settings.strategy}</dd></div>
+              {settings.strategy==='ml_ensemble'?<>
+                <div><dt>Per trade</dt><dd>{settings.ml.amount_unit==='percent'?`${settings.ml.amount_per_trade}% of balance`:`$${fmt(settings.ml.amount_per_trade)}`}</dd></div>
+                <div><dt>Leverage</dt><dd>{settings.max_leverage}×</dd></div>
+                <div><dt>Models</dt><dd>{Object.values(settings.ml.models).filter(weight=>weight>0).length} active</dd></div>
+                <div><dt>Indicator groups</dt><dd>{settings.ml.feature_groups.length}</dd></div>
+                <div><dt>Target / stop</dt><dd>{settings.ml.take_profit_atr} / {settings.ml.stop_atr} ATR</dd></div>
+                <div><dt>Entry probability</dt><dd>{Math.round(settings.ml.entry_threshold*100)}%</dd></div>
+              </>:<>
+                <div><dt>Per trade</dt><dd>{settings.bb_reversal.amount_unit==='percent'?`${settings.bb_reversal.amount_per_trade}% of balance`:`$${fmt(settings.bb_reversal.amount_per_trade)}`}</dd></div>
+                <div><dt>Leverage</dt><dd>{settings.max_leverage}×</dd></div>
+                <div><dt>Stop / trail</dt><dd>{settings.bb_reversal.initial_sl} / {settings.bb_reversal.trail_distance}</dd></div>
+                <div><dt>Trend adjustment</dt><dd>{settings.bb_reversal.use_sma_trend_adjustment?'On':'Off'}</dd></div>
+                <div><dt>RSI exit</dt><dd>{settings.bb_reversal.rsi_exit_enabled?'On':'Off'}</dd></div>
+              </>}
             </dl>
           </section>
           <section className="setup-summary" id="settings-range">
@@ -194,6 +210,6 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
 
     </div>}
     {error&&view!=='paper'&&<p className="error" role="alert">{error}</p>}
-    {view==='results'&&<div id="page-results" role="tabpanel" aria-labelledby="tab-results" hidden={view!=='results'}><ResultsWorkspace key={runId} result={result} busy={busy} stale={stale} onRun={()=>void run()} onConfigure={()=>onViewChange('strategy')} onExport={download} onOpenRun={id=>void openRun(id)} onApplySettings={()=>{if(result)setSettings(restoreSettings(result.settings,range));}} summary={[['Period (UTC)',`${settings.start_date} → ${settings.end_date}`],['Timeframe',settings.entry_timeframe],['Starting balance',`$${fmt(settings.capital)}`],['Leverage',`${settings.max_leverage}×`],['Per trade',settings.bb_reversal.amount_unit==='percent'?`${settings.bb_reversal.amount_per_trade}% of balance`:`$${fmt(settings.bb_reversal.amount_per_trade)}`]]}/></div>}
+    {view==='results'&&<div id="page-results" role="tabpanel" aria-labelledby="tab-results" hidden={view!=='results'}><ResultsWorkspace key={runId} result={result} busy={busy} stale={stale} onRun={()=>void run()} onConfigure={()=>onViewChange('strategy')} onExport={download} onOpenRun={id=>void openRun(id)} onApplySettings={()=>{if(result)setSettings(restoreSettings(result.settings,range));}} summary={[['Period (UTC)',`${settings.start_date} → ${settings.end_date}`],['Timeframe',settings.entry_timeframe],['Starting balance',`$${fmt(settings.capital)}`],['Leverage',`${settings.max_leverage}×`],['Strategy',STRATEGY_LABELS[settings.strategy]??settings.strategy],['Per trade',(settings.strategy==='ml_ensemble'?settings.ml:settings.bb_reversal).amount_unit==='percent'?`${(settings.strategy==='ml_ensemble'?settings.ml:settings.bb_reversal).amount_per_trade}% of balance`:`$${fmt((settings.strategy==='ml_ensemble'?settings.ml:settings.bb_reversal).amount_per_trade)}`]]}/></div>}
   </Suspense></section>;
 }

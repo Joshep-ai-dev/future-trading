@@ -209,10 +209,12 @@ class UserDataStore:
              json.dumps(result['settings']), json.dumps(period['summary']), _pack(period['trades']))))
 
     def list_backtests(self, user_id: int, limit: int = 50) -> list[dict]:
-        rows = self._run('SELECT id,name,timeframe,period_start,period_end,summary,created_at FROM backtest_runs '
+        rows = self._run("SELECT id,name,timeframe,period_start,period_end,summary,created_at,"
+                         "JSON_UNQUOTE(JSON_EXTRACT(settings,'$.strategy')) AS strategy FROM backtest_runs "
                          'WHERE user_id=%s ORDER BY id DESC LIMIT %s', (user_id, limit), fetch='all')
         return [dict(id=row['id'], name=row['name'], timeframe=row['timeframe'], start=row['period_start'],
-                     end=row['period_end'], summary=_json(row['summary']), createdAt=_iso(row['created_at'])) for row in rows]
+                     end=row['period_end'], summary=_json(row['summary']), createdAt=_iso(row['created_at']),
+                     strategy=row.get('strategy') or 'bb_outer_reversal') for row in rows]
 
     def get_backtest(self, user_id: int, run_id: int) -> dict | None:
         row = self._run('SELECT * FROM backtest_runs WHERE user_id=%s AND id=%s', (user_id, run_id), fetch='one')

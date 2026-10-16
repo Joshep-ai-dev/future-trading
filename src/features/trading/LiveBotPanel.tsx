@@ -16,12 +16,14 @@ export default function LiveBotPanel({venue,settings,onSettingsChange,onConfigur
   const active=bot.running&&bot.venue===venue;
   const locked=bot.running||busy||!onSettingsChange;
   const validAllocation=Number.isFinite(config.amount_per_trade)&&config.amount_per_trade>0&&(config.amount_unit==='percent'?config.amount_per_trade<=100:!validMargin||config.amount_per_trade<=available);
-  const canStart=connected&&validMargin&&validAllocation&&!blocked&&!positionOpen&&!bot.running&&confirmed&&!busy&&Number.isInteger(Number(leverage))&&Number(leverage)>=1&&Number(leverage)<=100;
+  const mlSelected=settings.strategy==='ml_ensemble';
+  const canStart=!mlSelected&&connected&&validMargin&&validAllocation&&!blocked&&!positionOpen&&!bot.running&&confirmed&&!busy&&Number.isInteger(Number(leverage))&&Number(leverage)>=1&&Number(leverage)<=100;
   async function start(){
     if(!canStart)return;
     if(await onRun('/api/exchange/auto/start',{...settings,capital:available,strategy:'bb_outer_reversal',max_leverage:Number(leverage),venue,confirmation:'START LIVE STRATEGY'}))setConfirmed(false);
   }
   return <div id="bot-ticket-panel" role="tabpanel" aria-labelledby="execution-tab-bot" className="live-bot-panel">
+    {mlSelected&&<p className="exchange-inline-error">ML Ensemble runs in backtests and paper trading only. Validate it there first; switch to BB Outer Band Reversal in Bot settings to trade live.</p>}
     <div className="bot-strategy-heading"><span className="strategy-icon">BB</span><div><strong>Outer Band Reversal</strong><small>Bollinger bands · Trailing stop</small></div><StatusBadge tone={active?'positive':'neutral'}>{active?'Running':'Ready'}</StatusBadge></div>
     <div className="bot-live-balance"><span>Available margin <small>Live · USDT</small></span><strong>{number(available,4)}</strong></div>
     <div className="bot-ticket-fields"><label className="ui-field"><span>Timeframe</span><select value={settings.entry_timeframe} disabled={locked} onChange={event=>onSettingsChange?.({...settings,entry_timeframe:event.target.value as BacktestSettings['entry_timeframe']})}>{['1m','3m','5m','10m','15m','30m','1h','4h','1d'].map(timeframe=><option key={timeframe}>{timeframe}</option>)}</select></label><label className="ui-field"><span>Leverage</span><input type="number" min="1" max="100" step="1" value={leverage} disabled={locked||!connected} onChange={event=>onLeverageChange(event.target.value)}/></label></div>

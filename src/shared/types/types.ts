@@ -7,10 +7,22 @@ export type Analysis = {
 };
 export const fmt = (v: number | null, digits=2) => v === null ? '—' : v.toLocaleString('en-US', {maximumFractionDigits: digits});
 
+export type MLConfig = {
+  feature_groups: string[]; models: Record<string, number>; horizon: number; take_profit_atr: number; stop_atr: number;
+  atr_length: number; entry_threshold: number; min_edge: number; min_reward_cost: number; train_bars: number;
+  retrain_every: number; trade_mode: 'Both'|'Long Only'|'Short Only'; reverse_on_signal: boolean;
+  amount_per_trade: number; amount_unit: 'price'|'percent';
+};
+export type ModelReport = {
+  folds: {start:number;end:number;trainRows:number;bars:number;accuracy:number|null}[];
+  importance: Record<string, number>; featureCount: number; trainedBars: number; accuracy: number|null;
+  labelBalance: {long:number;none:number;short:number}; blockedByCost: number;
+  medianTarget: number|null; medianRoundTripCost: number|null;
+};
 export type BacktestSettings = {
   atr_active: boolean; atr_period: number; atr_multiplier: number;
   ema_fast: number; ema_slow: number; rsi_period: number; rsi_threshold: number; rsi_active: boolean;
-  strategy: 'sweep'|'mtf'|'chartart_v12'|'bb_outer_reversal'; bb_period: number; chartart_stop_pct: number;
+  strategy: 'sweep'|'mtf'|'chartart_v12'|'bb_outer_reversal'|'ml_ensemble'; ml: MLConfig; bb_period: number; chartart_stop_pct: number;
   bb_reversal: {rsi_exit_enabled:boolean; rsi_exit_length:number; rsi_exit_move:number; rsi_exit_short:number; rsi_exit_long:number; amount_per_trade:number; amount_unit:'price'|'percent'; use_sma_trend_adjustment:boolean; trade_mode: 'Both'|'Long Only'|'Short Only'; bb_length:number; bb_mult:number; min_bb_width_pct:number; atr_length:number; min_atr:number; adx_length:number; adx_threshold:number; pullback_bars:number; initial_sl:number; trail_trigger:number; trail_distance:number; trail_multiplier:number; sma_length:number; sma_slope_bars:number; counter_profit_pct:number; counter_sl_pct:number; quantity:number};
   exit_condition: 'none'|'ema'|'rsi'|'either';
   stop_mode: 'none'|'fixed'|'breakeven'|'trailing'|'breakeven_trailing';
@@ -46,7 +58,7 @@ export type PeriodResult = {
 };
 export type Confirmation = {stage: string; timeframe: string; closeTime: number; ema20: number; ema50: number; rsi20: number | null};
 export type IndicatorPoint = {time: number; ema20: number | null; ema50: number | null; rsi20: number | null; bbBasis?: number | null; bbUpper?: number | null; bbLower?: number | null; trendSma?:number|null; adx?:number|null; atr?:number|null; bbWidthPct?:number|null};
-export type BacktestResult = {runId?: number|null; strategyName: string; executionTimeframe: string; barSeconds: number; indicators: IndicatorPoint[]; settings: BacktestSettings; backtest: PeriodResult; candles: Analysis['candles']};
+export type BacktestResult = {runId?: number|null; strategy?: string; model?: ModelReport|null; strategyName: string; executionTimeframe: string; barSeconds: number; indicators: IndicatorPoint[]; settings: BacktestSettings; backtest: PeriodResult; candles: Analysis['candles']};
 export type TuneMetrics = {averageWin?:number;averageLoss?:number;payoffRatio?:number|null;score:number;trades:number;wins:number;losses:number;winRate:number;netPnl:number;returnPct:number;maxDrawdownPct:number;averageLossPct:number};
 export type FineTuneCase = {
   id:string;rank:number;bestSettings:BacktestSettings;

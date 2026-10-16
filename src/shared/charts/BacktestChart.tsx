@@ -130,7 +130,7 @@ export default function BacktestChart({candles,trades,selected,onSelect,indicato
     };
     paneFrame=requestAnimationFrame(()=>{measurePanes();paneResize=new ResizeObserver(measurePanes);if(ref.current)paneResize.observe(ref.current);for(const series of indicatorSeries.current.values()){const element=series.getPane().getHTMLElement();if(element)paneResize.observe(element);}});
     if(indicators.length) {
-      if(indicatorSettings.strategy==='chartart_v12'||indicatorSettings.strategy==='bb_outer_reversal') {
+      if(indicatorSettings.strategy==='chartart_v12'||indicatorSettings.strategy==='bb_outer_reversal'||indicatorSettings.strategy==='ml_ensemble') {
         for(const [key,color,title] of [['bbBasis','#63d6d0','BB basis'],['bbUpper','#7d8da5','BB upper'],['bbLower','#7d8da5','BB lower']] as const) {
           chart.addSeries(LineSeries,{color,lineWidth:1,title,visible:strategyVisible,priceLineVisible:false,lastValueVisible:false}).setData(
             indicators.map(p=>p[key]==null?{time:p.time as UTCTimestamp}:{time:p.time as UTCTimestamp,value:p[key]}));
@@ -141,11 +141,11 @@ export default function BacktestChart({candles,trades,selected,onSelect,indicato
           indicators.map(p=>p[key]===null?{time:p.time as UTCTimestamp}:{time:p.time as UTCTimestamp,value:p[key]}));
       }
       }
-      if(indicatorSettings.strategy==='bb_outer_reversal'&&indicatorSettings.bb_reversal.use_sma_trend_adjustment!==false) {
-        chart.addSeries(LineSeries,{color:'#d7ad69',lineWidth:2,title:'Trend SMA',visible:strategyVisible,priceLineVisible:false,lastValueVisible:false}).setData(
+      if((indicatorSettings.strategy==='bb_outer_reversal'&&indicatorSettings.bb_reversal.use_sma_trend_adjustment!==false)||indicatorSettings.strategy==='ml_ensemble') {
+        chart.addSeries(LineSeries,{color:'#d7ad69',lineWidth:2,title:indicatorSettings.strategy==='ml_ensemble'?'EMA 50':'Trend SMA',visible:strategyVisible,priceLineVisible:false,lastValueVisible:false}).setData(
           indicators.map(p=>p.trendSma==null?{time:p.time as UTCTimestamp}:{time:p.time as UTCTimestamp,value:p.trendSma}));
       }
-      if(indicatorSettings.strategy!=='bb_outer_reversal'&&(indicatorSettings.strategy!=='mtf'||indicatorSettings.rsi_active)) {
+      if(indicatorSettings.strategy!=='bb_outer_reversal'&&indicatorSettings.strategy!=='ml_ensemble'&&(indicatorSettings.strategy!=='mtf'||indicatorSettings.rsi_active)) {
       const rsi=chart.addSeries(LineSeries,{color:'#be9bf3',lineWidth:1,title:`RSI ${indicatorSettings.rsi_period}`,priceLineVisible:false,
         autoscaleInfoProvider:()=>({priceRange:{minValue:0,maxValue:100}})},1);
       rsi.setData(indicators.map(p=>p.rsi20===null?{time:p.time as UTCTimestamp}:{time:p.time as UTCTimestamp,value:p.rsi20}));

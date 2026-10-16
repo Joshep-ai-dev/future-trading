@@ -13,6 +13,11 @@ function SideReadiness({side,value,checks,signal}:{side:'long'|'short';value:num
   </div>;
 }
 
+function ProbabilityGrid({values}:{values:Record<string,number|null>}){
+  const rows:[string,number|null|undefined,string][]=[['Up (long win)',values.pLong,'is-long'],['Neither',values.pNone,'is-none'],['Down (short win)',values.pShort,'is-short']];
+  return <div className="bot-probabilities">{rows.map(([label,value,tone])=><div key={label}><span>{label}</span><i><b className={tone} style={{width:`${(value??0)*100}%`}}/></i><strong>{value==null?'—':`${fmt(value*100,1)}%`}</strong></div>)}{values.atr!=null&&<small>ATR {fmt(values.atr,3)}</small>}</div>;
+}
+
 function IndicatorGrid({values,close}:{values:StrategyIndicators;close?:number|null}){
   const rsi=values.rsi,rsiZone=rsi==null?'':rsi>=70?'Overbought':rsi<=30?'Oversold':'Neutral';
   const bandPosition=close!=null&&values.bbUpper!=null&&values.bbLower!=null&&values.bbUpper>values.bbLower?Math.round((close-values.bbLower)/(values.bbUpper-values.bbLower)*100):null;
@@ -33,11 +38,11 @@ export default function BotStatusPanel({state,running,timeLabel,emptyHint}:{stat
     <header><h2>Bot status</h2><span className={`bot-status-pill is-${statusTone(state,running)}`}><i aria-hidden="true"/>{statusLabel(state,running)}</span></header>
     {state&&state.longChecks.length?<>
       <p className="bot-status-meta">Last closed candle{timeLabel?` ${timeLabel}`:''}{state.close!=null?` · close ${fmt(state.close,3)}`:''}</p>
-      {state.indicators&&<IndicatorGrid values={state.indicators} close={state.close}/>}
+      {state.indicators&&('pLong' in state.indicators?<ProbabilityGrid values={state.indicators as unknown as Record<string,number|null>}/>:<IndicatorGrid values={state.indicators} close={state.close}/>)}
       <SideReadiness side="long" value={state.longReadiness} checks={state.longChecks} signal={state.signal==='long'}/>
       <SideReadiness side="short" value={state.shortReadiness} checks={state.shortChecks} signal={state.signal==='short'}/>
       {close&&<div className="bot-status-position"><span className={`side-badge ${close.direction}`}>{close.direction.toUpperCase()}</span><dl><div><dt>Entry</dt><dd>{fmt(close.entryPrice,3)}</dd></div><div><dt>Stop</dt><dd>{fmt(close.stop,3)}</dd></div><div><dt>To stop</dt><dd>{fmt(close.stopDistance,3)}</dd></div><div><dt>Exit mode</dt><dd>{close.trailingActive?'Trailing':'Initial stop'}</dd></div></dl></div>}
-      <p className="bot-status-note">Readiness is the share of entry conditions met on the last closed candle, not a win probability.</p>
+      <p className="bot-status-note">{state.indicators&&'pLong' in state.indicators?'Readiness is the model probability for each side on the last closed candle. Entries also need the edge over the opposite side.':'Readiness is the share of entry conditions met on the last closed candle, not a win probability.'}</p>
     </>:<p className="bot-status-empty">{emptyHint??'Start the bot to see live entry readiness.'}</p>}
   </section>;
 }
