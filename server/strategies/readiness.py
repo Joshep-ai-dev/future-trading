@@ -11,8 +11,19 @@ def _metric(value) -> float | None:
     return number if math.isfinite(number) else None
 
 
-def strategy_readiness(signal, config: dict) -> dict:
-    """Return long/short readiness percentages and their individual checks."""
+INDICATORS = (('bbUpper', 'bb_upper'), ('bbBasis', 'bb_basis'), ('bbLower', 'bb_lower'),
+              ('bbWidthPct', 'bb_width_pct'), ('atr', 'atr'), ('adx', 'adx'), ('trendSma', 'trend_sma'))
+
+
+def _optional(value) -> float | None:
+    try:
+        return _metric(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def strategy_readiness(signal, config: dict, rsi_value=None) -> dict:
+    """Return long/short readiness percentages, their checks and indicator values."""
     common = [
         ('ATR', bool(signal.atr >= config['min_atr']), _metric(signal.atr), float(config['min_atr'])),
         ('BB width', bool(signal.bb_width_pct >= config['min_bb_width_pct']), _metric(signal.bb_width_pct),
@@ -32,6 +43,8 @@ def strategy_readiness(signal, config: dict) -> dict:
 
     long = side(signal.long_rebound, signal.long_direction_allowed)
     short = side(signal.short_rebound, signal.short_direction_allowed)
-    return dict(longReadiness=long['readiness'], shortReadiness=short['readiness'],
+    indicators = {key: _optional(getattr(signal, source, None)) for key, source in INDICATORS}
+    indicators['rsi'] = _optional(rsi_value)
+    return dict(indicators=indicators, longReadiness=long['readiness'], shortReadiness=short['readiness'],
                 longChecks=long['checks'], shortChecks=short['checks'],
                 signal='long' if bool(signal.long_signal) else 'short' if bool(signal.short_signal) else None)

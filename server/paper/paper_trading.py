@@ -9,6 +9,7 @@ import pandas as pd
 
 from server.strategies.bb_outer_reversal import Settings, run_backtest
 from server.strategies.readiness import strategy_readiness
+from server.strategies.indicators import rsi
 from server.core.serialization import optional_volume
 from server.market.data import TIMEFRAMES, load_bars
 from server.market.market_refresh import refresh_service
@@ -192,7 +193,8 @@ class PaperTrading:
             boundary = state['candles'][-1]['time'] if state['candles'] else state['tradingFrom']-1
             history = history.loc[history.index > pd.Timestamp(boundary,unit='s',tz='UTC')]
             state['lastCheck'] = now
-            if not len(history) and not finished:
+            # Without new candles, still compute the status once (e.g. after a restart).
+            if not len(history) and not finished and (state.get('strategyState') or not state['candles']):
                 self.save()
                 return
             combined = state['candles']+self.encode(history)
@@ -224,7 +226,7 @@ class PaperTrading:
                                    stopDistance=max(0., float(distance)), trailingActive=bool(position.get('trailing_active')))
             strategy_state = dict(status='position_open' if position else 'scanning',
                                   timestamp=int(bars.index[-1].timestamp()), close=close, closeState=close_state,
-                                  **strategy_readiness(bars.iloc[-1], asdict(config)))
+                                  **strategy_readiness(bars.iloc[-1], asdict(config), rsi(frame.tail(500), 14)[-1]))
             chart_indicators, chart_stops = [], []
             for stamp, bar in bars.tail(1000).iterrows():
                 point = dict(time=int(stamp.timestamp()))

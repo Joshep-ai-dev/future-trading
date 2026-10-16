@@ -34,6 +34,13 @@ class StrategyReadinessTests(unittest.TestCase):
         state = strategy_readiness(signal(sma_ready=False), {**CONFIG, 'use_sma_trend_adjustment': False})
         self.assertTrue(next(c for c in state['longChecks'] if c['label'] == 'Trend ready')['passed'])
 
+    def test_reports_indicator_values_and_missing_ones_as_none(self):
+        state = strategy_readiness(signal(bb_upper=58.2, bb_basis=57.8, bb_lower=57.4, trend_sma=float('nan')), CONFIG, 61.5)
+        self.assertEqual(state['indicators']['bbUpper'], 58.2)
+        self.assertEqual(state['indicators']['adx'], 25.)
+        self.assertEqual(state['indicators']['rsi'], 61.5)
+        self.assertIsNone(state['indicators']['trendSma'])
+
 
 if __name__ == '__main__':
     unittest.main()

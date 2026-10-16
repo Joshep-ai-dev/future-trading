@@ -1,4 +1,4 @@
-import type {StrategyCheck,StrategyState} from '../../shared/api/exchangeTypes';
+import type {StrategyCheck,StrategyIndicators,StrategyState} from '../../shared/api/exchangeTypes';
 import {fmt} from '../../shared/types/types';
 
 const statusLabel=(state:StrategyState|null|undefined,running:boolean)=>!running?'Stopped':!state||state.status==='warming_up'?'Warming up':state.status==='position_open'?'In position':'Scanning';
@@ -13,6 +13,19 @@ function SideReadiness({side,value,checks,signal}:{side:'long'|'short';value:num
   </div>;
 }
 
+function IndicatorGrid({values,close}:{values:StrategyIndicators;close?:number|null}){
+  const rsi=values.rsi,rsiZone=rsi==null?'':rsi>=70?'Overbought':rsi<=30?'Oversold':'Neutral';
+  const bandPosition=close!=null&&values.bbUpper!=null&&values.bbLower!=null&&values.bbUpper>values.bbLower?Math.round((close-values.bbLower)/(values.bbUpper-values.bbLower)*100):null;
+  const rows:[string,string,string?][]=[
+    ['BB upper',fmt(values.bbUpper,3)],['BB middle',fmt(values.bbBasis,3)],['BB lower',fmt(values.bbLower,3)],
+    ['Price in band',bandPosition==null?'—':`${bandPosition}%`,bandPosition==null?undefined:bandPosition>=100?'Above upper':bandPosition<=0?'Below lower':undefined],
+    ['BB width',values.bbWidthPct==null?'—':`${fmt(values.bbWidthPct,2)}%`],['ATR',fmt(values.atr,3)],
+    ['ADX',fmt(values.adx,1)],['Trend SMA',fmt(values.trendSma,3)],
+    ['RSI (14)',fmt(rsi,1),rsiZone||undefined],
+  ];
+  return <dl className="bot-indicators">{rows.map(([label,value,note])=><div key={label}><dt>{label}</dt><dd>{value}{note&&<small>{note}</small>}</dd></div>)}</dl>;
+}
+
 /** Strategy readiness card shared by the paper and live terminals. */
 export default function BotStatusPanel({state,running,timeLabel,emptyHint}:{state:StrategyState|null|undefined;running:boolean;timeLabel?:string;emptyHint?:string}){
   const close=state?.closeState;
@@ -20,6 +33,7 @@ export default function BotStatusPanel({state,running,timeLabel,emptyHint}:{stat
     <header><h2>Bot status</h2><span className={`bot-status-pill is-${statusTone(state,running)}`}><i aria-hidden="true"/>{statusLabel(state,running)}</span></header>
     {state&&state.longChecks.length?<>
       <p className="bot-status-meta">Last closed candle{timeLabel?` ${timeLabel}`:''}{state.close!=null?` · close ${fmt(state.close,3)}`:''}</p>
+      {state.indicators&&<IndicatorGrid values={state.indicators} close={state.close}/>}
       <SideReadiness side="long" value={state.longReadiness} checks={state.longChecks} signal={state.signal==='long'}/>
       <SideReadiness side="short" value={state.shortReadiness} checks={state.shortChecks} signal={state.signal==='short'}/>
       {close&&<div className="bot-status-position"><span className={`side-badge ${close.direction}`}>{close.direction.toUpperCase()}</span><dl><div><dt>Entry</dt><dd>{fmt(close.entryPrice,3)}</dd></div><div><dt>Stop</dt><dd>{fmt(close.stop,3)}</dd></div><div><dt>To stop</dt><dd>{fmt(close.stopDistance,3)}</dd></div><div><dt>Exit mode</dt><dd>{close.trailingActive?'Trailing':'Initial stop'}</dd></div></dl></div>}

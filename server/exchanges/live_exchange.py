@@ -11,6 +11,7 @@ import pandas as pd
 
 from server.strategies.bb_outer_reversal import Settings, run_backtest
 from server.strategies.readiness import strategy_readiness
+from server.strategies.indicators import rsi
 from server.market.data import TIMEFRAMES
 from server.exchanges.htx_account import classic_balance, classic_positions, classic_orders, rejection_reason, normalize_htx_balance
 
@@ -516,7 +517,8 @@ class AutomaticLiveBot:
             close_state=dict(direction=live['direction'],entryPrice=float(live['entryPrice']),stop=float(live['stop']),
                              stopDistance=max(0.,float(distance)),trailingActive=bool(simulated and simulated.get('trailing_active')))
         return dict(status='position_open' if live else 'scanning',timestamp=timestamp,close=float(close),
-                    closeState=close_state,**strategy_readiness(signal,request.bb_reversal))
+                    closeState=close_state,**strategy_readiness(signal,request.bb_reversal,
+                    rsi(self.frame.tail(500),14)[-1] if self.frame is not None and len(self.frame) else None))
 
     def _apply_bar(self,exchange,market,venue,request,signal,simulated,close):
         signal_direction=1 if bool(signal.long_signal) else -1 if bool(signal.short_signal) else 0
