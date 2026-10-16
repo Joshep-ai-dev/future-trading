@@ -127,7 +127,11 @@ class UserDataStore:
         self.ready = False
 
     def _connect(self):
-        return (self._connect_fn or auth_store._connect)()
+        connection = (self._connect_fn or auth_store._connect)()
+        cursor = connection.cursor()
+        cursor.execute("SET time_zone='+00:00'")  # TIMESTAMP columns are read back as UTC.
+        cursor.close()
+        return connection
 
     def _run(self, sql: str, params: tuple = (), fetch: str | None = None):
         with self._connect() as connection:
