@@ -186,7 +186,7 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
           <small className="settings-help">Ranking objective: {tuneResult.objective} Forward-test metrics are historical evidence, not a guarantee of future performance.</small>
         </>}
       </section>}
-      
+
     </div>}
     {error&&view!=='paper'&&<p className="error" role="alert">{error}</p>}
     {view==='results'&&<div id="page-results" role="tabpanel" aria-labelledby="tab-results" hidden={view!=='results'}><ResultsWorkspace key={runId} result={result} busy={busy} stale={stale} onRun={()=>void run()} onConfigure={()=>onViewChange('strategy')} onExport={download} summary={[['Period (UTC)',`${settings.start_date} → ${settings.end_date}`],['Timeframe',settings.entry_timeframe],['Starting balance',`$${fmt(settings.capital)}`],['Leverage',`${settings.max_leverage}×`],['Per trade',settings.bb_reversal.amount_unit==='percent'?`${settings.bb_reversal.amount_per_trade}% of balance`:`$${fmt(settings.bb_reversal.amount_per_trade)}`]]}/></div>}
