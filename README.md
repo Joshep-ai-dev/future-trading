@@ -64,3 +64,21 @@ npm run build
 ```
 
 Optional RSI + price exit (Bot settings): disabled by default. Uses Wilder RSI of execution-candle closes (default length 14). Both long and short require close price minus entry price strictly greater than 0.3; long additionally requires RSI strictly greater than 85, short RSI strictly less than 15. All thresholds are configurable. This literal upward price condition is adverse for shorts. Existing intrabar stops take priority; this exit fills at candle close and records `rsi_price_exit`. Settings apply to new backtests or new paper sessions; chart indicator settings are independent.
+# Silver Terminal
+
+## MySQL accounts
+
+Create an empty MySQL database and a dedicated application user, then copy `.env.example` to `.env` and enter that user's connection values. The backend creates the `users` and `user_sessions` tables automatically at startup.
+
+```sql
+CREATE DATABASE silver_terminal CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'silver_app'@'localhost' IDENTIFIED BY 'replace-with-a-strong-password';
+GRANT ALL PRIVILEGES ON silver_terminal.* TO 'silver_app'@'localhost';
+FLUSH PRIVILEGES;
+```
+
+Run `start.cmd` to install the MySQL driver and start the application. The first account created is an Admin; later accounts start at Trader level. Viewer accounts can inspect research and market data, Trader accounts can operate paper/live trading, and Admin accounts can manage levels through the account API.
+
+If MySQL reports `Access denied for user 'silver_app'`, stop the app and run `.venv\Scripts\python.exe scripts\setup_mysql.py`. Enter a MySQL administrator login when prompted; the script creates the database and makes the application user's password match `.env`.
+
+The normal `npm run dev` command listens only on this computer. After configuring accounts, `npm run dev:lan` listens on the local network. Open `http://<this-computer-LAN-IP>:5173` from another computer and allow ports 5173 and 3001 through Windows Firewall for private networks.

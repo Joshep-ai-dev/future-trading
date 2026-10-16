@@ -5,11 +5,12 @@ import type {Page} from './Tabs';
 import AppHeader from './components/AppHeader';
 import BacktestPanel from './BacktestPanel';
 import MarketStatus from './MarketStatus';
+import AuthScreen,{type SignedInUser} from './AuthScreen';
 import {useExchangeVenue} from './exchangeVenue';
 import './style.css';
 
 type Range={startDate:string;endDate:string};
-function App() {
+function App({user,onSignedOut}:{user:SignedInUser;onSignedOut:()=>void}) {
   const [page,setPage]=useState<Page>('paper');
   const [accountMode,setAccountMode]=useState<'live'|'paper'>(()=>{try{return localStorage.getItem('silver.account.mode')==='live'?'live':'paper';}catch{return 'paper';}});
   const exchangeVenue=useExchangeVenue();
@@ -21,11 +22,19 @@ function App() {
   useEffect(()=>{void loadRange();},[loadRange]);
   function navigate(next:Page){setPage(next);window.scrollTo({top:0});}
   function changeAccountMode(mode:'live'|'paper'){setAccountMode(mode);try{localStorage.setItem('silver.account.mode',mode);}catch{/* Account mode remains available for this session. */}}
-  return <main className="app-shell"><AppHeader page={page} onNavigate={navigate} accountMode={accountMode} onModeChange={changeAccountMode}/>
+  async function signOut(){await api('/api/auth/sign-out',{method:'POST'});onSignedOut();}
+  return <main className="app-shell"><AppHeader page={page} onNavigate={navigate} accountMode={accountMode} onModeChange={changeAccountMode} user={user} onSignOut={()=>void signOut()}/>
     {page!=='account'&&!(page==='paper'&&accountMode==='live')&&<MarketStatus accountMode={accountMode} onUpdated={()=>void loadRange()}/>}
     {error&&<p className="error" role="alert">{error}</p>}
     {range?<BacktestPanel range={range} view={page} onViewChange={navigate} accountMode={accountMode} onAccountModeChange={changeAccountMode}/>:<p role="status">Loading market history...</p>}
     <footer className="app-footer"><span><i className="status-dot"/> LOCAL WORKSPACE</span><span>{accountMode==='live'?exchangeVenue.toUpperCase():'OKX'} · XAG / USDT perpetual</span><span>{accountMode==='live'?'Exchange market stream · Real account':'Virtual funds · Candle-based execution'}</span></footer>
   </main>;
 }
-createRoot(document.getElementById('root')!).render(<App/>);
+function Root(){
+  const [auth,setAuth]=useState<{configured:boolean;available:boolean;error:string|null;user:SignedInUser|null}|null>(null);
+  useEffect(()=>{void api<{configured:boolean;available:boolean;error:string|null;user:SignedInUser|null}>('/api/auth/me').then(setAuth).catch(error=>setAuth({configured:false,available:false,error:String(error),user:null}));},[]);
+  if(!auth)return <main className="auth-page"><p role="status">Loading account…</p></main>;
+  if(!auth.user)return <AuthScreen configured={auth.configured} databaseError={auth.error} onAuthenticated={user=>setAuth({configured:true,available:true,error:null,user})}/>;
+  return <App user={auth.user} onSignedOut={()=>setAuth({configured:true,available:true,error:null,user:null})}/>;
+}
+createRoot(document.getElementById('root')!).render(<Root/>);

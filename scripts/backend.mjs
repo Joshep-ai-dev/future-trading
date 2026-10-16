@@ -34,7 +34,8 @@ pulse();
 const timer = setInterval(pulse,1000);
 const cleanup = () => {clearInterval(timer);rmSync(heartbeat,{force:true});};
 process.on('exit',cleanup);
-const child = spawn(python,['-m','server.dev',heartbeat],{stdio:'inherit'});
+const lan = process.argv.includes('--lan');
+const child = spawn(python,['-m','server.dev',heartbeat],{stdio:'inherit',env:{...process.env,...(lan?{SILVER_HOST:'0.0.0.0'}:{})}});
 let stopping = false;
 let finished = false;
 const finish = code => {

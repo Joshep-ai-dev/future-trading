@@ -5,10 +5,11 @@ from queue import Queue
 from threading import Thread
 import json
 import logging
+import os
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from .data import load_bars
 from .strategy import BacktestRequest
@@ -21,11 +22,13 @@ from .credential_store import credential_store
 from .serialization import optional_volume
 from .exchange_stream import ExchangeStreams
 from .fine_tuning import fine_tune
+from .auth_store import SESSION_DAYS, auth_store
 
 exchange_streams = ExchangeStreams(live_exchange)
 
 @asynccontextmanager
 async def lifespan(app):
+    auth_store.initialize()
     refresh_service.start()
     paper_service.start()
     try:
@@ -39,6 +42,54 @@ async def lifespan(app):
 app = FastAPI(title='Silver Price Research', lifespan=lifespan)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 logger = logging.getLogger(__name__)
+AUTH_COOKIE = 'silver_session'
+TRADER_PATHS = ('/api/exchange/connect', '/api/exchange/disconnect', '/api/exchange/reconnect',
+                '/api/exchange/forget', '/api/exchange/order', '/api/exchange/close',
+                '/api/exchange/auto/', '/api/paper/start', '/api/paper/speed', '/api/paper/pause',
+                '/api/paper/resume', '/api/profiles', '/api/market-refresh')
+
+
+@app.middleware('http')
+async def authenticated_api(request: Request, call_next):
+    path = request.url.path
+    public_auth = path in ('/api/auth/me', '/api/auth/sign-up', '/api/auth/sign-in', '/api/auth/sign-out')
+    if not path.startswith('/api/') or path == '/api/health' or public_auth:
+        return await call_next(request)
+    if not auth_store.available():
+        return JSONResponse({'detail': auth_store.startup_error or 'Configure MySQL in .env and restart the backend.'}, status_code=503)
+    try:
+        user = auth_store.user_for_token(request.cookies.get(AUTH_COOKIE))
+    except Exception:
+        return JSONResponse({'detail': 'The account database is unavailable.'}, status_code=503)
+    if not user:
+        return JSONResponse({'detail': 'Sign in to continue.'}, status_code=401)
+    if request.method != 'GET' and any(path == prefix or path.startswith(prefix) for prefix in TRADER_PATHS) and user['level'] not in ('trader', 'admin'):
+        return JSONResponse({'detail': 'Trader account level required.'}, status_code=403)
+    request.state.user = user
+    return await call_next(request)
+
+
+class SignUpRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    email: str = Field(min_length=5, max_length=254, pattern=r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
+    display_name: str = Field(min_length=2, max_length=80)
+    password: str = Field(min_length=10, max_length=128)
+
+
+class SignInRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    email: str = Field(min_length=5, max_length=254)
+    password: str = Field(min_length=1, max_length=128)
+
+
+class AccountLevelRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    level: Literal['viewer','trader','admin']
+
+
+def set_auth_cookie(response: Response, token: str) -> None:
+    response.set_cookie(AUTH_COOKIE, token, max_age=SESSION_DAYS * 86400, httponly=True,
+                        samesite='strict', secure=os.getenv('SILVER_HTTPS', '').lower() == 'true')
 
 class Parameters(BaseModel):
     model_config = ConfigDict(extra='forbid')
@@ -99,6 +150,63 @@ def session_chart(parameters: ChartViewRequest):
 @app.get('/api/health')
 def health():
     return {'application': 'silver-price', 'version': 3}
+
+
+@app.get('/api/auth/me')
+def auth_me(request: Request):
+    if not auth_store.configured():
+        return {'configured': False, 'available': False, 'error': 'MySQL is not configured.', 'user': None}
+    if not auth_store.available():
+        return {'configured': True, 'available': False, 'error': auth_store.startup_error, 'user': None}
+    return {'configured': True, 'available': True, 'error': None, 'user': auth_store.user_for_token(request.cookies.get(AUTH_COOKIE))}
+
+
+@app.post('/api/auth/sign-up')
+def auth_sign_up(parameters: SignUpRequest, response: Response):
+    if not auth_store.available():
+        raise HTTPException(status_code=503, detail=auth_store.startup_error or 'Configure MySQL in .env and restart the backend.')
+    try:
+        user, token = auth_store.sign_up(parameters.email, parameters.display_name, parameters.password)
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    set_auth_cookie(response, token)
+    return {'user': user}
+
+
+@app.post('/api/auth/sign-in')
+def auth_sign_in(parameters: SignInRequest, response: Response):
+    if not auth_store.available():
+        raise HTTPException(status_code=503, detail=auth_store.startup_error or 'Configure MySQL in .env and restart the backend.')
+    try:
+        user, token = auth_store.sign_in(parameters.email, parameters.password)
+    except ValueError as error:
+        raise HTTPException(status_code=401, detail=str(error)) from error
+    set_auth_cookie(response, token)
+    return {'user': user}
+
+
+@app.post('/api/auth/sign-out')
+def auth_sign_out(request: Request, response: Response):
+    auth_store.sign_out(request.cookies.get(AUTH_COOKIE))
+    response.delete_cookie(AUTH_COOKIE, samesite='strict')
+    return {'signedOut': True}
+
+
+@app.get('/api/auth/users')
+def auth_users(request: Request):
+    if request.state.user['level'] != 'admin':
+        raise HTTPException(status_code=403, detail='Admin account level required.')
+    return {'users': auth_store.list_users()}
+
+
+@app.patch('/api/auth/users/{user_id}/level')
+def auth_user_level(user_id: int, parameters: AccountLevelRequest, request: Request):
+    if request.state.user['level'] != 'admin':
+        raise HTTPException(status_code=403, detail='Admin account level required.')
+    try:
+        return {'user': auth_store.set_level(user_id, parameters.level)}
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
 
 
 @app.get('/api/profiles')

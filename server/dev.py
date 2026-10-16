@@ -1,5 +1,6 @@
 """Stop the development server when its launcher's heartbeat disappears."""
 import sys
+import os
 import threading
 import time
 from pathlib import Path
@@ -10,7 +11,7 @@ import uvicorn
 def main():
     heartbeat = Path(sys.argv[1])
     server = uvicorn.Server(uvicorn.Config(
-        'server.app:app', host='127.0.0.1', port=3001,
+        'server.app:app', host=os.getenv('SILVER_HOST', '127.0.0.1'), port=3001,
         timeout_graceful_shutdown=5,
     ))
 
