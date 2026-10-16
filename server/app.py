@@ -22,6 +22,7 @@ from server.core.workspaces import WorkspaceRegistry
 from server.storage.credential_store import credential_store
 from server.core.serialization import optional_volume
 from server.strategies.fine_tuning import fine_tune
+from server.strategies.ml.tuning import ml_fine_tune
 from server.storage.auth_store import SESSION_DAYS, auth_store
 
 workspaces = WorkspaceRegistry(user_data_store)
@@ -628,7 +629,8 @@ def fine_tune_backtest(parameters: FineTuneRequest):
     def work():
         try:
             frame, _ = load_bars(parameters.settings.entry_timeframe)
-            result = fine_tune(frame, parameters.settings, search_method=parameters.search_method, objective=parameters.objective,
+            tuner = ml_fine_tune if parameters.settings.strategy == 'ml_ensemble' else fine_tune
+            result = tuner(frame, parameters.settings, search_method=parameters.search_method, objective=parameters.objective,
                                progress=lambda percent, message: updates.put(
                                    {'type': 'progress', 'percent': percent, 'message': message}))
             updates.put({'type': 'result', 'result': result})

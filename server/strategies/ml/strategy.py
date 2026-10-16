@@ -39,6 +39,7 @@ class MLSettings:
     reverse_on_signal: bool = True
     amount_per_trade: float = 100.
     amount_unit: str = 'percent'
+    capacity: str = 'standard'
 
     def __post_init__(self):
         unknown = [key for key in self.feature_groups if key not in FEATURE_GROUPS]
@@ -60,7 +61,8 @@ class MLSettings:
                   (50 <= self.retrain_every <= 50_000, 'Retrain interval must be 50-50000 candles'),
                   (self.trade_mode in ('Both', 'Long Only', 'Short Only'), 'Invalid trade mode'),
                   (self.amount_per_trade > 0 and (self.amount_unit != 'percent' or self.amount_per_trade <= 100), 'Invalid amount per trade'),
-                  (self.amount_unit in ('percent', 'price'), 'Invalid amount unit')]
+                  (self.amount_unit in ('percent', 'price'), 'Invalid amount unit'),
+                  (self.capacity in ('light', 'standard', 'rich'), 'Model capacity must be light, standard or rich')]
         for valid, message in checks:
             if not valid:
                 raise ValueError(message)
@@ -72,7 +74,7 @@ class MLSettings:
     def model_key(self) -> str:
         """Identity of everything that changes a trained fold (not sizing or entry rules)."""
         return config_key(groups=sorted(self.feature_groups), models=self.models, horizon=self.horizon,
-                          tp=self.take_profit_atr, sl=self.stop_atr, atr=self.atr_length)
+                          tp=self.take_profit_atr, sl=self.stop_atr, atr=self.atr_length, capacity=self.capacity)
 
 
 def _atr(frame: pd.DataFrame, length: int) -> pd.Series:
@@ -92,9 +94,18 @@ def signals_from(probabilities: pd.DataFrame, settings: MLSettings) -> np.ndarra
     return np.where(long, 1, np.where(short, -1, 0)).astype(float)
 
 
-def run_ml_backtest(frame: pd.DataFrame, settings: MLSettings, *, initial_capital: float, leverage: float,
-                    start=None, close_at_end=False, bar_seconds=None, min_tick=.01,
-                    fee_bps=0., slippage=0., spread=0., funding_bps=0.):
+@dataclass
+class Prepared:
+    clean: pd.DataFrame
+    atr: pd.Series
+    features_count: int
+    labels: pd.Series
+    start_index: int
+    walk: object
+
+
+def prepare(frame: pd.DataFrame, settings: MLSettings, start=None, progress=None) -> Prepared:
+    """Features, labels and walk-forward probabilities: the expensive, cacheable part."""
     clean = frame.dropna(subset=['open', 'high', 'low', 'close'])
     if len(clean) < 2:
         raise ValueError('Not enough candles for the ML strategy')
@@ -104,7 +115,15 @@ def run_ml_backtest(frame: pd.DataFrame, settings: MLSettings, *, initial_capita
     start_index = int(np.searchsorted(clean.index, start)) if start is not None else 0
     result = walk_forward(features, labels, start_index=start_index, train_bars=settings.train_bars,
                           retrain_every=settings.retrain_every, horizon=settings.horizon,
-                          models=settings.models, key=settings.model_key())
+                          models=settings.models, key=settings.model_key(), capacity=settings.capacity, progress=progress)
+    return Prepared(clean, atr, features.shape[1], labels, start_index, result)
+
+
+def execute(prepared: Prepared, settings: MLSettings, *, initial_capital: float, leverage: float, start=None, end=None,
+            close_at_end=False, bar_seconds=None, min_tick=.01, fee_bps=0., slippage=0., spread=0., funding_bps=0.):
+    """Turn prepared probabilities into trades with the given entry rules (cheap)."""
+    clean, atr, result = prepared.clean, prepared.atr, prepared.walk
+    start_index = prepared.start_index
     signals = signals_from(result.probabilities, settings)
     distance = atr.to_numpy()
     # Skip entries whose take-profit cannot pay for the round trip several times over.
@@ -118,9 +137,13 @@ def run_ml_backtest(frame: pd.DataFrame, settings: MLSettings, *, initial_capita
                                   max_hold_bars=settings.horizon, reverse_on_signal=settings.reverse_on_signal,
                                   min_tick=min_tick)
     bars = clean.join(result.probabilities).assign(atr=atr)
+    if end is not None:
+        keep = bars.index <= end
+        bars, signals, distance = bars.loc[keep], signals[keep], distance[keep]
     output = run_signal_backtest(bars, signals, distance*settings.stop_atr, distance*settings.take_profit_atr, execution,
                                  start=start, close_at_end=close_at_end, bar_seconds=bar_seconds,
                                  fee_bps=fee_bps, slippage=slippage, spread=spread, funding_bps=funding_bps)
+    labels = prepared.labels
     evaluated = result.probabilities.iloc[start_index:]
     known = labels.iloc[start_index:].notna() & evaluated.p_long.notna()
     evaluated_cost = round_trip[start_index:]
@@ -128,13 +151,22 @@ def run_ml_backtest(frame: pd.DataFrame, settings: MLSettings, *, initial_capita
                             medianTarget=float(np.nanmedian((distance*settings.take_profit_atr)[start_index:])) if len(evaluated_cost) else None,
                             medianRoundTripCost=float(np.nanmedian(evaluated_cost)) if len(evaluated_cost) else None,
                             folds=result.folds, importance=dict(list(result.importance.items())[:25]),
-                            featureCount=features.shape[1], trainedBars=int(sum(f['bars'] for f in result.folds)),
+                            featureCount=prepared.features_count, trainedBars=int(sum(f['bars'] for f in result.folds)),
                             labelBalance={name: float((labels.iloc[start_index:] == value).mean())
                                           for name, value in (('long', 1), ('none', 0), ('short', -1))},
                             accuracy=float((np.array([-1, 0, 1])[np.argmax(evaluated[known].to_numpy(), axis=1)]
                                             == labels.iloc[start_index:][known].to_numpy()).mean()) if known.any() else None,
                             settings=asdict(settings))
     return output
+
+
+def run_ml_backtest(frame: pd.DataFrame, settings: MLSettings, *, initial_capital: float, leverage: float,
+                    start=None, close_at_end=False, bar_seconds=None, min_tick=.01,
+                    fee_bps=0., slippage=0., spread=0., funding_bps=0.):
+    prepared = prepare(frame, settings, start)
+    return execute(prepared, settings, initial_capital=initial_capital, leverage=leverage, start=start,
+                   close_at_end=close_at_end, bar_seconds=bar_seconds, min_tick=min_tick, fee_bps=fee_bps,
+                   slippage=slippage, spread=spread, funding_bps=funding_bps)
 
 
 def ml_readiness(bar, settings: MLSettings) -> dict:

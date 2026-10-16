@@ -32,48 +32,57 @@ def _imputed(estimator, scale: bool = False):
     return make_pipeline(*steps, estimator)
 
 
-def _lightgbm(seed: int):
+# Model capacity presets: how large each model may grow. Tuned by the grid search.
+CAPACITY = {
+    'light': dict(trees=100, leaves=7, depth=3, forest_depth=6, leaf=120, hidden=(48,), C=.1, sequence_hidden=16),
+    'standard': dict(trees=200, leaves=15, depth=4, forest_depth=10, leaf=60, hidden=(96, 48), C=.3, sequence_hidden=32),
+    'rich': dict(trees=400, leaves=31, depth=6, forest_depth=14, leaf=30, hidden=(160, 80), C=1., sequence_hidden=64),
+}
+
+
+def _lightgbm(seed: int, c: dict):
     from lightgbm import LGBMClassifier
-    return LGBMClassifier(n_estimators=200, learning_rate=.05, num_leaves=15, min_child_samples=60, max_bin=63,
-                          subsample=.8, subsample_freq=1, colsample_bytree=.8, reg_lambda=1.,
+    return LGBMClassifier(n_estimators=c['trees'], learning_rate=.05, num_leaves=c['leaves'], min_child_samples=c['leaf'],
+                          max_bin=63, subsample=.8, subsample_freq=1, colsample_bytree=.8, reg_lambda=1.,
                           class_weight='balanced', random_state=seed, n_jobs=4, verbose=-1)
 
 
-def _xgboost(seed: int):
+def _xgboost(seed: int, c: dict):
     from xgboost import XGBClassifier
-    return XGBClassifier(n_estimators=200, learning_rate=.06, max_depth=4, max_bin=64, min_child_weight=5,
-                         subsample=.8, colsample_bytree=.8, reg_lambda=1., tree_method='hist',
-                         objective='multi:softprob', eval_metric='mlogloss', random_state=seed, n_jobs=4)
+    return XGBClassifier(n_estimators=c['trees'], learning_rate=.06, max_depth=c['depth'], max_bin=64,
+                         min_child_weight=max(1, c['leaf']//12), subsample=.8, colsample_bytree=.8, reg_lambda=1.,
+                         tree_method='hist', objective='multi:softprob', eval_metric='mlogloss', random_state=seed, n_jobs=4)
 
 
-def _hist_gbm(seed: int):
+def _hist_gbm(seed: int, c: dict):
     from sklearn.ensemble import HistGradientBoostingClassifier
-    return HistGradientBoostingClassifier(max_iter=150, learning_rate=.08, max_leaf_nodes=15, max_bins=63,
-                                          min_samples_leaf=60, l2_regularization=1., class_weight='balanced',
-                                          random_state=seed)
+    return HistGradientBoostingClassifier(max_iter=max(60, c['trees']*3//4), learning_rate=.08, max_leaf_nodes=c['leaves'],
+                                          max_bins=63, min_samples_leaf=c['leaf'], l2_regularization=1.,
+                                          class_weight='balanced', random_state=seed)
 
 
-def _random_forest(seed: int):
+def _random_forest(seed: int, c: dict):
     from sklearn.ensemble import RandomForestClassifier
-    return _imputed(RandomForestClassifier(n_estimators=250, max_depth=10, min_samples_leaf=40,
+    return _imputed(RandomForestClassifier(n_estimators=c['trees'], max_depth=c['forest_depth'], min_samples_leaf=c['leaf']*2//3,
                                            max_features='sqrt', class_weight='balanced_subsample',
                                            random_state=seed, n_jobs=-1))
 
 
-def _extra_trees(seed: int):
+def _extra_trees(seed: int, c: dict):
     from sklearn.ensemble import ExtraTreesClassifier
-    return _imputed(ExtraTreesClassifier(n_estimators=300, max_depth=12, min_samples_leaf=40,
-                                         max_features='sqrt', class_weight='balanced', random_state=seed, n_jobs=-1))
+    return _imputed(ExtraTreesClassifier(n_estimators=c['trees']*3//2, max_depth=c['forest_depth']+2,
+                                         min_samples_leaf=c['leaf']*2//3, max_features='sqrt',
+                                         class_weight='balanced', random_state=seed, n_jobs=-1))
 
 
-def _logistic(seed: int):
+def _logistic(seed: int, c: dict):
     from sklearn.linear_model import LogisticRegression
-    return _imputed(LogisticRegression(C=.3, max_iter=600, class_weight='balanced'), scale=True)
+    return _imputed(LogisticRegression(C=c['C'], max_iter=600, class_weight='balanced'), scale=True)
 
 
-def _neural(seed: int):
+def _neural(seed: int, c: dict):
     from sklearn.neural_network import MLPClassifier
-    return _imputed(MLPClassifier(hidden_layer_sizes=(96, 48), alpha=1e-3, learning_rate_init=1e-3,
+    return _imputed(MLPClassifier(hidden_layer_sizes=c['hidden'], alpha=1e-3, learning_rate_init=1e-3,
                                   batch_size=256, max_iter=60, early_stopping=True, n_iter_no_change=6,
                                   random_state=seed), scale=True)
 
@@ -84,7 +93,7 @@ class ModelSpec:
     label: str
     family: str
     description: str
-    build: Callable[[int], object]
+    build: Callable[[int, dict], object] | None
     requires: str | None = None
     balanced: bool = True
     sequence: str | None = None  # 'cnn' or 'lstm' for PyTorch window models; None for tabular models.
@@ -144,7 +153,8 @@ class TrainedModel:
         return {name: float(value/total) for name, value in zip(self.feature_names, values)}
 
 
-def train_model(key: str, features: np.ndarray, labels: np.ndarray, feature_names: list[str], seed: int = 7) -> TrainedModel:
+def train_model(key: str, features: np.ndarray, labels: np.ndarray, feature_names: list[str], seed: int = 7,
+                capacity: str = 'standard') -> TrainedModel:
     spec = MODELS.get(key)
     if spec is None:
         raise ValueError(f'Unknown model: {key}')
@@ -156,7 +166,7 @@ def train_model(key: str, features: np.ndarray, labels: np.ndarray, feature_name
         raise ValueError('The training window contains only one outcome; widen it or change the exit targets')
     remap = {cls: index for index, cls in enumerate(present)}
     target = np.vectorize(remap.get)(encoded)
-    estimator = spec.build(seed)
+    estimator = spec.build(seed, CAPACITY[capacity])
     fit_args = {}
     if not spec.balanced:
         fit_args['sample_weight'] = _sample_weights(target)
@@ -164,7 +174,7 @@ def train_model(key: str, features: np.ndarray, labels: np.ndarray, feature_name
     return TrainedModel(key, estimator, present, feature_names)
 
 
-def fit_model(key: str, features, labels, rows: slice, seed: int = 7):
+def fit_model(key: str, features, labels, rows: slice, seed: int = 7, capacity: str = 'standard'):
     """Train ``key`` on the labelled rows in ``rows`` of the full feature table.
 
     Sequence models may read lookback context before ``rows.start``; tabular
@@ -177,7 +187,8 @@ def fit_model(key: str, features, labels, rows: slice, seed: int = 7):
         raise ValueError(f'{spec.label} needs the "{spec.requires}" package. Install requirements.txt and restart.')
     if spec.sequence:
         from server.strategies.ml.sequence import fit_sequence
-        return fit_sequence(key, spec.sequence, features, labels, rows, seed=seed)
+        return fit_sequence(key, spec.sequence, features, labels, rows, seed=seed,
+                            hidden=CAPACITY[capacity]['sequence_hidden'])
     window_x, window_y = features.iloc[rows], labels.iloc[rows]
     mask = window_y.notna().to_numpy()
-    return train_model(key, window_x.to_numpy()[mask], window_y.to_numpy()[mask], list(features.columns), seed)
+    return train_model(key, window_x.to_numpy()[mask], window_y.to_numpy()[mask], list(features.columns), seed, capacity)

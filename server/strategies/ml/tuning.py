@@ -1,0 +1,165 @@
+"""Hyperparameter search for the ML Ensemble strategy.
+
+Two nested stages keep the search affordable:
+
+1. Model stage (expensive): every combination of horizon, take-profit and stop
+   (plus model capacity) retrains the walk-forward ensemble once over the whole
+   range. ``search_method='grid'`` tries a fixed grid; ``'ml'`` samples a wider
+   random space.
+2. Entry stage (cheap): for each trained combination, every entry probability,
+   edge and reversal rule is executed on the already predicted probabilities.
+
+The evaluated range is split 60/20/20 into train, validation and forward test.
+All predictions are out-of-sample walk-forward predictions; candidates are
+ranked on validation only and the forward test is reported, never used to pick.
+The result has the same shape as the BB ``fine_tune`` so the UI can show either.
+"""
+from __future__ import annotations
+
+import itertools
+import random
+from dataclasses import asdict, replace
+
+import pandas as pd
+
+from server.market.data import TIMEFRAMES
+from server.strategies.fine_tuning import _ranking_key, _score
+from server.strategies.ml.strategy import MLSettings, execute, prepare
+from server.strategies.strategy import seconds
+
+MODEL_GRID = dict(horizon=(8, 12, 24), take_profit_atr=(1., 1.5, 2.), stop_atr=(.75, 1.))
+CAPACITIES = ('light', 'standard', 'rich')
+ENTRY_GRID = dict(entry_threshold=(.45, .5, .55, .6, .65), min_edge=(.05, .1, .2, .3), reverse_on_signal=(True, False))
+RANDOM_MODELS = 24
+FINALISTS = 5
+
+
+def _combinations(axes: dict) -> list[dict]:
+    keys = list(axes)
+    return [dict(zip(keys, values)) for values in itertools.product(*(axes[key] for key in keys))]
+
+
+def _random_models(base: MLSettings, count: int, seed: int = 1729) -> list[dict]:
+    rng = random.Random(seed)
+    seen, output = set(), []
+    while len(output) < count:
+        candidate = dict(horizon=rng.choice((6, 8, 12, 16, 24, 36, 48)),
+                         take_profit_atr=rng.choice((.75, 1., 1.25, 1.5, 2., 2.5, 3.)),
+                         stop_atr=rng.choice((.5, .75, 1., 1.25, 1.5, 2.)),
+                         capacity=rng.choice(CAPACITIES))
+        key = tuple(candidate.values())
+        if key not in seen:
+            seen.add(key)
+            output.append(candidate)
+    return output
+
+
+def ml_fine_tune(frame: pd.DataFrame, request, progress=None, search_method='grid', objective='profit'):
+    if objective not in ('profit', 'balanced'):
+        raise ValueError('Objective must be profit or balanced')
+    if search_method not in ('grid', 'ml'):
+        raise ValueError('Search method must be grid or ml')
+    report = progress or (lambda percent, message: None)
+    base = MLSettings(**request.ml)
+    duration = TIMEFRAMES[request.entry_timeframe]
+    start = pd.Timestamp(seconds(request.start_date), unit='s', tz='UTC')
+    end = pd.Timestamp(seconds(request.end_date)+86400, unit='s', tz='UTC')
+    clean = frame.dropna(subset=['open', 'high', 'low', 'close'])
+    clean = clean.loc[clean.index+pd.Timedelta(seconds=duration) <= end]
+    evaluated_index = clean.index[clean.index >= start]
+    if len(evaluated_index) < 600:
+        raise ValueError('ML tuning needs at least 600 complete candles in the selected date range.')
+    if (clean.index < start).sum() < base.train_bars // 2:
+        report(1, 'Little history before the start date: the first blocks train on less data')
+    cuts = (evaluated_index[0], evaluated_index[int(len(evaluated_index)*.6)],
+            evaluated_index[int(len(evaluated_index)*.8)], evaluated_index[-1])
+    segments = dict(train=(cuts[0], cuts[1]), validation=(cuts[1], cuts[2]), forwardTest=(cuts[2], cuts[3]))
+    costs = dict(fee_bps=request.fee_bps, slippage=request.slippage, spread=request.spread, funding_bps=request.funding_bps)
+
+    if search_method == 'grid':
+        model_candidates = [{**combo, 'capacity': base.capacity} for combo in _combinations(MODEL_GRID)]
+        grid_axes = {**{key: list(values) for key, values in MODEL_GRID.items()}, 'capacity': list(CAPACITIES),
+                     **{key: [float(v) if not isinstance(v, bool) else v for v in values] for key, values in ENTRY_GRID.items()}}
+    else:
+        model_candidates = _random_models(base, RANDOM_MODELS)
+        grid_axes = None
+    entry_candidates = _combinations(ENTRY_GRID)
+
+    def run_segment(prepared, settings, name):
+        left, right = segments[name]
+        result = execute(prepared, settings, initial_capital=request.capital, leverage=request.max_leverage,
+                         start=left, end=right, close_at_end=True, bar_seconds=duration, min_tick=request.tick_size, **costs)
+        return _score(result, request.capital)
+
+    prepared_cache, scored = {}, []
+
+    def evaluate_model(params, label, percent_from, percent_span, number, total):
+        settings = replace(base, **params)
+        key = settings.model_key()
+        if key not in prepared_cache:
+            def fold_progress(block, blocks):
+                report(min(94, percent_from+int(percent_span*(number+block/max(1, blocks))/total)),
+                       f'{label} {number+1} of {total}: training block {block+1} of {blocks}')
+            prepared_cache[key] = prepare(clean, settings, start, progress=fold_progress)
+        prepared = prepared_cache[key]
+        for entry in entry_candidates:
+            candidate = replace(settings, **entry)
+            scored.append((run_segment(prepared, candidate, 'validation'), {**params, **entry}, key))
+
+    report(2, f'Training {len(model_candidates)} model settings × {len(entry_candidates)} entry rules')
+    for number, params in enumerate(model_candidates):
+        evaluate_model(params, 'Model setting', 2, 70, number, len(model_candidates))
+
+    capacity_trials = 0
+    if search_method == 'grid':
+        best_models = []
+        for metrics, params, _ in sorted(scored, key=lambda item: _ranking_key(item[0], objective), reverse=True):
+            model_part = {k: params[k] for k in MODEL_GRID}
+            if model_part not in best_models:
+                best_models.append(model_part)
+            if len(best_models) == 2:
+                break
+        extra = [{**model, 'capacity': capacity} for model in best_models for capacity in CAPACITIES if capacity != base.capacity]
+        for number, params in enumerate(extra):
+            evaluate_model(params, 'Capacity check', 72, 14, number, len(extra))
+        capacity_trials = len(extra)
+
+    scored.sort(key=lambda item: _ranking_key(item[0], objective), reverse=True)
+    finalists, seen = [], set()
+    for metrics, params, key in scored:
+        identity = tuple(sorted(params.items()))
+        if identity not in seen:
+            seen.add(identity)
+            finalists.append((metrics, params, key))
+        if len(finalists) == FINALISTS:
+            break
+
+    candidates = []
+    for rank, (validation_metrics, params, key) in enumerate(finalists, start=1):
+        settings = replace(base, **params)
+        prepared = prepared_cache[key]
+        report(88+rank*2, f'Reporting finalist {rank} of {len(finalists)} on train and forward periods')
+        candidates.append(dict(
+            id=f'case-{rank}', rank=rank, bestParameters=params,
+            bestSettings=request.model_copy(update={'ml': asdict(settings)}).model_dump(mode='json'),
+            periods=dict(train=dict(metrics=run_segment(prepared, settings, 'train')),
+                         validation=dict(metrics=validation_metrics),
+                         forwardTest=dict(metrics=run_segment(prepared, settings, 'forwardTest')))))
+    best = candidates[0]
+    stamps = [int(value.timestamp()) for value in cuts]
+    report(100, 'ML tuning complete')
+    return dict(
+        bestSettings=best['bestSettings'], bestParameters=best['bestParameters'],
+        searchMethod=search_method, gridAxes=grid_axes,
+        model='Walk-forward grid search' if search_method == 'grid' else 'Walk-forward random search',
+        objective=('Maximize validation net profit after costs; prefer at least 20 trades; drawdown breaks ties. '
+                   'All periods use out-of-sample model predictions; the forward test is not used for selection.'
+                   if objective == 'profit' else
+                   '35% win rate, 35% profit, 20% drawdown control, 10% average loss control; small samples discounted.'),
+        rankingObjective=objective, candidates=candidates, modelHyperparameters=None, modelCrossValidationRmse=None,
+        candidatesEvaluated=len(scored), seedCandidates=len(model_candidates), adaptiveCandidatesEvaluated=capacity_trials,
+        shortlisted=len(finalists),
+        periods=dict(train=dict(start=stamps[0], end=stamps[1], metrics=best['periods']['train']['metrics']),
+                     validation=dict(start=stamps[1], end=stamps[2], metrics=best['periods']['validation']['metrics']),
+                     forwardTest=dict(start=stamps[2], end=stamps[3], metrics=best['periods']['forwardTest']['metrics'])),
+    )

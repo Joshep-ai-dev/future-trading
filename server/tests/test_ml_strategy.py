@@ -183,3 +183,29 @@ class StrategyTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TuningTests(unittest.TestCase):
+    def test_tuner_ranks_on_validation_and_returns_the_fine_tune_contract(self):
+        from unittest.mock import patch
+        from server.strategies.fine_tuning import _ranking_key
+        from server.strategies.ml import tuning
+        from server.strategies.strategy import BacktestRequest
+        frame = market(3200)
+        request = BacktestRequest(start_date=date(2026, 1, 5), end_date=date(2026, 1, 12), strategy='ml_ensemble',
+                                  entry_timeframe='5m', capital=1000, fee_bps=0, slippage=0, spread=0, funding_bps=0,
+                                  ml=dict(train_bars=700, retrain_every=300, models={'extra_trees': 1.},
+                                          feature_groups=['returns', 'volatility'], min_reward_cost=0.))
+        with patch.object(tuning, 'MODEL_GRID', dict(horizon=(6,), take_profit_atr=(1., 1.5), stop_atr=(1.,))), \
+             patch.object(tuning, 'CAPACITIES', ('light', 'standard')), \
+             patch.object(tuning, 'ENTRY_GRID', dict(entry_threshold=(.4, .5), min_edge=(0., .1), reverse_on_signal=(True,))):
+            steps = []
+            result = tuning.ml_fine_tune(frame, request, progress=lambda percent, message: steps.append(percent))
+        self.assertEqual(steps[-1], 100)
+        self.assertEqual(result['candidatesEvaluated'], 2*4+2*4)  # grid + top-2 models at the other capacity
+        validation = [case['periods']['validation']['metrics'] for case in result['candidates']]
+        self.assertEqual(validation, sorted(validation, key=lambda m: _ranking_key(m, 'profit'), reverse=True))
+        best = result['candidates'][0]
+        for key, value in best['bestParameters'].items():
+            self.assertEqual(best['bestSettings']['ml'][key], value)
+        self.assertLess(result['periods']['validation']['end'], result['periods']['forwardTest']['end'])

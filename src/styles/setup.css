@@ -704,3 +704,22 @@
     grid-column: 1 / -1;
   }
 }
+
+.setup-search-panel {
+  display: grid;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.setup-search-panel .setup-search {
+  grid-template-columns: 1fr 1fr;
+}
+
+.setup-search-panel select {
+  margin: 0;
+}
+
+.setup-search-panel > button {
+  height: 36px;
+}

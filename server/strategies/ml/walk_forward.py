@@ -65,7 +65,8 @@ def config_key(**parts) -> str:
     return hashlib.sha1(json.dumps(parts, sort_keys=True, default=str).encode()).hexdigest()[:16]
 
 
-def _train_fold(features: pd.DataFrame, labels: pd.Series, train_slice: slice, models: dict[str, float], key: str) -> Fold | None:
+def _train_fold(features: pd.DataFrame, labels: pd.Series, train_slice: slice, models: dict[str, float], key: str,
+                capacity: str = 'standard') -> Fold | None:
     window_x, window_y = features.iloc[train_slice], labels.iloc[train_slice]
     mask = window_y.notna().to_numpy()
     if mask.sum() < MIN_TRAIN_ROWS:
@@ -78,7 +79,7 @@ def _train_fold(features: pd.DataFrame, labels: pd.Series, train_slice: slice, m
     trained, weights = [], []
     for name, weight in models.items():
         if weight > 0:
-            trained.append(fit_model(name, features, labels, train_slice))
+            trained.append(fit_model(name, features, labels, train_slice, capacity=capacity))
             weights.append(float(weight))
     fold = Fold(0, 0, int(mask.sum()), trained, weights)
     fold_cache.put(cache_key, fold)
@@ -86,7 +87,8 @@ def _train_fold(features: pd.DataFrame, labels: pd.Series, train_slice: slice, m
 
 
 def walk_forward(features: pd.DataFrame, labels: pd.Series, *, start_index: int, train_bars: int,
-                 retrain_every: int, horizon: int, models: dict[str, float], key: str) -> WalkForwardResult:
+                 retrain_every: int, horizon: int, models: dict[str, float], key: str,
+                 capacity: str = 'standard', progress=None) -> WalkForwardResult:
     """Out-of-sample probabilities (short, none, long) for every bar from ``start_index``."""
     if not any(weight > 0 for weight in models.values()):
         raise ValueError('Enable at least one model with a positive weight')
@@ -95,13 +97,16 @@ def walk_forward(features: pd.DataFrame, labels: pd.Series, *, start_index: int,
     folds, importance = [], {}
     # Block boundaries are anchored at the evaluation start so they stay identical
     # when more candles arrive, which keeps cached folds valid for paper trading.
-    for block_start in range(start_index, n, retrain_every):
+    blocks = list(range(start_index, n, retrain_every))
+    for number, block_start in enumerate(blocks):
+        if progress:
+            progress(number, len(blocks))
         block_end = min(n, block_start+retrain_every)
         train_end = block_start-horizon
         train_start = max(0, train_end-train_bars)
         if train_end <= train_start:
             continue
-        fold = _train_fold(features, labels, slice(train_start, train_end), models, key)
+        fold = _train_fold(features, labels, slice(train_start, train_end), models, key, capacity)
         if fold is None:
             continue
         rows = slice(block_start, block_end)
