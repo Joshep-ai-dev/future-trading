@@ -12,8 +12,9 @@ class BacktestRequest(BaseModel):
     start_date: date
     end_date: date
     validation_date: date | None = None  # Accepted only for older saved settings.
-    strategy: Literal['bb_outer_reversal'] = 'bb_outer_reversal'
+    strategy: Literal['bb_outer_reversal', 'ml_ensemble'] = 'bb_outer_reversal'
     bb_reversal: dict = Field(default_factory=dict)
+    ml: dict = Field(default_factory=dict)
     direction_active: bool = True
     direction_timeframe: Literal['15m', '30m', '1h', '4h'] = '1h'
     setup_active: bool = True
@@ -57,6 +58,14 @@ class BacktestRequest(BaseModel):
         except (TypeError, ValueError) as error:
             raise ValueError(str(error)) from error
         self.bb_reversal = {**self.bb_reversal, 'trade_mode': 'Both'}
+        if self.strategy == 'ml_ensemble':
+            from server.strategies.ml.strategy import MLSettings
+            try:
+                ml = MLSettings(**self.ml)
+            except TypeError as error:
+                raise ValueError(f'Invalid ML setting: {error}') from error
+            if ml.amount_unit == 'price' and ml.amount_per_trade > self.capital:
+                raise ValueError('Amount per trade cannot exceed the starting account balance')
         self.exit_condition = 'none'
         self.stop_mode = 'trailing'
         return self

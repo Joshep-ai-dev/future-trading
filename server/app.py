@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from server.market.data import load_bars
 from server.strategies.strategy import BacktestRequest
 from server.strategies.bb_reversal_adapter import run_bb_reversal_backtest
+from server.strategies.registry import get_strategy
 from server.market.market_refresh import refresh_service
 from server.storage.user_data_store import user_data_store
 from server.core.workspaces import WorkspaceRegistry
@@ -109,7 +110,7 @@ class ChartViewRequest(Parameters):
 
 
 class BBBacktestRequest(BacktestRequest):
-    strategy: Literal['bb_outer_reversal'] = 'bb_outer_reversal'
+    """Any registered strategy; the name is kept for existing routes and tests."""
 
 
 class ProfileSaveRequest(BaseModel):
@@ -421,6 +422,8 @@ def exchange_close(parameters: ExchangeCloseRequest, request: Request):
 @app.post('/api/exchange/auto/start')
 def exchange_auto_start(parameters: LiveBotStartRequest, request: Request):
     ws = workspace(request)
+    if not get_strategy(parameters.strategy).live_supported:
+        raise HTTPException(status_code=400, detail=f'{get_strategy(parameters.strategy).label} runs in backtests and paper trading only. Validate it there before live use.')
     try:
         return ws.bot.start(parameters.venue,parameters)
     except ValueError as error:
@@ -523,8 +526,6 @@ def data_range():
 
 
 def _run_backtest(parameters: BBBacktestRequest):
-    if parameters.strategy != 'bb_outer_reversal':
-        raise ValueError('Only BB Outer Band Reversal + Trailing SL is supported')
     frame, _ = load_bars(parameters.entry_timeframe)
     return run_bb_reversal_backtest(frame, parameters)
 
@@ -658,6 +659,16 @@ def history(parameters: CandleRequest):
         return candle_page(frame, parameters.before, parameters.limit)
     except (ValueError, OSError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.get('/api/strategies')
+def strategies():
+    from server.strategies.ml.features import FEATURE_GROUPS
+    from server.strategies.ml.models import available_models
+    from server.strategies.registry import STRATEGIES
+    return dict(strategies=[dict(key=r.key, label=r.label, liveSupported=r.live_supported) for r in STRATEGIES.values()],
+                featureGroups=[dict(key=g.key, label=g.label, description=g.description) for g in FEATURE_GROUPS.values()],
+                models=available_models())
 
 
 @app.get('/api/costs/htx')

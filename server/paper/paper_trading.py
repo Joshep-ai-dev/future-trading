@@ -7,14 +7,19 @@ import time
 
 import pandas as pd
 
-from server.strategies.bb_outer_reversal import Settings, run_backtest
-from server.strategies.readiness import strategy_readiness
-from server.strategies.indicators import rsi
+from server.strategies.registry import get_strategy
 from server.core.serialization import optional_volume
 from server.market.data import TIMEFRAMES, load_bars
 from server.market.market_refresh import refresh_service
 from server.market.forming_candle import forming_candle, fetch_live_minutes
 from server.paper.session_store import FileSessionStore
+
+def session_request(cfg: dict):
+    """Attribute view of a saved session's settings for the strategy runner."""
+    from types import SimpleNamespace
+    bb = {key: value for key, value in cfg.get('bb_reversal', {}).items() if key not in ('reward_risk', 'risk_per_trade_pct')}
+    return SimpleNamespace(**{**cfg, 'bb_reversal': bb, 'ml': cfg.get('ml', {}), 'strategy': cfg.get('strategy', 'bb_outer_reversal')})
+
 
 STATE = Path(__file__).resolve().parents[2] / 'data' / 'paper_trading.json'
 
@@ -75,21 +80,17 @@ class PaperTrading:
             return dict(session=session, error=self.error)
 
     def begin(self, request):
-        if request.strategy != 'bb_outer_reversal':
-            raise ValueError('Paper trading currently supports the BB reversal strategy')
         with self.lock:
             if self.state and self.state['running']:
                 raise ValueError('Pause the current paper session before starting a new one')
             duration = TIMEFRAMES[request.entry_timeframe]
             now = int(self.now())
             first = ((now+duration-1)//duration)*duration
-            config = replace(Settings(**request.bb_reversal), initial_capital=request.capital,
-                leverage=request.max_leverage, trade_mode='Both', min_tick=request.tick_size, min_tick_unit='price')
+            runner = get_strategy(request.strategy)
             history, _ = self.loader(request.entry_timeframe)
             history = history.dropna(subset=['open','high','low','close'])
             history = history.loc[history.index + pd.Timedelta(seconds=duration) <= pd.Timestamp(now,unit='s',tz='UTC')]
-            warmup = max(1000, config.bb_length*10, config.atr_length*10,
-                         config.adx_length*20, config.sma_length*10+config.sma_slope_bars)
+            warmup = runner.warmup_bars(request)
             candles = self.encode(history.tail(warmup))
             mode = getattr(request, 'paper_mode', 'live')
             replay_end, replay_candles = None, []
@@ -198,11 +199,9 @@ class PaperTrading:
             combined = state['candles']+self.encode(history)
             frame = pd.DataFrame(combined)
             frame.index = pd.to_datetime(frame.pop('time'),unit='s',utc=True)
-            config = replace(Settings(**{key:value for key,value in cfg['bb_reversal'].items() if key not in ('reward_risk', 'risk_per_trade_pct')}), initial_capital=cfg['capital'],
-                leverage=cfg['max_leverage'], trade_mode='Both', min_tick=cfg['tick_size'], min_tick_unit='price')
-            result = run_backtest(frame, config, start=pd.Timestamp(state['tradingFrom'],unit='s',tz='UTC'),
-                                  bar_seconds=duration, close_at_end=finished, fee_bps=cfg.get('fee_bps',0),
-                                  slippage=cfg.get('slippage',0), spread=cfg.get('spread',0), funding_bps=cfg.get('funding_bps',0))
+            runner, request = get_strategy(cfg.get('strategy', 'bb_outer_reversal')), session_request(cfg)
+            result = runner.run(frame, request, start=pd.Timestamp(state['tradingFrom'],unit='s',tz='UTC'),
+                                bar_seconds=duration, close_at_end=finished)
             if result['bars'].empty:
                 state['candles'] = combined
                 self.save()
@@ -224,13 +223,14 @@ class PaperTrading:
                                    stopDistance=max(0., float(distance)), trailingActive=bool(position.get('trailing_active')))
             strategy_state = dict(status='position_open' if position else 'scanning',
                                   timestamp=int(bars.index[-1].timestamp()), close=close, closeState=close_state,
-                                  **strategy_readiness(bars.iloc[-1], asdict(config), rsi(frame.tail(500), 14)[-1]))
+                                  **runner.readiness(bars.iloc[-1], request, frame))
             chart_indicators, chart_stops = [], []
+            overlay = bars if 'bb_basis' in bars.columns else runner.chart_columns(frame, request, duration).reindex(bars.index)
             for stamp, bar in bars.tail(1000).iterrows():
                 point = dict(time=int(stamp.timestamp()))
                 for key,source in [('bbBasis','bb_basis'),('bbUpper','bb_upper'),
                                    ('bbLower','bb_lower'),('trendSma','trend_sma')]:
-                    value = bar.get(source,float('nan'))
+                    value = overlay.at[stamp, source] if source in overlay.columns else float('nan')
                     point[key] = float(value) if pd.notna(value) else None
                 chart_indicators.append(point)
                 chart_stops.append(dict(time=point['time'],price=float(bar.stop) if pd.notna(bar.stop) else None))

@@ -1,20 +1,18 @@
-"""Map the Pine strategy into the dashboard's periods, ledger and chart schema."""
-from dataclasses import replace
+"""Map any registered strategy's engine output into the dashboard's period, ledger and chart schema."""
 from datetime import timedelta
 
 import numpy as np
 import pandas as pd
 
-from server.strategies.bb_outer_reversal import Settings, run_backtest
+from server.strategies.registry import get_strategy
 from server.market.data import TIMEFRAMES
 from server.strategies.strategy import metrics, seconds
 from server.core.serialization import optional_volume
 
 
-def run_bb_reversal_backtest(frame, settings):
+def run_strategy_backtest(frame, settings):
+    runner = get_strategy(settings.strategy)
     duration = TIMEFRAMES[settings.entry_timeframe]
-    config = replace(Settings(**settings.bb_reversal), initial_capital=settings.capital,
-                     min_tick=settings.tick_size, min_tick_unit='price', trade_mode='Both', leverage=settings.max_leverage)
     start, end = (seconds(settings.start_date),
                          seconds(settings.end_date+timedelta(days=1)))
     clean = frame.dropna(subset=['open', 'high', 'low', 'close'])
@@ -22,9 +20,9 @@ def run_bb_reversal_backtest(frame, settings):
 
     def period(left, right, name):
         subset = clean.loc[clean.index + pd.Timedelta(seconds=duration) <= pd.Timestamp(right, unit='s', tz='UTC')]
-        result = run_backtest(subset, config, start=pd.Timestamp(left, unit='s', tz='UTC'),
-                              close_at_end=True, bar_seconds=duration, fee_bps=settings.fee_bps,
-                              slippage=settings.slippage, spread=settings.spread, funding_bps=settings.funding_bps)
+        result = runner.run(subset, settings, start=pd.Timestamp(left, unit='s', tz='UTC'),
+                            close_at_end=True, bar_seconds=duration)
+        reports.append(runner.report(result))
         trades, balance = [], settings.capital
         for i, trade in enumerate(result['trades'].to_dict('records')):
             balance += trade['pnl']
@@ -40,7 +38,7 @@ def run_bb_reversal_backtest(frame, settings):
                 riskBudget=risk, plannedRisk=risk, netPnl=trade['pnl'], grossPnl=trade['gross_pnl'],
                 fees=trade['fees'], funding=trade['funding'], executionCost=trade['execution_cost'], netR=trade['pnl']/risk, balance=balance,
                 exitReason=trade['exit_reason'], session='continuous', ambiguous=False, obstacle=None,
-                signalLabel='BB outer-band rebound', signalCloseTime=entry_time+duration,
+                signalLabel=runner.signal_label, signalCloseTime=entry_time+duration,
                 swingHighs=[], swingLows=[], period=name))
         equity = [dict(time=int(t.timestamp()), value=float(v)) for t, v in result['bars'].equity.items()] if len(result['bars']) else []
         if not equity or equity[0]['time'] > left:
@@ -52,8 +50,9 @@ def run_bb_reversal_backtest(frame, settings):
             diagnostics=dict(signals=count, sweeps=0, invalidEntries=0, blockedByLevel=0,
                              expiredOrders=0, cancelledOrders=0, ambiguousBars=0))
 
-    from server.strategies.bb_outer_reversal import calculate
-    calculated = calculate(clean, config, bar_seconds=duration)
+    reports = []
+    backtest = period(start, end, 'Backtest')
+    calculated = runner.chart_columns(clean, settings, duration)
     displayed = calculated.loc[calculated.index >= pd.Timestamp(start, unit='s', tz='UTC')]
     candles, points = [], []
     for stamp, bar in displayed.iterrows():
@@ -66,8 +65,12 @@ def run_bb_reversal_backtest(frame, settings):
         point = dict(time=t, ema20=None, ema50=None, rsi20=None)
         for key, source in [('bbBasis','bb_basis'), ('bbUpper','bb_upper'), ('bbLower','bb_lower'),
                             ('trendSma','trend_sma'), ('adx','adx'), ('atr','atr'), ('bbWidthPct','bb_width_pct')]:
-            point[key] = float(bar[source]) if np.isfinite(bar[source]) else None
+            value = bar.get(source, np.nan)
+            point[key] = float(value) if np.isfinite(value) else None
         points.append(point)
-    return dict(settings=settings.model_dump(mode='json'), strategyName='BB Outer Band Reversal + Trailing SL',
+    return dict(settings=settings.model_dump(mode='json'), strategyName=runner.label, strategy=runner.key,
         executionTimeframe=settings.entry_timeframe, barSeconds=duration,
-        backtest=period(start,end,'Backtest'), candles=candles, indicators=points)
+        backtest=backtest, candles=candles, indicators=points, model=reports[0] if reports else None)
+
+
+run_bb_reversal_backtest = run_strategy_backtest  # Backwards-compatible name.
