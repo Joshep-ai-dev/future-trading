@@ -1,4 +1,4 @@
-import {Metric,StatusBadge,TabBar} from '../../shared/ui/ui';
+import {Metric,StatusBadge,TabBar,TableFrame} from '../../shared/ui/ui';
 import {useChartTimeframe} from '../../shared/charts/useChartTimeframe';
 import {TIMEFRAMES,chartPosition} from '../../shared/charts/chartTimeframe';
 import TradeView from '../../shared/ui/TradeView';
@@ -68,6 +68,7 @@ export default function PaperTrading({settings,onChange,onConfigure,visible}:{se
   const balance=replay?.balance??s?.balance??settings.capital;
   const equity=replay?.equity??(s?(s.displayEquity??s.equity):settings.capital);
   const pnl=s?equity-s.settings.capital:0;
+  const leverage=(s?.settings??settings).max_leverage,unrealized=equity-balance,margin=p?p.entry_price*p.quantity/Math.max(1,leverage):0;
   const status=s?.halted?'Balance depleted':s?.completed?'Replay complete':s?.running?'Running':s?'Paused':'Ready to start';
   const chartDuration=TIMEFRAMES[chartTimeframe];
   const alternate=!!s&&chartTimeframe!==s.settings.entry_timeframe;
@@ -93,13 +94,19 @@ export default function PaperTrading({settings,onChange,onConfigure,visible}:{se
         <div className="chart-legend"><span><b style={{color:FILL_COLORS.buy}}>↑</b> Buy / close short</span><span><b style={{color:FILL_COLORS.sell}}>↓</b> Sell / close long</span><span><i className="legend-line" style={{borderColor:STOP_COLORS.initial}}/> Stop loss</span><span><i className="legend-line" style={{borderColor:STOP_COLORS.trailing}}/> Trailing stop / TRAIL activation</span></div>
       </section>
       <TerminalSplitter/>
-      <section className="terminal-panel activity-panel">
+      <section className="terminal-panel activity-panel exchange-activity">
         <TabBar items={[
           {value:'position',label:'Open position',count:p?1:0,controls:'activity-position'},
           {value:'history',label:'Trade history',count:chartTrades.length,controls:'activity-history'},
           {value:'equity',label:'Equity',controls:'activity-equity'},
         ] as const} value={bottomTab} onChange={setBottomTab} label="Paper account activity" idPrefix="activity-tab" trailing={<StatusBadge>Paper account</StatusBadge>}/>
-        <div id="activity-position" role="tabpanel" aria-labelledby="activity-tab-position" hidden={bottomTab!=='position'}>{p?<div className="position-content"><div className="position-heading"><span className={`side-badge ${p.direction===1?'long':'short'}`}>{p.direction===1?'LONG':'SHORT'}</span><strong>XAG / USDT</strong><span className="status-label">{p.trailing_active?'Trailing active':'Initial stop active'}</span></div><div className="position-values">{[['Entry price',fmt(p.entry_price,3)],['Current price',fmt(price,3)],['Quantity',fmt(p.quantity,4)],['Stop price',fmt(p.stop,3)],['Unrealized P&L',fmt(equity-(balance))]].map(([label,value])=><div key={label}><small>{label}</small><b>{value}</b></div>)}</div><p className="muted">Opened {date(p.entry_time+duration,tradingTimeZone)} · protective orders are simulated.</p></div>:<div className="empty-position"><span className="empty-state-symbol">◇</span><h3>{s?.running?'Watching for your next setup':'No open position'}</h3><p>{s?.running?'The bot is scanning for a qualified Bollinger band rebound.':'Start a virtual session to see entries, stops and position P&L here.'}</p></div>}</div>
+        <div id="activity-position" role="tabpanel" aria-labelledby="activity-tab-position" hidden={bottomTab!=='position'}>{p?<TableFrame label="Open XAG paper position" columns={['Contract','Mark price','Entry price','Margin (USDT)','Unrealized PnL','PnL (%)','Stop price','Size (XAG)','Opened']}><tr>
+          <td><strong>XAGUSDT <small>Perpetual</small></strong><div className="exchange-position-tags"><StatusBadge tone={p.direction===1?'positive':'negative'}>{p.direction===1?'LONG':'SHORT'}</StatusBadge><StatusBadge>{fmt(leverage,1)}x</StatusBadge><StatusBadge>{p.trailing_active?'Trailing':'Initial stop'}</StatusBadge></div></td>
+          <td>{fmt(price,3)}</td><td>{fmt(p.entry_price,3)}</td><td>{fmt(margin,4)}</td>
+          <td className={unrealized<0?'negative':'positive'}>{unrealized>=0?'+':''}{fmt(unrealized,4)} <small>USDT</small></td>
+          <td className={unrealized<0?'negative':'positive'}>{margin?fmt(unrealized/margin*100,2):'—'}%</td>
+          <td>{fmt(p.stop,3)}</td><td>{fmt(p.quantity,4)}</td><td>{date(p.entry_time+duration,tradingTimeZone)}</td>
+        </tr></TableFrame>:<div className="empty-position"><span className="empty-state-symbol">◇</span><h3>{s?.running?'Watching for your next setup':'No open position'}</h3><p>{s?.running?'The bot is scanning for a qualified Bollinger band rebound.':'Start a virtual session to see entries, stops and position P&L here.'}</p></div>}</div>
         <div id="activity-history" role="tabpanel" aria-labelledby="activity-tab-history" hidden={bottomTab!=='history'}><TradeView key={s?.startedAt??0} scope="Session" capital={s?.settings.capital??settings.capital} timeZone={tradingTimeZone} unrealized={equity-balance} trades={chartTrades.map(t=>({id:t.id,direction:t.direction,pnl:t.pnl,entry:t.entry_price,exit:t.exit_price,quantity:t.quantity,exitTime:t.exit_time+duration}))}>{chartTrades.length?<div className="table-scroll"><table><thead><tr>{['ID','Side',`Entry time (${tradingTimeZone})`,'Entry','Exit','Quantity','P&L','Exit reason'].map(label=><th key={label}>{label}</th>)}</tr></thead><tbody>{chartTrades.slice(-100).reverse().map(t=><tr key={t.id}><td>#{t.id}</td><td><span className={`side-badge ${t.direction===1?'long':'short'}`}>{t.direction===1?'LONG':'SHORT'}</span></td><td>{date(t.entry_time+duration,tradingTimeZone)}</td><td>{fmt(t.entry_price,3)}</td><td>{fmt(t.exit_price,3)}</td><td>{fmt(t.quantity,4)}</td><td className={t.pnl>=0?'positive':'negative'}>{t.pnl>=0?'+':''}{fmt(t.pnl)}</td><td>{t.exit_reason==='rsi_price_exit'?'RSI + price exit':t.exit_reason.replaceAll('_',' ')}</td></tr>)}</tbody></table></div>:<div className="empty-position"><h3>Your trade history starts here</h3><p>Closed virtual trades appear automatically as the bot runs.</p></div>}</TradeView></div>
         <div id="activity-equity" role="tabpanel" aria-labelledby="activity-tab-equity" hidden={bottomTab!=='equity'}>{chartTrades.length?<EquityChart key={s?.startedAt??0} period={{name:'Paper trading'}} initialValue={s?.settings.capital??settings.capital} trades={chartTrades.map(t=>({pnl:t.pnl}))}/>:<div className="empty-position"><h3>No closed trades yet</h3><p>The balance curve adds one point after each trade closes.</p></div>}</div>
       </section>
