@@ -488,3 +488,21 @@
 #page-strategy > .setup-layout {
   max-width: none;
 }
+
+/* Account: exchange picker becomes a two-column grid on phones */
+@media (max-width: 600px) {
+  .connections-list {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    overflow: visible !important;
+  }
+
+  .connections-list-heading {
+    grid-column: 1 / -1;
+  }
+
+  .connection-choice {
+    min-width: 0 !important;
+  }
+}
