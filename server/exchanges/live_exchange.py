@@ -360,8 +360,15 @@ class LiveExchange:
             contract_size = float(market.get('contractSize') or 1)
             price = float(order.get('average') or order.get('price') or 0)
             timestamp = int((order.get('lastTradeTimestamp') or order.get('timestamp') or 0) / 1000)
+            raw_leverage = next((info.get(key) for key in ('lever_rate', 'lever', 'leverage')
+                                 if info.get(key) not in (None, '')), None)
+            try:
+                leverage = float(raw_leverage) if raw_leverage is not None else None
+            except (TypeError, ValueError):
+                leverage = None
             result.append(dict(id=str(order.get('id') or timestamp), side=order.get('side'),
                                pnl=pnl, price=price, quantity=amount * contract_size,
+                               leverage=leverage if leverage and math.isfinite(leverage) else None,
                                timestamp=timestamp))
         return result
 

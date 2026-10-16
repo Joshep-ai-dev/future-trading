@@ -134,13 +134,13 @@ class ExchangeConnectionTests(unittest.TestCase):
         self.exchange.has['fetchClosedOrders'] = True
         self.exchange.fetch_closed_orders.return_value = [
             {'id': '1', 'side': 'sell', 'filled': 20, 'average': 57.5,
-             'timestamp': 1_700_000_000_000, 'info': {'real_profit': '12.5'}},
+             'timestamp': 1_700_000_000_000, 'info': {'real_profit': '12.5', 'lever_rate': '12'}},
             {'id': '2', 'side': 'buy', 'filled': 1, 'average': 57,
              'timestamp': 1_700_000_100_000, 'info': {}},
         ]
         result = self.service.trade_history('htx')
         self.assertEqual(result, [{'id': '1', 'side': 'sell', 'pnl': 12.5, 'price': 57.5,
-                                   'quantity': 2., 'timestamp': 1_700_000_000}])
+                                   'quantity': 2., 'leverage': 12., 'timestamp': 1_700_000_000}])
 
     def test_take_profit_is_optional_and_validated_before_entry(self) -> None:
         self.service.clients['htx'] = self.exchange

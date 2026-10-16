@@ -1,8 +1,8 @@
-"""Encrypted local exchange credentials; never return decrypted values to the UI."""
+"""Encrypted per-user exchange credentials in MySQL; never return decrypted values to the UI."""
 import json
-import sqlite3
 import threading
 from pathlib import Path
+from typing import Callable
 
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -10,13 +10,22 @@ from server.storage.auth_store import auth_store
 
 
 KEY_FILE = Path(__file__).resolve().parents[2] / '.runtime' / 'credentials.key'
+TABLE = '''CREATE TABLE IF NOT EXISTS exchange_credentials (
+    user_id BIGINT UNSIGNED NOT NULL,
+    venue VARCHAR(24) NOT NULL,
+    encrypted LONGBLOB NOT NULL,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id,venue),
+    CONSTRAINT fk_credential_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB'''
 
 
 class CredentialStore:
-    def __init__(self, path: Path | None = None, key_path: Path = KEY_FILE):
-        self.path = Path(path) if path is not None else None
+    def __init__(self, connect: Callable | None = None, key_path: Path = KEY_FILE):
+        self._connect_fn = connect
         self.key_path = Path(key_path)
         self.lock = threading.RLock()
+        self.table_ready = False
 
     def _cipher(self, create: bool = False) -> Fernet:
         if create:
@@ -31,91 +40,47 @@ class CredentialStore:
         except (OSError, ValueError) as error:
             raise ValueError('Saved API keys cannot be unlocked. Restore the local encryption key or forget and re-enter the credentials.') from error
 
-    def _sqlite(self) -> sqlite3.Connection:
-        assert self.path is not None
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(self.path, timeout=10)
-        connection.execute('CREATE TABLE IF NOT EXISTS exchange_credentials (venue TEXT PRIMARY KEY, encrypted BLOB NOT NULL)')
-        return connection
+    def _query(self, sql: str, params: tuple, fetch: str | None = None):
+        connection = (self._connect_fn or auth_store._connect)()
+        try:
+            cursor = connection.cursor()
+            if not self.table_ready:
+                cursor.execute(TABLE)
+                self.table_ready = True
+            cursor.execute(sql, params)
+            result = cursor.fetchall() if fetch == 'all' else cursor.fetchone() if fetch == 'one' else None
+            cursor.close()
+            return result
+        finally:
+            connection.close()
 
-    def _mysql(self):
-        connection = auth_store._connect()
-        cursor = connection.cursor()
-        cursor.execute('''CREATE TABLE IF NOT EXISTS exchange_credentials (
-            user_id BIGINT UNSIGNED NOT NULL,
-            venue VARCHAR(24) NOT NULL,
-            encrypted LONGBLOB NOT NULL,
-            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            PRIMARY KEY (user_id,venue),
-            CONSTRAINT fk_credential_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        ) ENGINE=InnoDB''')
-        cursor.close()
-        return connection
-
-    def venues(self, user_id: int = 0) -> list[str]:
+    def venues(self, user_id: int) -> list[str]:
         with self.lock:
-            connection = self._sqlite() if self.path is not None else self._mysql()
-            try:
-                if self.path is not None:
-                    return [row[0] for row in connection.execute('SELECT venue FROM exchange_credentials ORDER BY venue')]
-                cursor = connection.cursor()
-                cursor.execute('SELECT venue FROM exchange_credentials WHERE user_id=%s ORDER BY venue', (user_id,))
-                venues = [row[0] for row in cursor.fetchall()]
-                cursor.close()
-                return venues
-            finally:
-                connection.close()
+            rows = self._query('SELECT venue FROM exchange_credentials WHERE user_id=%s ORDER BY venue', (user_id,), 'all')
+            return [row[0] for row in rows]
 
-    def save(self, venue: str, api_key: str, secret: str, passphrase: str | None, user_id: int = 0) -> None:
+    def save(self, venue: str, api_key: str, secret: str, passphrase: str | None, user_id: int) -> None:
         with self.lock:
             encrypted = self._cipher(create=True).encrypt(json.dumps(
                 dict(api_key=api_key.strip(), secret=secret.strip(), passphrase=passphrase)
             ).encode())
-            connection = self._sqlite() if self.path is not None else self._mysql()
-            try:
-                if self.path is not None:
-                    with connection:
-                        connection.execute('INSERT INTO exchange_credentials VALUES (?, ?) ON CONFLICT(venue) DO UPDATE SET encrypted=excluded.encrypted', (venue, encrypted))
-                else:
-                    cursor = connection.cursor()
-                    cursor.execute('INSERT INTO exchange_credentials (user_id,venue,encrypted) VALUES (%s,%s,%s) ON DUPLICATE KEY UPDATE encrypted=VALUES(encrypted)', (user_id, venue, encrypted))
-                    cursor.close()
-            finally:
-                connection.close()
+            self._query('INSERT INTO exchange_credentials (user_id,venue,encrypted) VALUES (%s,%s,%s) '
+                        'ON DUPLICATE KEY UPDATE encrypted=VALUES(encrypted)', (user_id, venue, encrypted))
 
-    def load(self, venue: str, user_id: int = 0) -> dict:
+    def load(self, venue: str, user_id: int) -> dict:
         with self.lock:
-            connection = self._sqlite() if self.path is not None else self._mysql()
-            try:
-                if self.path is not None:
-                    row = connection.execute('SELECT encrypted FROM exchange_credentials WHERE venue=?', (venue,)).fetchone()
-                else:
-                    cursor = connection.cursor()
-                    cursor.execute('SELECT encrypted FROM exchange_credentials WHERE user_id=%s AND venue=%s', (user_id, venue))
-                    row = cursor.fetchone()
-                    cursor.close()
-            finally:
-                connection.close()
+            row = self._query('SELECT encrypted FROM exchange_credentials WHERE user_id=%s AND venue=%s',
+                              (user_id, venue), 'one')
             if row is None:
                 raise ValueError('No saved API credentials for this exchange')
             try:
-                return json.loads(self._cipher().decrypt(row[0]))
+                return json.loads(self._cipher().decrypt(bytes(row[0])))
             except InvalidToken as error:
                 raise ValueError('Saved API keys cannot be unlocked. Forget and re-enter the credentials.') from error
 
-    def delete(self, venue: str, user_id: int = 0) -> None:
+    def delete(self, venue: str, user_id: int) -> None:
         with self.lock:
-            connection = self._sqlite() if self.path is not None else self._mysql()
-            try:
-                if self.path is not None:
-                    with connection:
-                        connection.execute('DELETE FROM exchange_credentials WHERE venue=?', (venue,))
-                else:
-                    cursor = connection.cursor()
-                    cursor.execute('DELETE FROM exchange_credentials WHERE user_id=%s AND venue=%s', (user_id, venue))
-                    cursor.close()
-            finally:
-                connection.close()
+            self._query('DELETE FROM exchange_credentials WHERE user_id=%s AND venue=%s', (user_id, venue))
 
 
 credential_store = CredentialStore()

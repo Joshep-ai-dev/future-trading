@@ -6,7 +6,6 @@ Large paper-session state is stored zlib-compressed.
 from __future__ import annotations
 
 import json
-import sqlite3
 import threading
 import zlib
 from datetime import datetime, timezone
@@ -16,7 +15,7 @@ from typing import Any, Callable
 from server.storage.auth_store import auth_store
 
 DATA = Path(__file__).resolve().parents[2] / 'data'
-LEGACY_PROFILES = DATA / 'trading_profiles.sqlite3'
+LEGACY_PROFILES = DATA / 'legacy_profiles.json'
 LEGACY_PAPER = DATA / 'paper_trading.json'
 
 TABLES = (
@@ -116,6 +115,7 @@ def paper_summary(state: dict) -> dict:
                 equity=state.get('equity'), balance=state.get('balance'), trades=len(trades), wins=wins,
                 netPnl=(float(state.get('equity') or capital) - capital),
                 timeframe=state.get('settings', {}).get('entry_timeframe'),
+                leverage=state.get('settings', {}).get('max_leverage'),
                 lastProcessed=state.get('lastProcessed'), completed=bool(state.get('completed')),
                 halted=bool(state.get('halted')))
 
@@ -169,14 +169,11 @@ class UserDataStore:
             return
         if LEGACY_PROFILES.exists():
             try:
-                connection = sqlite3.connect(LEGACY_PROFILES)
-                rows = connection.execute('SELECT name, settings FROM bot_profiles').fetchall()
-                connection.close()
-                for name, settings in rows:
+                for profile in json.loads(LEGACY_PROFILES.read_text(encoding='utf-8')):
                     self._run('INSERT IGNORE INTO bot_profiles (user_id,name,settings) VALUES (%s,%s,%s)',
-                              (owner, name, settings))
-                LEGACY_PROFILES.rename(LEGACY_PROFILES.with_suffix('.sqlite3.migrated'))
-            except (sqlite3.Error, OSError):
+                              (owner, profile['name'], json.dumps(profile['settings'])))
+                LEGACY_PROFILES.rename(LEGACY_PROFILES.with_suffix('.json.migrated'))
+            except (OSError, ValueError, KeyError):
                 pass
         if LEGACY_PAPER.exists() and self.load_paper(owner) is None:
             try:

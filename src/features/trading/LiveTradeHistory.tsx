@@ -4,7 +4,7 @@ import type {ExchangeVenue} from '../../shared/api/exchangeVenue';
 import TradeView,{type PnlTrade} from '../../shared/ui/TradeView';
 import {EmptyState} from '../../shared/ui/ui';
 
-type ClosedOrder={id:string;side:string|null;pnl:number;price:number;quantity:number;timestamp:number};
+type ClosedOrder={id:string;side:string|null;pnl:number;leverage?:number|null;price:number;quantity:number;timestamp:number};
 
 export default function LiveTradeHistory({venue}:{venue:ExchangeVenue}){
   const [orders,setOrders]=useState<ClosedOrder[]>([]),[error,setError]=useState('');
@@ -24,5 +24,5 @@ export default function LiveTradeHistory({venue}:{venue:ExchangeVenue}){
   })),[orders]);
   if(error)return <div className="exchange-inline-error" role="status">{error}</div>;
   if(!trades.length)return <EmptyState compact title="No realized P&L history"/>;
-  return <TradeView trades={trades} capital={0} scope="Live"><div className="table-scroll"><table><thead><tr><th>Close</th><th>Side</th><th>Quantity</th><th>Realized P&amp;L</th></tr></thead><tbody>{orders.map(order=><tr key={order.id}><td>{order.price}</td><td>{order.side}</td><td>{order.quantity}</td><td className={order.pnl>=0?'positive':'negative'}>{order.pnl>=0?'+':''}{order.pnl.toFixed(4)} USDT</td></tr>)}</tbody></table></div></TradeView>;
+  return <TradeView trades={trades} capital={0} scope="Live"><div className="table-scroll"><table><thead><tr><th>Closed</th><th>Side</th><th>Leverage</th><th>Close price</th><th>Quantity</th><th>Realized P&amp;L</th></tr></thead><tbody>{orders.map(order=><tr key={order.id}><td>{order.timestamp?new Date(order.timestamp*1000).toLocaleString():'—'}</td><td><span className={`side-badge ${order.side==='sell'?'short':'long'}`}>{order.side?.toUpperCase()}</span></td><td>{order.leverage?`${order.leverage}x`:'—'}</td><td>{order.price}</td><td>{order.quantity}</td><td className={order.pnl>=0?'positive':'negative'}>{order.pnl>=0?'+':''}{order.pnl.toFixed(4)} USDT</td></tr>)}</tbody></table></div></TradeView>;
 }
