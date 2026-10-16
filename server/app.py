@@ -272,15 +272,15 @@ class ExchangeCloseRequest(BaseModel):
 
 
 @app.get('/api/exchange/status')
-def exchange_status():
-    return {'venues':live_exchange.status(),'bot':live_bot.status(),'savedVenues':credential_store.venues()}
+def exchange_status(request: Request):
+    return {'venues':live_exchange.status(),'bot':live_bot.status(),'savedVenues':credential_store.venues(request.state.user['id'])}
 
 
 @app.post('/api/exchange/connect')
-def exchange_connect(parameters: ExchangeConnectRequest):
+def exchange_connect(parameters: ExchangeConnectRequest, request: Request):
     try:
         result = live_exchange.connect(parameters.venue,parameters.api_key,parameters.secret,parameters.passphrase)
-        credential_store.save(parameters.venue,parameters.api_key,parameters.secret,parameters.passphrase)
+        credential_store.save(parameters.venue,parameters.api_key,parameters.secret,parameters.passphrase,request.state.user['id'])
         return result
     except ValueError as error:
         raise HTTPException(status_code=400,detail=str(error)) from error
@@ -358,9 +358,9 @@ def exchange_disconnect(parameters: ExchangeDisconnectRequest):
 
 
 @app.post('/api/exchange/reconnect')
-def exchange_reconnect(parameters: ExchangeDisconnectRequest):
+def exchange_reconnect(parameters: ExchangeDisconnectRequest, request: Request):
     try:
-        credentials = credential_store.load(parameters.venue)
+        credentials = credential_store.load(parameters.venue,request.state.user['id'])
         return live_exchange.connect(parameters.venue, **credentials)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
@@ -369,8 +369,8 @@ def exchange_reconnect(parameters: ExchangeDisconnectRequest):
 
 
 @app.post('/api/exchange/forget')
-def exchange_forget(parameters: ExchangeDisconnectRequest):
-    credential_store.delete(parameters.venue)
+def exchange_forget(parameters: ExchangeDisconnectRequest, request: Request):
+    credential_store.delete(parameters.venue,request.state.user['id'])
     return {'message':'Saved API credentials deleted.'}
 
 

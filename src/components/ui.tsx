@@ -1,4 +1,4 @@
-import {useId,type ButtonHTMLAttributes,type HTMLAttributes,type ReactNode} from 'react';
+import {useEffect,useId,useRef,type ButtonHTMLAttributes,type HTMLAttributes,type ReactNode} from 'react';
 
 type Tone='neutral'|'positive'|'negative'|'warning'|'accent';
 export function Button({variant='primary',className='',type='button',...props}:ButtonHTMLAttributes<HTMLButtonElement>&{variant?:'primary'|'secondary'|'ghost'|'danger'}){
@@ -22,6 +22,21 @@ export function Metric({label,value,detail,unit,tone='neutral'}:{label:string;va
 
 export function StatusBadge({children,tone='neutral',dot=false}:{children:ReactNode;tone?:Tone;dot?:boolean}){
   return <span className={`ui-status ui-tone--${tone}`}>{dot&&<i aria-hidden="true"/>}{children}</span>;
+}
+
+export type SelectOption<Key extends string>={value:Key;label:string;disabled?:boolean};
+export function SelectMenu<Key extends string>({value,options,onChange,label,caption,disabled=false}:{value:Key;options:readonly SelectOption<Key>[];onChange:(value:Key)=>void;label:string;caption?:string;disabled?:boolean}){
+  const ref=useRef<HTMLDetailsElement>(null),selected=options.find(option=>option.value===value);
+  useEffect(()=>{
+    const close=(event:PointerEvent)=>{if(ref.current&&!ref.current.contains(event.target as Node))ref.current.open=false;};
+    const escape=(event:KeyboardEvent)=>{if(event.key==='Escape'&&ref.current){ref.current.open=false;ref.current.querySelector('summary')?.focus();}};
+    document.addEventListener('pointerdown',close);document.addEventListener('keydown',escape);
+    return()=>{document.removeEventListener('pointerdown',close);document.removeEventListener('keydown',escape);};
+  },[]);
+  return <details className="ui-select-menu" ref={ref} onToggle={()=>{if(disabled&&ref.current)ref.current.open=false;}}>
+    <summary aria-label={label} aria-disabled={disabled}><span className="ui-select-copy">{caption&&<small>{caption}</small>}<b>{selected?.label??value}</b></span><i aria-hidden="true"/></summary>
+    <div role="listbox" aria-label={label}>{options.map(option=><button key={option.value} type="button" role="option" aria-selected={option.value===value} disabled={option.disabled} onClick={()=>{onChange(option.value);if(ref.current)ref.current.open=false;}}>{option.label}{option.value===value&&<span aria-hidden="true">✓</span>}</button>)}</div>
+  </details>;
 }
 
 export type TabItem<Key extends string>={value:Key;label:string;count?:number|null;controls?:string};

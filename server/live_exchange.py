@@ -390,12 +390,13 @@ class AutomaticLiveBot:
         self.position = None
         self.error = None
         self.started_at = None
+        self.strategy_state = None
 
     def status(self):
         with self.lock:
             return dict(running=self.running,venue=self.venue,timeframe=self.timeframe,
                         startedAt=self.started_at,lastProcessed=self.last_processed,
-                        position=self.position,error=self.error)
+                        position=self.position,strategyState=self.strategy_state,error=self.error)
 
     def start(self, venue, request):
         exchange, market = self.service.execution_client(venue)
@@ -424,6 +425,8 @@ class AutomaticLiveBot:
         self.last_processed=int(frame.index[-1].timestamp())
         self.trading_from=self.last_processed+duration
         self.position=None
+        self.strategy_state=dict(status='warming_up',close=None,longReadiness=0,shortReadiness=0,
+                                 longChecks=[],shortChecks=[])
         self.error=None
         self.started_at=int(time.time())
         self.stop_event.clear()
@@ -502,6 +505,39 @@ class AutomaticLiveBot:
             with self.lock:
                 self.frame=frame
                 self.last_processed=int(stamp.timestamp())
+                self.strategy_state=self._strategy_state(signal,request,simulated,float(row.close),int(stamp.timestamp()))
+
+    def _strategy_state(self, signal, request, simulated, close, timestamp):
+        config=request.bb_reversal
+        def metric(value):
+            number=float(value)
+            return number if math.isfinite(number) else None
+        common=[
+            ('ATR',bool(signal.atr>=config['min_atr']),metric(signal.atr),float(config['min_atr'])),
+            ('BB width',bool(signal.bb_width_pct>=config['min_bb_width_pct']),metric(signal.bb_width_pct),float(config['min_bb_width_pct'])),
+            ('ADX',bool(signal.adx>config['adx_threshold']),metric(signal.adx),float(config['adx_threshold'])),
+            ('Trend ready',bool(not config.get('use_sma_trend_adjustment',True) or signal.sma_ready),None,None),
+        ]
+        def side(rebound,direction_allowed):
+            checks=common+[
+                ('Band rebound',bool(rebound),None,None),
+                ('Direction allowed',bool(direction_allowed),None,None),
+            ]
+            return dict(readiness=round(100*sum(int(item[1]) for item in checks)/len(checks)),
+                        checks=[dict(label=label,passed=passed,value=value,threshold=threshold)
+                                for label,passed,value,threshold in checks])
+        long=side(signal.long_rebound,signal.long_direction_allowed)
+        short=side(signal.short_rebound,signal.short_direction_allowed)
+        live=self.position
+        close_state=None
+        if live:
+            distance=(close-float(live['stop'])) if live['direction']=='long' else (float(live['stop'])-close)
+            close_state=dict(direction=live['direction'],entryPrice=float(live['entryPrice']),stop=float(live['stop']),
+                             stopDistance=max(0.,float(distance)),trailingActive=bool(simulated and simulated.get('trailing_active')))
+        return dict(status='position_open' if live else 'scanning',timestamp=timestamp,close=float(close),
+                    longReadiness=long['readiness'],shortReadiness=short['readiness'],
+                    longChecks=long['checks'],shortChecks=short['checks'],closeState=close_state,
+                    signal='long' if bool(signal.long_signal) else 'short' if bool(signal.short_signal) else None)
 
     def _apply_bar(self,exchange,market,venue,request,signal,simulated,close):
         signal_direction=1 if bool(signal.long_signal) else -1 if bool(signal.short_signal) else 0

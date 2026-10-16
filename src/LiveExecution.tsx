@@ -11,7 +11,7 @@ import LiveBotPanel from './components/LiveBotPanel';
 
 type Venue=ExchangeVenue;
 export default function LiveExecution({view,settings,onSettingsChange,onConfigure,onManageAccount,onOpenTerminal}:{view:'account'|'terminal';settings:BacktestSettings;onSettingsChange?:(settings:BacktestSettings)=>void;onConfigure?:()=>void;onManageAccount?:()=>void;onOpenTerminal?:()=>void}){
-  const [statuses,setStatuses]=useState<VenueStatus[]>([]),[bot,setBot]=useState<BotStatus>({running:false,venue:null,timeframe:null,position:null,error:null,lastProcessed:null});
+  const [statuses,setStatuses]=useState<VenueStatus[]>([]),[bot,setBot]=useState<BotStatus>({running:false,venue:null,timeframe:null,position:null,strategyState:null,error:null,lastProcessed:null});
   const venue=useExchangeVenue();
   const [savedVenues,setSavedVenues]=useState<Venue[]>([]);
   const [mode,setMode]=useState<'manual'|'bot'>('manual');

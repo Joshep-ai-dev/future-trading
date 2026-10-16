@@ -249,10 +249,12 @@ def run_backtest(frame, settings=None, *, start=None, close_at_end=False, bar_se
             upper_touch = None
         allowed = (cash > 0 and (not s.use_sma_trend_adjustment or bar.sma_ready) and bar.atr >= s.min_atr and
                    bar.bb_width_pct >= s.min_bb_width_pct and bar.adx > s.adx_threshold)
+        long_direction_allowed = last_direction != 1 and s.trade_mode != 'Short Only'
+        short_direction_allowed = last_direction != -1 and s.trade_mode != 'Long Only'
         direction = 0
-        if allowed and long_rebound and last_direction != 1 and s.trade_mode != 'Short Only':
+        if allowed and long_rebound and long_direction_allowed:
             direction = 1
-        elif allowed and short_rebound and last_direction != -1 and s.trade_mode != 'Long Only':
+        elif allowed and short_rebound and short_direction_allowed:
             direction = -1
         activated = False
         if direction:
@@ -296,6 +298,8 @@ def run_backtest(frame, settings=None, *, start=None, close_at_end=False, bar_se
                     close_position(time, bar.close, 'trailing_stop_at_close')
         unrealized = 0 if position is None else (bar.close-position['entry_price'])*position['direction']*position['quantity']
         records.append(dict(long_signal=direction == 1, short_signal=direction == -1,
+                            entry_allowed=bool(allowed),long_rebound=bool(long_rebound),short_rebound=bool(short_rebound),
+                            long_direction_allowed=bool(long_direction_allowed),short_direction_allowed=bool(short_direction_allowed),
                             trailing_activated=activated, position=0 if position is None else position['direction'],
                             stop=np.nan if position is None else position['stop'],
                             trailing_active=False if position is None else position['trailing_active'],
