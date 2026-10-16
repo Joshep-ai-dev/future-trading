@@ -3,9 +3,9 @@ import {lazy,Suspense,useEffect,useState,type FormEvent} from 'react';
 import {api} from '../shared/api/api';
 import {htxCostDefaults} from '../features/strategy/executionCostDefaults';
 import {bbDefaults} from '../features/strategy/strategyDefaults';
+import BBReversalSettings,{Field} from '../features/strategy/BBReversalSettings';
 
 import LiveTrading from '../features/trading/LiveTrading';
-import StrategyNavigation from '../features/strategy/StrategyNavigation';
 
 
 import LiveExecution from '../features/trading/LiveExecution';
@@ -15,7 +15,7 @@ import {fmt,type BacktestSettings,type BacktestResult,type FineTuneCase,type Fin
 const PaperTrading=lazy(()=>import('../features/trading/PaperTrading'));
 const ResultsWorkspace=lazy(()=>import('../features/research/ResultsWorkspace'));
 const AccountPage=lazy(()=>import('../features/account/AccountPage'));
-const BBReversalSettings=lazy(()=>import('../features/strategy/BBReversalSettings'));
+
 
 function initial(range:{startDate:string;endDate:string}):BacktestSettings {
   return {bb_reversal:{...bbDefaults},atr_active:false,atr_period:14,atr_multiplier:2,ema_fast:20,ema_slow:50,rsi_period:20,rsi_threshold:50,rsi_active:true,bb_period:20,chartart_stop_pct:1,exit_condition:'none',stop_mode:'trailing',strategy:'bb_outer_reversal',direction_active:true,direction_timeframe:'1h',setup_active:true,setup_timeframe:'15m',entry_active:true,entry_timeframe:'5m',start_date:range.startDate,end_date:range.endDate,capital:2000,tick_size:.01,...htxCostDefaults,max_leverage:1,session_start:0,session_end:24,session_timezone:'UTC'};
@@ -88,7 +88,6 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
   const [tuneResult,setTuneResult]=useState<FineTuneResult|null>(null);
   const [selectedTuneCaseId,setSelectedTuneCaseId]=useState('');
   const [tuneProgress,setTuneProgress]=useState({percent:0,message:''});
-  const [section,setSection]=useState('execution');
   const [runId,setRunId]=useState(0);
   async function run(e?:FormEvent){
     e?.preventDefault();setBusy(true);setError('');onViewChange('results');
@@ -125,7 +124,7 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
     catch(error){setTuneError(String(error));}finally{setTuning(false);}
   }
   function renderTuneMetrics(label:string,metrics:TuneMetrics){
-    return <div className="tune-period" key={label}><strong>{label}</strong><span>Win rate <b>{fmt(metrics.winRate)}%</b></span><span>Average winner <b>${fmt(metrics.averageWin??null)}</b></span><span>Average loser <b>${fmt(metrics.averageLoss??null)}</b></span><span>Winner / loser size <b>{fmt(metrics.payoffRatio??null)}?</b></span><span>Losing trades <b>{metrics.losses}</b></span><span>Net P&amp;L <b className={metrics.netPnl>=0?'positive':'negative'}>{metrics.netPnl>=0?'+':''}${fmt(metrics.netPnl)}</b></span><span>Max drawdown <b className="negative">{fmt(Math.abs(metrics.maxDrawdownPct))}%</b></span><span>Average loss <b>{fmt(metrics.averageLossPct)}% of start</b></span><span>Trades <b>{metrics.trades}</b></span></div>;
+    return <div className="tune-period" key={label}><strong>{label}</strong><span>Win rate <b>{fmt(metrics.winRate)}%</b></span><span>Average winner <b>${fmt(metrics.averageWin??null)}</b></span><span>Average loser <b>${fmt(metrics.averageLoss??null)}</b></span><span>Winner / loser size <b>{fmt(metrics.payoffRatio??null)}×</b></span><span>Losing trades <b>{metrics.losses}</b></span><span>Net P&amp;L <b className={metrics.netPnl>=0?'positive':'negative'}>{metrics.netPnl>=0?'+':''}${fmt(metrics.netPnl)}</b></span><span>Max drawdown <b className="negative">{fmt(Math.abs(metrics.maxDrawdownPct))}%</b></span><span>Average loss <b>{fmt(metrics.averageLossPct)}% of start</b></span><span>Trades <b>{metrics.trades}</b></span></div>;
   }
   const tuneLabels:Record<string,string>={bb_length:'BB length',bb_mult:'BB multiplier',min_bb_width_pct:'Minimum BB width',atr_length:'ATR length',min_atr:'Minimum ATR',adx_length:'ADX length',adx_threshold:'ADX threshold',pullback_bars:'Rebound window',initial_sl:'Initial stop',trail_trigger:'Trail activation',trail_distance:'Trail distance',trail_multiplier:'Trail multiplier',sma_length:'Trend SMA length',use_sma_trend_adjustment:'SMA adjustment',sma_slope_bars:'SMA slope lookback',counter_profit_pct:'Countertrend profit (%)',counter_sl_pct:'Countertrend stop (%)',rsi_exit_enabled:'RSI exit enabled',rsi_exit_length:'Exit RSI length',rsi_exit_move:'RSI exit price move',rsi_exit_short:'Short RSI threshold',rsi_exit_long:'Long RSI threshold',amount_per_trade:'Amount per trade',amount_unit:'Amount unit',leverage:'Leverage'};
   const tuneCases:FineTuneCase[]=tuneResult?.candidates?.length?tuneResult.candidates:tuneResult?[{id:'best',rank:1,bestSettings:tuneResult.bestSettings,bestParameters:tuneResult.bestParameters,periods:{train:{metrics:tuneResult.periods.train.metrics},validation:{metrics:tuneResult.periods.validation.metrics},forwardTest:{metrics:tuneResult.periods.forwardTest.metrics}}}]:[];
@@ -136,16 +135,44 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
     {accountMode==='live'?(view==='paper'&&<LiveTrading settings={settings} controls={<LiveExecution view="terminal" settings={settings} onSettingsChange={setSettings} onConfigure={()=>onViewChange('strategy')} onManageAccount={()=>onViewChange('account')}/>}/>):<PaperTrading settings={settings} onChange={setSettings} onConfigure={()=>onViewChange('strategy')} visible={view==='paper'}/>}
 
     {view==='account'&&<AccountPage settings={settings} onBack={()=>onViewChange('paper')} accountMode={accountMode} onAccountModeChange={onAccountModeChange}/>}
-    {view==='strategy'&&<div id="page-strategy" role="tabpanel" aria-labelledby="tab-strategy" hidden={view!=='strategy'}>
-      <PageHeader eyebrow="WORKSPACE / STRATEGY" title="Bot settings" actions={<><Button variant="ghost" disabled={busy} onClick={()=>setSettings(initial(range))}>Restore defaults</Button><Button variant="secondary" onClick={()=>onViewChange('paper')}>Open terminal</Button></>}/>
-      <section className="settings-profiles" aria-label="Saved trading bot setups"><div className="profile-description"><strong>Saved bot setups</strong><small>Save named settings in the backend database, then apply them to backtests and paper or live bot configuration.</small></div><div className="profile-actions"><select aria-label="Select saved bot setup" value={selectedProfile} onChange={event=>{setSelectedProfile(event.target.value);setProfileName(event.target.value);}}><option value="">Choose a saved setup</option>{profiles.map(profile=><option key={profile.name} value={profile.name}>{profile.name}</option>)}</select><input aria-label="Setup name" placeholder="Setup name" maxLength={48} value={profileName} onChange={event=>setProfileName(event.target.value)}/><button type="button" className="secondary" disabled={profileBusy||!profileName.trim()} onClick={()=>void saveProfile()}>{profiles.some(profile=>profile.name.toLocaleLowerCase()===profileName.trim().toLocaleLowerCase())?'Save changes':'Save setup'}</button><button type="button" className="secondary" disabled={profileBusy||!selectedProfile} onClick={applyProfile}>Apply</button><button type="button" className="secondary" disabled={profileBusy||!selectedProfile} onClick={()=>void deleteProfile()}>Delete</button></div>{profileMessage&&<small className="profile-message" role="status">{profileMessage}</small>}</section>
-      <div className="settings-layout"><StrategyNavigation settings={settings} active={section} onChange={setSection}/><form className="configuration-form" onSubmit={run}><fieldset disabled={busy||tuning}>
-        <BBReversalSettings settings={settings} onChange={setSettings}/>
-        <section className="settings-section" id="settings-range"><div className="section-heading"><h3>Backtest range & account</h3><span className="paper-badge">SINGLE PERIOD</span></div><div className="settings-grid"><label>Starting balance ($)<input type="number" required min={1} max={1e9} step="any" value={settings.capital} onChange={e=>setSettings({...settings,capital:Number(e.target.value)})}/></label>
-          {(['start_date','end_date'] as const).map((key,i)=><label key={key}>{['Start date (UTC)','End date (UTC, inclusive)'][i]}<input type="date" required min={key==='end_date'?settings.start_date:range.startDate} max={range.endDate} value={settings[key]} onChange={e=>setSettings({...settings,[key]:e.target.value})}/></label>)}
-        </div><p className="settings-help">Available: {range.startDate} to {range.endDate}. One account balance runs through the full range. Live and replay dates are configured separately in the terminal.</p></section>
-        <div className="configuration-runbar"><div><strong>Ready to test your setup?</strong><small>Changes apply to the next run or new bot session.</small></div><div className="configuration-run-actions"><label>Search goal<select aria-label="Grid search ranking goal" value={searchObjective} disabled={busy||tuning} onChange={e=>setSearchObjective(e.target.value as 'profit'|'balanced')}><option value="profit">Higher net profit</option><option value="balanced">Balanced performance</option></select></label><button type="button" className="secondary" disabled={busy||tuning} onClick={()=>void runFineTune()}>{tuning?'Searching candidates…':searchObjective==='profit'?'Find higher-profit settings':'Run grid search'}</button><button type="submit" disabled={busy||tuning}>{busy?'Running backtest...':'Run full backtest'}</button></div></div>
-      </fieldset>
+    {view==='strategy'&&<div id="page-strategy" className="setup-page" role="tabpanel" aria-labelledby="tab-strategy">
+      <PageHeader eyebrow="BB OUTER BAND REVERSAL" title="Bot settings" description="Set how the bot sizes, enters and exits trades. Changes apply to the next backtest or new bot session." actions={<><Button variant="ghost" disabled={busy} onClick={()=>setSettings(initial(range))}>Restore defaults</Button><Button variant="secondary" onClick={()=>onViewChange('paper')}>Open terminal</Button></>}/>
+      <form className="setup-layout" onSubmit={run}>
+        <fieldset className="setup-main" disabled={busy||tuning}>
+          <BBReversalSettings settings={settings} onChange={setSettings}/>
+          <details className="setup-assumptions"><summary>How the simulation works</summary><p>Signals use completed candles and fill at close. Stops include adverse gaps; trailing stops never loosen. Position size is the allocated amount times leverage. A depleted balance blocks new trades. Fees, slippage, spread and prorated funding are included; liquidation is not modeled.</p></details>
+        </fieldset>
+        <aside className="setup-aside" aria-label="Setup summary">
+          <section className="setup-summary">
+            <h2>Your setup</h2>
+            <dl>
+              <div><dt>Timeframe</dt><dd>{settings.entry_timeframe}</dd></div>
+              <div><dt>Per trade</dt><dd>{settings.bb_reversal.amount_unit==='percent'?`${settings.bb_reversal.amount_per_trade}% of balance`:`$${fmt(settings.bb_reversal.amount_per_trade)}`}</dd></div>
+              <div><dt>Leverage</dt><dd>{settings.max_leverage}×</dd></div>
+              <div><dt>Stop / trail</dt><dd>{settings.bb_reversal.initial_sl} / {settings.bb_reversal.trail_distance}</dd></div>
+              <div><dt>Trend adjustment</dt><dd>{settings.bb_reversal.use_sma_trend_adjustment?'On':'Off'}</dd></div>
+              <div><dt>RSI exit</dt><dd>{settings.bb_reversal.rsi_exit_enabled?'On':'Off'}</dd></div>
+            </dl>
+          </section>
+          <section className="setup-summary" id="settings-range">
+            <h2>Backtest period</h2>
+            <fieldset disabled={busy||tuning} className="setup-range">
+              <Field label="Starting balance" unit="USD"><input type="number" required min={1} max={1e9} step="any" value={settings.capital} onChange={e=>setSettings({...settings,capital:Number(e.target.value)})}/></Field>
+              <div className="setup-dates">{(['start_date','end_date'] as const).map((key,i)=><Field key={key} label={['From (UTC)','To (UTC)'][i]}><input type="date" required min={key==='end_date'?settings.start_date:range.startDate} max={range.endDate} value={settings[key]} onChange={e=>setSettings({...settings,[key]:e.target.value})}/></Field>)}</div>
+              <small className="setup-note">History available {range.startDate} → {range.endDate}.</small>
+            </fieldset>
+            <button type="submit" className="setup-run" disabled={busy||tuning}>{busy?'Running backtest…':'Run backtest'}</button>
+            <div className="setup-search"><select aria-label="Grid search ranking goal" value={searchObjective} disabled={busy||tuning} onChange={e=>setSearchObjective(e.target.value as 'profit'|'balanced')}><option value="profit">Goal: higher profit</option><option value="balanced">Goal: balanced</option></select><button type="button" className="secondary" disabled={busy||tuning} onClick={()=>void runFineTune()}>{tuning?'Searching…':'Find better settings'}</button></div>
+          </section>
+          <section className="setup-summary" aria-label="Saved trading bot setups">
+            <h2>Saved setups</h2>
+            <select aria-label="Select saved bot setup" value={selectedProfile} onChange={event=>{setSelectedProfile(event.target.value);setProfileName(event.target.value);}}><option value="">{profiles.length?'Choose a saved setup':'No saved setups yet'}</option>{profiles.map(profile=><option key={profile.name} value={profile.name}>{profile.name}</option>)}</select>
+            <div className="setup-inline-actions"><button type="button" className="secondary" disabled={profileBusy||!selectedProfile} onClick={applyProfile}>Load</button><button type="button" className="secondary danger-text" disabled={profileBusy||!selectedProfile} onClick={()=>void deleteProfile()}>Delete</button></div>
+            <div className="setup-save"><input aria-label="Setup name" placeholder="Name this setup" maxLength={48} value={profileName} onChange={event=>setProfileName(event.target.value)}/><button type="button" className="secondary" disabled={profileBusy||!profileName.trim()} onClick={()=>void saveProfile()}>{profiles.some(profile=>profile.name.toLocaleLowerCase()===profileName.trim().toLocaleLowerCase())?'Update':'Save'}</button></div>
+            {profileMessage&&<small className="setup-note" role="status">{profileMessage}</small>}
+          </section>
+        </aside>
+      </form>
       {(tuning||tuneError||tuneResult)&&<section className="fine-tune-panel" aria-live="polite">
         {tuning&&<div className="tune-progress"><div className="tune-progress-heading"><strong>{tuneProgress.message||'Preparing fine tuning'}</strong><span>{tuneProgress.percent}%</span></div><div className="tune-progress-track"><span style={{width:`${tuneProgress.percent}%`}}/></div><small>Evaluating every grid combination on training and validation data. Forward test is reserved for reporting.</small></div>}
         {tuneError&&<p className="error" role="alert">{tuneError}</p>}
@@ -159,9 +186,9 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
           <small className="settings-help">Ranking objective: {tuneResult.objective} Forward-test metrics are historical evidence, not a guarantee of future performance.</small>
         </>}
       </section>}
-      <details className="execution-notes"><summary>Execution assumptions</summary><p>Signals use completed candles and fill at close. Stops include adverse gaps; trailing stops never loosen. Position notional is allocated amount times leverage. A depleted balance blocks new trades. Configured fees, slippage, spread and prorated funding are included. Session filters and liquidation are not modeled.</p></details></form></div>
+      
     </div>}
     {error&&view!=='paper'&&<p className="error" role="alert">{error}</p>}
-    {view==='results'&&<div id="page-results" role="tabpanel" aria-labelledby="tab-results" hidden={view!=='results'}><ResultsWorkspace key={runId} result={result} busy={busy} stale={stale} onRun={()=>void run()} onConfigure={()=>onViewChange('strategy')} onExport={download}/></div>}
+    {view==='results'&&<div id="page-results" role="tabpanel" aria-labelledby="tab-results" hidden={view!=='results'}><ResultsWorkspace key={runId} result={result} busy={busy} stale={stale} onRun={()=>void run()} onConfigure={()=>onViewChange('strategy')} onExport={download} summary={[['Period (UTC)',`${settings.start_date} → ${settings.end_date}`],['Timeframe',settings.entry_timeframe],['Starting balance',`$${fmt(settings.capital)}`],['Leverage',`${settings.max_leverage}×`],['Per trade',settings.bb_reversal.amount_unit==='percent'?`${settings.bb_reversal.amount_per_trade}% of balance`:`$${fmt(settings.bb_reversal.amount_per_trade)}`]]}/></div>}
   </Suspense></section>;
 }

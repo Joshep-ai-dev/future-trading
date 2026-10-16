@@ -23,7 +23,7 @@ function App({user,onSignedOut}:{user:SignedInUser;onSignedOut:()=>void}) {
   function navigate(next:Page){setPage(next);window.scrollTo({top:0});}
   function changeAccountMode(mode:'live'|'paper'){setAccountMode(mode);try{localStorage.setItem('silver.account.mode',mode);}catch{/* Account mode remains available for this session. */}}
   async function signOut(){await api('/api/auth/sign-out',{method:'POST'});onSignedOut();}
-  return <main className="app-shell"><AppHeader page={page} onNavigate={navigate} accountMode={accountMode} onModeChange={changeAccountMode} user={user} onSignOut={()=>void signOut()}/>
+  return <main className="app-shell" data-page={page} data-mode={accountMode}><AppHeader page={page} onNavigate={navigate} accountMode={accountMode} onModeChange={changeAccountMode} user={user} onSignOut={()=>void signOut()}/>
     {page!=='account'&&!(page==='paper'&&accountMode==='live')&&<MarketStatus accountMode={accountMode} onUpdated={()=>void loadRange()}/>}
     {error&&<p className="error" role="alert">{error}</p>}
     {range?<BacktestPanel range={range} view={page} onViewChange={navigate} accountMode={accountMode} onAccountModeChange={changeAccountMode}/>:<p role="status">Loading market history...</p>}

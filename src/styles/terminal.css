@@ -1,0 +1,845 @@
+/* Exchange-style design layer: one palette, compact chrome, a full-viewport
+   trading terminal and responsive stacking. Loaded last so it settles the
+   visual system over the older page stylesheets. */
+
+:root {
+  --background: #0b0e11;
+  --panel: #12161c;
+  --surface-raised: #181d24;
+  --field: #0f1318;
+  --border: #20262e;
+  --border-strong: #2b323c;
+  --text: #eaecef;
+  --muted: #848e9c;
+  --faint: #5e6673;
+  --blue: #3d7bfd;
+  --accent: #3d7bfd;
+  --accent-soft: #3d7bfd1f;
+  --green: #0ecb81;
+  --red: #f6465d;
+  --warning: #f0b90b;
+  --radius: 8px;
+  --header-height: 48px;
+  --terminal-bottom: 240px;
+  --terminal-side: 340px;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-feature-settings: "cv11", "ss01";
+}
+
+body {
+  background: var(--background);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+.positive { color: var(--green) !important; }
+.negative { color: var(--red) !important; }
+
+/* Controls */
+input,
+select {
+  height: 36px;
+  padding: 0 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--field);
+  color: var(--text);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  transition: border-color .15s, box-shadow .15s;
+}
+
+input:hover,
+select:hover {
+  border-color: #3a424e;
+}
+
+input:focus,
+select:focus {
+  outline: 0;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+input[type=checkbox] {
+  height: auto;
+  accent-color: var(--accent);
+}
+
+label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+button,
+.ui-button {
+  border-radius: 6px;
+}
+
+.ui-button--primary,
+.configuration-run-actions button[type=submit] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+button.secondary,
+.ui-button--secondary {
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+}
+
+button.secondary:hover:not(:disabled),
+.ui-button--secondary:hover:not(:disabled) {
+  background: #202630;
+  border-color: #3a424e;
+}
+
+.ui-button--ghost {
+  background: transparent;
+  color: var(--muted);
+}
+
+.ui-button--ghost:hover:not(:disabled) {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.ui-button--danger {
+  background: #f6465d1a;
+  border-color: #f6465d55;
+  color: var(--red);
+}
+
+/* Surfaces */
+.terminal-panel,
+.ui-panel,
+.settings-section,
+.settings-profiles,
+.configuration-runbar,
+.execution-notes,
+.strategy-navigation,
+.analysis-empty-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: none;
+}
+
+.ui-tabs {
+  border-bottom: 1px solid var(--border);
+}
+
+.ui-tabs > button {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.ui-tabs > button:hover {
+  color: var(--text);
+}
+
+.ui-tabs > button[aria-selected=true] {
+  color: var(--text);
+}
+
+.ui-tabs > button[aria-selected=true]::after {
+  height: 2px;
+  border-radius: 2px;
+  background: var(--warning);
+}
+
+.ui-tabs > button > span {
+  min-width: 18px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface-raised);
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.ui-status {
+  border-radius: 999px;
+}
+
+table th {
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+table td {
+  border-color: var(--border);
+  font-variant-numeric: tabular-nums;
+}
+
+table tbody tr:hover td {
+  background: #ffffff05;
+}
+
+.side-badge.long,
+.ui-tone--positive.ui-status {
+  background: #0ecb811a;
+  color: var(--green);
+}
+
+.side-badge.short,
+.ui-tone--negative.ui-status {
+  background: #f6465d1a;
+  color: var(--red);
+}
+
+/* Header */
+.app-shell {
+  max-width: none;
+  padding: 0 8px;
+}
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  height: var(--header-height);
+  min-height: var(--header-height);
+  margin: 0 -8px;
+  padding: 0 16px;
+  gap: 24px;
+  border-bottom: 1px solid var(--border);
+  background: #0b0e11e6;
+  backdrop-filter: blur(12px);
+}
+
+.brand {
+  gap: 9px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: .6px;
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 7px;
+  background: linear-gradient(140deg, #d9dee6, #8b95a3);
+  color: #0b0e11;
+}
+
+.brand-mark svg {
+  width: 17px;
+  height: 17px;
+}
+
+.brand-sub {
+  display: none;
+}
+
+.header-primary {
+  gap: 28px;
+}
+
+.app-header .page-tabs,
+.header-primary .page-tabs {
+  align-self: center;
+  min-height: 0;
+  gap: 2px;
+  border: 0;
+}
+
+.app-header .page-tabs > button {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.app-header .page-tabs > button:hover {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.app-header .page-tabs > button[aria-selected=true] {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.app-header .page-tabs > button::after {
+  display: none;
+}
+
+.app-header .header-account {
+  gap: 8px;
+}
+
+.app-header .header-context {
+  gap: 8px;
+}
+
+.app-header .header-context > div {
+  width: auto;
+  height: 34px;
+}
+
+.app-header .ui-select-menu,
+.app-header .ui-select-menu summary {
+  height: 34px;
+}
+
+.app-header .ui-select-menu summary {
+  min-width: 132px;
+  padding: 0 10px;
+  border-color: var(--border-strong);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.app-header .ui-select-copy {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+.app-header .ui-select-copy small {
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.app-header .ui-select-copy b {
+  max-width: 120px;
+  font-size: 12px;
+}
+
+.ui-select-menu > div {
+  border-color: var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+
+.header-mode-toggle {
+  display: flex;
+  height: 34px;
+  padding: 3px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--panel);
+}
+
+.header-mode-toggle button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent !important;
+  color: var(--muted) !important;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.header-mode-toggle button i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: .5;
+}
+
+.header-mode-toggle button[aria-pressed=true].mode-paper {
+  background: var(--surface-raised) !important;
+  color: var(--text) !important;
+}
+
+.header-mode-toggle button[aria-pressed=true].mode-live {
+  background: #f0b90b1f !important;
+  color: var(--warning) !important;
+}
+
+.header-mode-toggle button[aria-pressed=true] i {
+  opacity: 1;
+}
+
+.app-header .user-menu summary {
+  width: 34px;
+  min-width: 0;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+}
+
+.app-header .user-identity,
+.app-header .user-chevron {
+  display: none;
+}
+
+.user-avatar {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border-strong);
+  background: linear-gradient(140deg, #2a3442, #1a2029);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.user-menu summary:hover .user-avatar,
+.user-menu[open] .user-avatar {
+  border-color: var(--accent);
+}
+
+.user-menu-popover {
+  top: calc(100% + 8px);
+  width: 240px;
+  border-color: var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface-raised);
+  box-shadow: 0 20px 50px #000c;
+}
+
+.user-menu-popover button {
+  border-radius: 6px;
+  background: transparent !important;
+  color: var(--muted) !important;
+  font-size: 12px;
+}
+
+.user-menu-popover button:hover {
+  background: #ffffff0a !important;
+  color: var(--text) !important;
+}
+
+/* Data status and footer */
+.data-strip {
+  min-height: 28px;
+  margin: 0 -8px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  font-size: 11px;
+}
+
+.app-footer {
+  min-height: 28px;
+  padding: 6px 8px;
+  border-color: var(--border);
+  color: var(--faint);
+  font-size: 10px;
+}
+
+/* Instrument ticker */
+.market-bar,
+.exchange-market-header {
+  min-height: 60px;
+  margin: 8px 0 0;
+  padding: 10px 18px;
+  gap: 32px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.instrument,
+.exchange-instrument {
+  gap: 10px;
+}
+
+.instrument h1,
+.exchange-instrument h1 {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.instrument small,
+.exchange-instrument small {
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.instrument-icon {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  background: radial-gradient(circle at 35% 30%, #f2f4f7, #9aa3af 60%, #5d6570);
+  color: #12161c;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.market-price strong,
+.exchange-last strong {
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.market-price small,
+.exchange-last small {
+  color: var(--faint);
+}
+
+.market-bar .ui-metric > span,
+.exchange-market-header .ui-metric > span,
+.market-stat small {
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.market-bar .ui-metric > strong,
+.exchange-market-header .ui-metric > strong,
+.market-stat b {
+  font-size: 14px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.market-bar .ui-tone--positive > strong,
+.exchange-market-header .ui-tone--positive > strong { color: var(--green); }
+.market-bar .ui-tone--negative > strong,
+.exchange-market-header .ui-tone--negative > strong { color: var(--red); }
+
+/* Terminal grid */
+.terminal-grid {
+  gap: 8px;
+  padding-top: 8px;
+}
+
+.terminal-main,
+.terminal-sidebar {
+  gap: 8px;
+}
+
+.trading-chart-heading {
+  min-height: 44px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.chart-actions {
+  padding: 6px 10px;
+  border-color: var(--border);
+  background: transparent;
+}
+
+.chart-toolbar button,
+.indicator-switch button {
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent !important;
+  color: var(--muted) !important;
+  font-size: 11px;
+}
+
+.chart-toolbar button:hover,
+.indicator-switch button:hover {
+  background: var(--surface-raised) !important;
+  color: var(--text) !important;
+}
+
+.chart-toolbar button[aria-pressed=true],
+.indicator-switch button[aria-pressed=true] {
+  border-color: #3d7bfd55;
+  background: var(--accent-soft) !important;
+  color: #8fb3ff !important;
+}
+
+.chart-timeframe-select {
+  height: 30px;
+}
+
+.price-panel .chart-history-status > span {
+  display: none;
+}
+
+.price-panel .readout,
+.price-panel .chart-history-status {
+  min-height: 22px;
+  padding: 3px 14px;
+  color: var(--faint);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10.5px;
+}
+
+.chart-resize {
+  background: var(--panel);
+  border-color: var(--border);
+}
+
+.chart-legend {
+  padding: 6px 14px;
+  border-color: var(--border);
+  color: var(--faint);
+  font-size: 10.5px;
+}
+
+/* Sidebar ticket and bot panel */
+.terminal-sidebar .panel-heading,
+.terminal-sidebar .ui-panel-heading {
+  padding: 14px 16px;
+  border-color: var(--border);
+}
+
+.terminal-sidebar .bot-form {
+  padding: 16px;
+}
+
+.terminal-sidebar .bot-form input,
+.terminal-sidebar .bot-form select {
+  height: 38px;
+}
+
+.bot-start,
+.bot-start-action {
+  height: 42px;
+  border-radius: 6px;
+  background: var(--green) !important;
+  border-color: var(--green) !important;
+  color: #0b0e11 !important;
+  font-weight: 700;
+}
+
+.bot-pause {
+  height: 42px;
+  background: var(--surface-raised) !important;
+  border: 1px solid var(--border-strong) !important;
+  color: var(--text) !important;
+}
+
+.ticket-segment {
+  padding: 3px;
+  border-radius: 7px;
+  background: var(--field);
+}
+
+.ticket-segment button {
+  border-radius: 5px;
+  background: transparent !important;
+  color: var(--muted) !important;
+}
+
+.ticket-segment button[aria-pressed=true] {
+  background: var(--surface-raised) !important;
+  color: var(--text) !important;
+}
+
+.ticket-buy {
+  background: var(--green) !important;
+  border-color: var(--green) !important;
+  color: #0b0e11 !important;
+  font-weight: 700;
+}
+
+.ticket-sell {
+  background: var(--red) !important;
+  border-color: var(--red) !important;
+  color: #fff !important;
+  font-weight: 700;
+}
+
+.ticket-market-price,
+.ticket-available {
+  border-radius: 6px;
+  background: var(--field);
+}
+
+.strategy-card {
+  border-color: var(--border);
+}
+
+/* Desktop: chart, splitter and activity stack in a normally scrolling page.
+   The splitter sets --terminal-chart, the chart pane height. */
+@media (min-width: 1100px) {
+  .app-shell[data-page=paper] .terminal-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) var(--terminal-side);
+    align-items: start;
+    padding-bottom: 12px;
+  }
+
+  .app-shell[data-page=paper] .terminal-main {
+    display: grid;
+    grid-template-rows: var(--terminal-chart, 640px) 8px auto;
+    gap: 0;
+    min-height: 0;
+  }
+
+  .app-shell[data-page=paper] .price-panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    margin: 0;
+    overflow: hidden;
+  }
+
+  .app-shell[data-page=paper] .price-panel .chart-resize,
+  .app-shell[data-page=paper] .price-panel .chart-empty {
+    flex: 1;
+    height: auto;
+    min-height: 200px;
+    max-height: none;
+    resize: none;
+  }
+
+  .app-shell[data-page=paper] .activity-panel,
+  .app-shell[data-page=paper] .exchange-activity {
+    min-height: 260px;
+    margin: 0;
+  }
+
+  .app-shell[data-page=paper] .activity-panel .equity-resize {
+    height: 300px;
+  }
+
+  .app-shell[data-page=paper] .terminal-sidebar {
+    position: sticky;
+    top: calc(var(--header-height) + 8px);
+  }
+}
+
+/* Tablet and phone: chart, then controls, then account activity */
+@media (max-width: 1099px) {
+  .terminal-grid {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .terminal-main {
+    display: contents;
+  }
+
+  .terminal-main > .price-panel { order: 1; }
+  .terminal-sidebar { order: 2; width: auto; }
+  .terminal-main > .activity-panel,
+  .terminal-main > .exchange-activity { order: 3; }
+}
+
+@media (max-width: 1000px) {
+  .app-header {
+    flex-wrap: wrap;
+    height: auto;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    row-gap: 8px;
+  }
+}
+
+@media (max-width: 800px) {
+  .app-header .page-tabs {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .app-header .page-tabs > button {
+    flex: none;
+    padding: 0 12px;
+  }
+
+  .app-header .ui-select-menu summary {
+    min-width: 0;
+  }
+
+  .app-header .ui-select-copy small {
+    display: none;
+  }
+
+  .market-bar,
+  .exchange-market-header {
+    gap: 12px 20px;
+    padding: 10px 12px;
+  }
+
+  .market-bar .market-stat.clock-stat {
+    display: none;
+  }
+}
+
+/* Backtest empty state: run directly from the current setup */
+.empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.empty-run-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 1px;
+  max-width: 860px;
+  margin: 0 auto 28px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--border);
+}
+
+.empty-run-summary > div {
+  display: block;
+  padding: 12px 16px;
+  background: var(--surface-raised);
+}
+
+.empty-run-summary dt {
+  display: block;
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.empty-run-summary dd {
+  display: block;
+  margin: 5px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Page headers and settings */
+.ui-page-header {
+  padding-top: 20px;
+  padding-bottom: 14px;
+}
+
+.ui-eyebrow {
+  color: var(--faint);
+}
+
+.ui-page-header h1 {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -.2px;
+}
+
+.configuration-runbar {
+  bottom: 0;
+  border-color: var(--border-strong);
+  border-radius: 10px 10px 0 0;
+  background: #12161cf0;
+  backdrop-filter: blur(10px);
+}
+
+.strategy-navigation button[aria-current],
+.strategy-navigation .active {
+  background: var(--accent-soft);
+  color: #8fb3ff;
+}
+
+/* Sidebar cards keep their natural height; the column scrolls instead. */
+.terminal-sidebar > * {
+  flex-shrink: 0;
+}
+
+.price-panel .chart-history-status:not(.error) {
+  display: none;
+}

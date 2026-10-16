@@ -29,7 +29,7 @@ export class StopOverlay implements ISeriesPrimitive<Time> {
           }
           if(trailing&&(p.reason==='activation'||(i>0&&coords[i-1].reason==='initial'))&&p.x>=0&&p.x<=mediaSize.width){
             ctx.fillStyle=STOP_COLORS.trailing;ctx.beginPath();ctx.arc(p.x,p.y,3,0,Math.PI*2);ctx.fill();
-            ctx.lineWidth=4;ctx.strokeStyle='#10141d';ctx.strokeText('TRAIL',p.x+6,p.y-8);
+            ctx.lineWidth=4;ctx.strokeStyle='#12161c';ctx.strokeText('TRAIL',p.x+6,p.y-8);
             ctx.fillText('TRAIL',p.x+6,p.y-8);ctx.lineWidth=2;
           }
         }

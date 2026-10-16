@@ -26,7 +26,7 @@ export class AdxDecoration implements ISeriesPrimitive<Time>{
       const text=raw===null?strength:`ADX ${raw.toFixed(1)}${arrow} · ${strength}`;
       ctx.save();ctx.font='11px sans-serif';const width=ctx.measureText(text).width+18,x=Math.max(4,mediaSize.width-width-8);
       const top=mediaSize.width<650?34:7;
-      ctx.fillStyle='#10141d';ctx.fillRect(x,top,width,24);ctx.fillStyle=strengthColor(raw);ctx.globalAlpha=.1;ctx.fillRect(x,top,width,24);ctx.globalAlpha=1;ctx.fillText(text,x+9,top+16);ctx.restore();
+      ctx.fillStyle='#12161c';ctx.fillRect(x,top,width,24);ctx.fillStyle=strengthColor(raw);ctx.globalAlpha=.1;ctx.fillRect(x,top,width,24);ctx.globalAlpha=1;ctx.fillText(text,x+9,top+16);ctx.restore();
     });},
   };
   private view={renderer:()=>this.renderer};

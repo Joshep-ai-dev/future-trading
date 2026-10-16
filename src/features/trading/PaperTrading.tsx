@@ -13,6 +13,7 @@ import {candleAt,useReplayAnimation,type Candle} from './replayAnimation';
 import {accountAt} from './replayAccount';
 import {formatTradingTime,useTradingTimeZone,type TradingTimeZone} from '../../shared/charts/tradingTime';
 import TradingChartHeader from '../../shared/charts/TradingChartHeader';
+import TerminalSplitter from '../../shared/ui/TerminalSplitter';
 
 export type Position={direction:number;entry_time:number;entry_price:number;quantity:number;stop:number;initial_stop?:number;trailing_active:boolean;stop_history?:StopPoint[]};
 export type PaperTrade=Position&{id:number;exit_time:number;exit_price:number;exit_reason:string;pnl:number};
@@ -91,6 +92,7 @@ export default function PaperTrading({settings,onChange,onConfigure,visible}:{se
         {alternate&&chartView.error&&hasChart&&<p className="chart-history-status error" role="alert">{chartView.error}</p>}
         <div className="chart-legend"><span><b style={{color:FILL_COLORS.buy}}>↑</b> Buy / close short</span><span><b style={{color:FILL_COLORS.sell}}>↓</b> Sell / close long</span><span><i className="legend-line" style={{borderColor:STOP_COLORS.initial}}/> Stop loss</span><span><i className="legend-line" style={{borderColor:STOP_COLORS.trailing}}/> Trailing stop / TRAIL activation</span></div>
       </section>
+      <TerminalSplitter/>
       <section className="terminal-panel activity-panel">
         <TabBar items={[
           {value:'position',label:'Open position',count:p?1:0,controls:'activity-position'},

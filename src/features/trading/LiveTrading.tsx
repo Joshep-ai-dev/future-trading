@@ -6,6 +6,7 @@ import LiveMarketChart from './LiveMarketChart';
 import {useExchangeVenue} from '../../shared/api/exchangeVenue';
 import {Button,Panel} from '../../shared/ui/ui';
 import LiveAssets from './LiveAssets';
+import TerminalSplitter from '../../shared/ui/TerminalSplitter';
 import type {BacktestSettings} from '../../shared/types/types';
 
 function PaperSessionNotice(){
@@ -38,7 +39,7 @@ export default function LiveTrading({settings,controls}:{settings:BacktestSettin
   return <div id="page-paper" role="tabpanel" aria-labelledby="tab-paper">
     <ExchangeMarketHeader venue={venue}/>
     <div className="terminal-grid live-terminal-grid">
-      <div className="terminal-main"><LiveMarketChart key={venue} venue={venue} settings={settings}/><ExchangeOverview venue={venue}/></div>
+      <div className="terminal-main"><LiveMarketChart key={venue} venue={venue} settings={settings}/><TerminalSplitter/><ExchangeOverview venue={venue}/></div>
       <aside className="terminal-sidebar" aria-label="Live execution"><PaperSessionNotice/><Panel className="live-terminal-controls">{controls}</Panel><LiveAssets venue={venue}/></aside>
     </div>
   </div>;

@@ -1,0 +1,290 @@
+/* TradingView-style chart chrome: timeframe strip, compact tool row and an
+   OHLC legend laid over the chart. Shared by trading and backtest charts. */
+
+.tv-header {
+  min-height: 40px;
+  padding: 0 10px 0 14px;
+}
+
+.tv-header .chart-title {
+  gap: 12px;
+  min-width: 0;
+}
+
+.tv-header .chart-title > strong {
+  font-size: 13px;
+  letter-spacing: .2px;
+}
+
+.tv-timeframes {
+  display: flex;
+  gap: 2px;
+  padding-left: 12px;
+  border-left: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tv-timeframes button {
+  flex: none;
+  height: 26px;
+  min-width: 34px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.tv-timeframes button:hover:not(:disabled) {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.tv-timeframes button[aria-checked=true] {
+  background: var(--accent-soft);
+  color: #8fb3ff;
+  opacity: 1;
+}
+
+.tv-header .chart-mode {
+  padding: 2px 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  color: var(--faint);
+  font-size: 9.5px;
+  letter-spacing: .5px;
+  white-space: nowrap;
+}
+
+.tv-header .chart-caption {
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.tv-toolbar {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  min-height: 36px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+}
+
+.tv-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.tv-divider {
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background: var(--border-strong);
+}
+
+.tv-spacer {
+  flex: 1;
+}
+
+.tv-toolbar .tv-icon,
+.tv-toolbar .tv-text,
+.tv-menu > summary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 28px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent !important;
+  color: var(--muted) !important;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.tv-toolbar .tv-icon {
+  width: 30px;
+  padding: 0;
+}
+
+.tv-toolbar .tv-text,
+.tv-menu > summary {
+  padding: 0 9px;
+}
+
+.tv-toolbar svg {
+  width: 17px;
+  height: 17px;
+}
+
+.tv-toolbar .tv-icon:hover:not(:disabled),
+.tv-toolbar .tv-text:hover:not(:disabled),
+.tv-menu > summary:hover,
+.tv-menu[open] > summary {
+  background: var(--surface-raised) !important;
+  color: var(--text) !important;
+}
+
+.tv-latest svg {
+  width: 14px !important;
+  height: 14px !important;
+}
+
+.tv-menu {
+  position: relative;
+}
+
+.tv-menu > summary {
+  list-style: none;
+}
+
+.tv-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.tv-count {
+  min-width: 17px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  line-height: 17px;
+}
+
+.tv-menu-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  display: grid;
+  width: 250px;
+  padding: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  box-shadow: 0 16px 40px #000b;
+}
+
+.tv-menu-popover label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.tv-menu-popover label:hover {
+  background: #ffffff0a;
+}
+
+.tv-menu-popover input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+}
+
+.tv-menu-popover small {
+  display: block;
+  margin-top: 2px;
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.tv-follow {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.tv-follow input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.tv-follow i {
+  position: relative;
+  width: 26px;
+  height: 15px;
+  border-radius: 999px;
+  background: var(--border-strong);
+}
+
+.tv-follow i::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform .15s;
+}
+
+.tv-follow input:checked + i {
+  background: var(--accent);
+}
+
+.tv-follow input:checked + i::after {
+  transform: translateX(11px);
+}
+
+/* OHLC legend overlay, top-left of the price pane */
+.chart-resize {
+  position: relative;
+}
+
+.chart-resize > .tv-legend {
+  position: absolute;
+  top: 6px;
+  left: 10px;
+  z-index: 3;
+  max-width: calc(100% - 90px);
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: #aab3c0;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.result-chart .chart-history-status {
+  display: none;
+}
+
+
+@media (max-width: 800px) {
+  .tv-header .chart-mode,
+  .tv-header .chart-caption {
+    display: none;
+  }
+
+  .tv-toolbar {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+}

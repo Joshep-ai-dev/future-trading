@@ -46,10 +46,10 @@ export function EquityChart({period,initialValue=0,trades}: {
     if(!ref.current)return;
     const chart=createChart(ref.current,{autoSize:false,...chartInteraction,
       localization:{timeFormatter:tradeLabel},
-      layout:{background:{type:ColorType.Solid,color:'#10141d'},textColor:'#7d8da5'},
+      layout:{background:{type:ColorType.Solid,color:'#12161c'},textColor:'#7d8da5'},
       rightPriceScale:{scaleMargins:{top:.16,bottom:.16},borderColor:'#263246'},
-      timeScale:{timeVisible:false,minBarSpacing:2,lockVisibleTimeRangeOnResize:true,tickMarkMaxCharacterLength:5,tickMarkFormatter:(time:unknown)=>Number(time)===86400?'Start':`#${Math.round(Number(time)/86400)-1}`},
-      grid:{vertLines:{visible:false},horzLines:{color:'#202836'}}});
+      timeScale:{timeVisible:false,minBarSpacing:.2,lockVisibleTimeRangeOnResize:true,tickMarkMaxCharacterLength:5,tickMarkFormatter:(time:unknown)=>Number(time)===86400?'Start':`#${Math.round(Number(time)/86400)-1}`},
+      grid:{vertLines:{visible:false},horzLines:{color:'#1b2028'}}});
     chartRef.current=chart;
     lineRef.current=chart.addSeries(LineSeries,{color:'#6ce4bc',lineWidth:2,priceLineVisible:false,lastValueVisible:false,
       crosshairMarkerVisible:true,priceFormat:{type:'price',precision:2,minMove:.01},title:''});
@@ -97,7 +97,7 @@ export default function BacktestChart({candles,trades,selected,onSelect,indicato
     const focus = selected ? candles.findIndex(c=>c.time>=selected.signalTime) : -1;
     const exit = selected ? candles.findIndex(c=>c.time>=selected.exitTime) : -1;
     const view = candles;
-    const chart = createChart(ref.current,{autoSize:false,...chartInteraction,localization:chartTimeOptions(readChartTimeZone()).localization,layout:{background:{type:ColorType.Solid,color:'#10141d'},textColor:'#7d8da5'},timeScale:{timeVisible:true,minBarSpacing:2,lockVisibleTimeRangeOnResize:true,...chartTimeOptions(readChartTimeZone()).timeScale},grid:{vertLines:{visible:false},horzLines:{color:'#202836'}}});
+    const chart = createChart(ref.current,{autoSize:false,...chartInteraction,localization:chartTimeOptions(readChartTimeZone()).localization,layout:{background:{type:ColorType.Solid,color:'#12161c'},textColor:'#7d8da5'},timeScale:{timeVisible:true,minBarSpacing:.2,lockVisibleTimeRangeOnResize:true,...chartTimeOptions(readChartTimeZone()).timeScale},grid:{vertLines:{visible:false},horzLines:{color:'#1b2028'}}});
     chartRef.current=chart;
     const price = chart.addSeries(CandlestickSeries,{borderVisible:false,upColor:'#26a69a',downColor:'#ef5350',wickUpColor:'#26a69a',wickDownColor:'#ef5350',priceFormat:{type:'price',precision:3,minMove:.001}});
     price.priceScale().applyOptions({scaleMargins:{top:.18,bottom:.22}});
@@ -221,5 +221,5 @@ export default function BacktestChart({candles,trades,selected,onSelect,indicato
     };
   },[candles,trades,selected,indicators,barSeconds,indicatorSettings,selectedIndicators,indicatorConfig,hiddenIndicators,strategyVisible]);
   useEffect(()=>{const options=chartTimeOptions(timeZone);chartRef.current?.applyOptions({localization:options.localization,timeScale:options.timeScale});},[timeZone]);
-  return <><ChartTools chartRef={chartRef} endLabel="Latest" onLatest={latest} onNavigate={holdView} showEarlier indicators={selectedIndicators} onToggleIndicator={toggleIndicator} strategyVisible={strategyVisible} onToggleStrategy={()=>setStrategyVisible(value=>!value)} follow={follow} onFollowChange={setFollow}/>{settingsOpen&&<IndicatorSettings key={settingsOpen} kind={settingsOpen} value={indicatorConfig} onApply={setIndicatorConfig} onClose={()=>setSettingsOpen(null)}/>}<p className="readout">{readout}</p><div className="chart-history-status" role="status">All candles in this backtest are loaded<span>Latest returns to the end of the test period</span></div><div className="chart-resize">{paneHeaders.map(({kind,top})=><IndicatorHeader key={kind} kind={kind} top={top} config={indicatorConfig} value={paneValues[kind]} hidden={hiddenIndicators[kind]} onSettings={()=>setSettingsOpen(kind)} onVisibility={()=>setHiddenIndicators(old=>({...old,[kind]:!old[kind]}))} onRemove={()=>{setHiddenIndicators(old=>({...old,[kind]:false}));toggleIndicator(kind);}}/>)}<div ref={ref} className="chart-container position-chart" aria-label={`${timeframe} trade positions, indicators, entries, exits, stop and target zones`}/></div></>;
+  return <><ChartTools chartRef={chartRef} endLabel="Latest" onLatest={latest} onNavigate={holdView} showEarlier indicators={selectedIndicators} onToggleIndicator={toggleIndicator} strategyVisible={strategyVisible} onToggleStrategy={()=>setStrategyVisible(value=>!value)} follow={follow} onFollowChange={setFollow}/>{settingsOpen&&<IndicatorSettings key={settingsOpen} kind={settingsOpen} value={indicatorConfig} onApply={setIndicatorConfig} onClose={()=>setSettingsOpen(null)}/>}<div className="chart-history-status" role="status">All candles in this backtest are loaded<span>Latest returns to the end of the test period</span></div><div className="chart-resize"><p className="readout tv-legend">{readout}</p>{paneHeaders.map(({kind,top})=><IndicatorHeader key={kind} kind={kind} top={top} config={indicatorConfig} value={paneValues[kind]} hidden={hiddenIndicators[kind]} onSettings={()=>setSettingsOpen(kind)} onVisibility={()=>setHiddenIndicators(old=>({...old,[kind]:!old[kind]}))} onRemove={()=>{setHiddenIndicators(old=>({...old,[kind]:false}));toggleIndicator(kind);}}/>)}<div ref={ref} className="chart-container position-chart" aria-label={`${timeframe} trade positions, indicators, entries, exits, stop and target zones`}/></div></>;
 }

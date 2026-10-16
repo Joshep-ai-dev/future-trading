@@ -10,7 +10,7 @@ const utc=(t:number)=>new Date(t*1000).toISOString().replace('T',' ').slice(0,16
 const tradeTime=(t:number,zone:TradingTimeZone)=>formatTradingTime(t,zone);
 const reason=(value:string)=>({rsi_price_exit:'RSI + price exit',stop:'Stop loss',reversal:'Direction reversal',period_end:'End of backtest',data_gap:'Data gap',trailing_stop_at_close:'Trailing stop'}[value]??value.replaceAll('_',' '));
 
-export default function ResultsWorkspace({result,busy,stale,onRun,onConfigure,onExport}:{result:BacktestResult|null;busy:boolean;stale:boolean;onRun:()=>void;onConfigure:()=>void;onExport:()=>void}){
+export default function ResultsWorkspace({result,busy,stale,onRun,onConfigure,onExport,summary}:{result:BacktestResult|null;busy:boolean;stale:boolean;onRun:()=>void;onConfigure:()=>void;onExport:()=>void;summary?:[string,string][]}){
   const [selectedId,setSelectedId]=useState<number|null>(null),[page,setPage]=useState(0);
   const tradingTimeZone=useTradingTimeZone();
   const p=result?.backtest,s=p?.summary;
@@ -20,7 +20,7 @@ export default function ResultsWorkspace({result,busy,stale,onRun,onConfigure,on
   const currentPage=Math.min(page,pages-1);
   const exits=useMemo(()=>Object.entries((p?.trades??[]).reduce<Record<string,number>>((counts,t)=>{counts[t.exitReason]=(counts[t.exitReason]??0)+1;return counts;},{})),[p]);
   return <>
-    <PageHeader eyebrow="WORKSPACE / RESEARCH" title="Backtest" actions={<><Button variant="secondary" onClick={onConfigure}>Edit settings</Button>{result&&<Button variant="secondary" onClick={onExport}>Export results</Button>}<Button disabled={busy} onClick={onRun}>{busy?'Running?':'Run backtest'}</Button></>}/>
+    <PageHeader eyebrow="WORKSPACE / RESEARCH" title="Backtest" actions={<><Button variant="secondary" onClick={onConfigure}>Edit settings</Button>{result&&<Button variant="secondary" onClick={onExport}>Export results</Button>}<Button disabled={busy} onClick={onRun}>{busy?'Running…':'Run backtest'}</Button></>}/>
     {stale&&<p className="notice">Settings have changed. These results use the previous configuration.</p>}
     {result&&p&&s?<>
       <div className="run-context"><span className="run-label">BB OUTER BAND REVERSAL</span><span>{result.executionTimeframe.toUpperCase()} candles</span><span>{result.settings.max_leverage}× leverage</span><span>{utc(p.start)} — {utc(p.end)} UTC</span><span className="paper-badge">SIMULATED</span></div>
@@ -44,7 +44,7 @@ export default function ResultsWorkspace({result,busy,stale,onRun,onConfigure,on
         <section className="terminal-panel trade-inspector"><div className="panel-heading"><h2>Position inspector</h2>{selected&&<span className="count-tag">#{selected.id}</span>}</div>{selected?<><div className="inspector-side"><span className={`side-badge ${selected.direction===1?'long':'short'}`}>{selected.direction===1?'LONG':'SHORT'}</span><strong className={selected.netPnl>=0?'positive':'negative'}>{selected.netPnl>=0?'+':''}${fmt(selected.netPnl)}</strong></div><dl>{[[`Entry candle (${tradingTimeZone})`,tradeTime(selected.entryTime,tradingTimeZone)],[`Exit candle (${tradingTimeZone})`,tradeTime(selected.exitTime,tradingTimeZone)],['Quantity',fmt(selected.quantity,4)],['Initial stop',fmt(selected.initialStop??selected.stop,3)],['Final stop',fmt(selected.finalStop??selected.stop,3)],['Planned risk',`$${fmt(selected.plannedRisk)}`],['Exit reason',reason(selected.exitReason)]].map(([label,value])=><div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>{(selected.stopHistory?.length??0)>1&&<details className="inspector-stops"><summary>Stop adjustments ({selected.stopHistory!.length-1})</summary><table><thead><tr><th>{tradingTimeZone} candle</th><th>Price</th></tr></thead><tbody>{selected.stopHistory!.map(h=><tr key={h.time}><td>{tradeTime(h.time,tradingTimeZone)}</td><td>{fmt(h.price,3)}</td></tr>)}</tbody></table></details>}</>:<div className="empty-position"><span className="empty-state-symbol">◇</span><h3>Inspect a trade</h3><p>Select a chart marker or ledger row to see entry, exit and stop details.</p></div>}</section>
         {!!exits.length&&<section className="terminal-panel"><div className="panel-heading"><h2>Exit distribution</h2></div><dl>{exits.map(([key,count])=><div key={key}><dt>{reason(key)}</dt><dd>{count}</dd></div>)}</dl></section>}
       </aside></div>
-    </>:<Panel className="analysis-empty-panel"><EmptyState title={busy?'Building your backtest':'Test before you trade'} description={busy?'Processing completed candles and simulated trades?':'Set a date range and strategy parameters to review performance, risk, and individual trades.'} action={!busy&&<Button onClick={onConfigure}>Configure backtest</Button>}/></Panel>}
+    </>:<Panel className="analysis-empty-panel"><EmptyState title={busy?'Building your backtest':'Test before you trade'} description={busy?'Processing completed candles and simulated trades…':'Run the current setup over the downloaded history to review performance, risk and every trade.'} action={!busy&&<div className="empty-actions"><Button onClick={onRun}>Run backtest now</Button><Button variant="secondary" onClick={onConfigure}>Review settings</Button></div>}/>{summary&&!busy&&<dl className="empty-run-summary">{summary.map(([label,value])=><div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>}</Panel>}
 
   </>;
 }
