@@ -67,7 +67,7 @@ export default function LiveMarketChart({venue,settings}:{venue:ExchangeVenue;se
     return {candles:[...buckets.values()].filter(c=>c.time<before).sort((a,b)=>a.time-b.time),hasMore:result.hasMore};
   },[venue,timeframe,duration]);
   return <section className="terminal-panel price-panel live-price-panel"><TradingChartHeader timeframe={timeframe} onTimeframeChange={changeTimeframe} mode={`${venue.toUpperCase()} LIVE MARKET`} caption={`${timeframe} exchange candles · streaming updates`}/>
-    {(error||data?.errors.candleStream||!connected)&&<p className="exchange-inline-error" role="status">{error||data?.errors.candleStream||'Connecting to exchange stream…'}</p>}
+    {(error||data?.errors.connection||data?.errors.candleStream||!connected)&&<p className="exchange-inline-error" role="status">{error||data?.errors.connection||data?.errors.candleStream||'Connecting to exchange stream…'}</p>}
     {candles.length?<StreamingPriceChart key={`${venue}-${timeframe}`} sessionId={0} allowLocalHistory={false} loadHistory={loadHistory} historyLabel="Pan left to load exchange history" showSma={settings.bb_reversal.use_sma_trend_adjustment} timeframe={timeframe} atrLength={settings.bb_reversal.atr_length} adxLength={settings.bb_reversal.adx_length} candles={candles} indicators={indicators} stops={emptyStops} trades={emptyTrades} position={null} indicatorClock={(data?.sectionTimes.candle??data?.sectionTimes.market??0)/1000}/>:<div className="chart-empty"><h3>{error?'Exchange chart unavailable':'Connecting to live market'}</h3><p>{venue.toUpperCase()} XAG/USDT perpetual candles</p></div>}
   </section>;
 }

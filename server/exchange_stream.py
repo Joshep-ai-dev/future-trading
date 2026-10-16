@@ -278,6 +278,9 @@ class ExchangeStreams:
         feed.changed.set()
         try:
             yield 'retry: 2000\n\n'
+            # Send metadata immediately: account REST initialization can take
+            # several network requests and must not gate chart history loading.
+            yield 'data: ' + json.dumps(dict(feed.state, updatedAt=time.time() * 1000), allow_nan=False) + '\n\n'
             while True:
                 yield 'data: ' + await queue.get() + '\n\n'
                 if self.service.clients.get(venue) is not source:
