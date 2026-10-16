@@ -149,3 +149,92 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* Mini charts inside the answer cards */
+.answer-chart {
+  margin-top: 2px;
+}
+
+.mini-chart {
+  display: block;
+  width: 100%;
+  height: 64px;
+}
+
+.answer-chart-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  color: var(--faint);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.answer-donut-row {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.win-donut {
+  flex: none;
+  width: 112px;
+  height: 112px;
+}
+
+.win-donut-value {
+  fill: var(--text);
+  font-size: 19px;
+  font-weight: 700;
+}
+
+.win-donut-label {
+  fill: var(--faint);
+  font-size: 9px;
+}
+
+.result-answer .answer-split {
+  display: grid;
+  flex: 1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.answer-split > div {
+  display: block !important;
+}
+
+.answer-split dt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.answer-split dd {
+  margin-top: 2px !important;
+  font-size: 14px;
+}
+
+.answer-split i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.dot-good { background: var(--green); }
+.dot-bad { background: var(--red); }
+
+@media (max-width: 420px) {
+  .answer-donut-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .win-donut {
+    align-self: center;
+  }
+}

@@ -5,6 +5,7 @@ import BacktestChart,{EquityChart} from '../../shared/charts/BacktestChart';
 import {fmt,type BacktestResult,type Trade} from '../../shared/types/types';
 import {formatTradingTime,useTradingTimeZone,type TradingTimeZone} from '../../shared/charts/tradingTime';
 import TradingChartHeader from '../../shared/charts/TradingChartHeader';
+import {BalanceSparkline,DrawdownChart,WinDonut,balanceSeries,drawdownSeries} from './ResultCharts';
 
 const money=(value:number)=>`${value>=0?'+':'-'}$${fmt(Math.abs(value))}`;
 const utc=(t:number)=>new Date(t*1000).toISOString().replace('T',' ').slice(0,16);
@@ -22,6 +23,16 @@ export default function ResultsWorkspace({result,busy,stale,onRun,onConfigure,on
   const [testerTab,setTesterTab]=useState<'trades'|'balance'|'exits'>('trades');
   const costs=s?s.fees+s.executionCost+s.funding:0;
   const drawdown=Math.abs(s?.maxDrawdownPct??0),risk=drawdown<10?'Low':drawdown<25?'Moderate':'High';
+  const pnls=useMemo(()=>(p?.trades??[]).map(t=>t.netPnl),[p]);
+  const balances=useMemo(()=>balanceSeries(result?.settings.capital??0,pnls),[pnls,result]);
+  const drawdowns=useMemo(()=>drawdownSeries(balances),[balances]);
+  const stats=useMemo(()=>{
+    const wins=pnls.filter(v=>v>0),losses=pnls.filter(v=>v<=0);
+    let winStreak=0,lossStreak=0,run=0,sign=0;
+    for(const v of pnls){const next=v>0?1:-1;run=next===sign?run+1:1;sign=next;if(next>0)winStreak=Math.max(winStreak,run);else lossStreak=Math.max(lossStreak,run);}
+    const mean=(xs:number[])=>xs.length?xs.reduce((a,b)=>a+b,0)/xs.length:0;
+    return {avgWin:mean(wins),avgLoss:mean(losses),best:pnls.length?Math.max(...pnls):0,worst:pnls.length?Math.min(...pnls):0,winStreak,lossStreak};
+  },[pnls]);
   const days=p?Math.max(1,Math.round((p.end-p.start)/86400)):0;
   const exits=useMemo(()=>Object.entries((p?.trades??[]).reduce<Record<string,number>>((counts,t)=>{counts[t.exitReason]=(counts[t.exitReason]??0)+1;return counts;},{})),[p]);
   return <>
@@ -34,20 +45,29 @@ export default function ResultsWorkspace({result,busy,stale,onRun,onConfigure,on
           <header><span>Did it make money?</span><em className={s.netPnl>=0?'tag-good':'tag-bad'}>{s.netPnl>=0?'Profit':'Loss'}</em></header>
           <strong className={s.netPnl>=0?'positive':'negative'}>{money(s.netPnl)}<small>{s.returnPct>=0?'+':''}{fmt(s.returnPct)}%</small></strong>
           <p>${fmt(result.settings.capital)} {s.netPnl>=0?'grew':'fell'} to <b>${fmt(s.endingBalance)}</b> in {days} days.</p>
-          <dl><div><dt>Average per trade</dt><dd className={s.netPnl>=0?'positive':'negative'}>{money(s.trades?s.netPnl/s.trades:0)}</dd></div><div><dt>Trading costs</dt><dd>{costs<0?`$${fmt(-costs)} received`:`$${fmt(costs)} paid`}</dd></div></dl>
+          <div className="answer-chart"><BalanceSparkline values={balances} positive={s.netPnl>=0}/><div className="answer-chart-axis"><span>Start</span><span>Balance after each trade</span><span>End</span></div></div>
+          <dl><div><dt>Peak balance</dt><dd>${fmt(Math.max(...balances))}</dd></div><div><dt>Average per trade</dt><dd className={s.netPnl>=0?'positive':'negative'}>{money(s.trades?s.netPnl/s.trades:0)}</dd></div><div><dt>Trading costs</dt><dd>{costs<0?`$${fmt(-costs)} received`:`$${fmt(costs)} paid`}</dd></div></dl>
         </section>
         <section className="result-answer">
           <header><span>How often did it win?</span><em className={s.profitFactor!==null&&s.profitFactor>=1?'tag-good':'tag-bad'}>{s.trades} trades</em></header>
-          <strong>{fmt(s.winRate)}%<small>win rate</small></strong>
-          <div className="answer-bar" aria-hidden="true"><i style={{width:`${Math.min(100,Math.max(0,s.winRate))}%`}}/></div>
-          <div className="answer-bar-legend"><span className="positive">{s.wins} wins</span><span className="negative">{s.losses} losses</span></div>
-          <p>{s.profitFactor===null?'No losing trades to compare against.':<>For every <b>$1</b> lost, winning trades made <b className={s.profitFactor>=1?'positive':'negative'}>${fmt(s.profitFactor)}</b>{s.profitFactor>=1?'.':' — less than was lost.'}</>}</p>
+          <div className="answer-donut-row"><WinDonut wins={s.wins} losses={s.losses}/>
+            <dl className="answer-split">
+              <div><dt><i className="dot-good"/>Wins</dt><dd>{s.wins}</dd></div>
+              <div><dt><i className="dot-bad"/>Losses</dt><dd>{s.losses}</dd></div>
+              <div><dt>Average win</dt><dd className="positive">{money(stats.avgWin)}</dd></div>
+              <div><dt>Average loss</dt><dd className="negative">{money(stats.avgLoss)}</dd></div>
+              <div><dt>Best trade</dt><dd className="positive">{money(stats.best)}</dd></div>
+              <div><dt>Worst trade</dt><dd className="negative">{money(stats.worst)}</dd></div>
+            </dl>
+          </div>
+          <p>{s.profitFactor===null?'No losing trades to compare against.':<>For every <b>$1</b> lost, winning trades made <b className={s.profitFactor>=1?'positive':'negative'}>${fmt(s.profitFactor)}</b>{s.profitFactor>=1?'.':' — less than was lost.'} {stats.avgLoss<0&&<>An average win is <b>{fmt(stats.avgWin/Math.abs(stats.avgLoss))}×</b> an average loss.</>}</>}</p>
         </section>
         <section className="result-answer">
           <header><span>How risky was it?</span><em className={risk==='Low'?'tag-good':risk==='Moderate'?'tag-warn':'tag-bad'}>{risk} risk</em></header>
           <strong className="negative">−{fmt(Math.abs(s.maxDrawdownPct))}%<small>max drawdown</small></strong>
           <p>At its worst, the balance was <b>{fmt(Math.abs(s.maxDrawdownPct))}%</b> below its previous high{result.settings.max_leverage>1?` while using ${result.settings.max_leverage}× leverage`:''}.</p>
-          <dl><div><dt>Average result</dt><dd className={s.averageR>=0?'positive':'negative'}>{s.averageR>=0?'+':''}{fmt(s.averageR)}R <small>(× planned risk)</small></dd></div></dl>
+          <div className="answer-chart"><DrawdownChart values={drawdowns}/><div className="answer-chart-axis"><span>Peak</span><span>Distance below the previous high</span><span>{fmt(Math.min(...drawdowns),1)}%</span></div></div>
+          <dl><div><dt>Longest losing streak</dt><dd>{stats.lossStreak} trades</dd></div><div><dt>Longest winning streak</dt><dd>{stats.winStreak} trades</dd></div><div><dt>Average result</dt><dd className={s.averageR>=0?'positive':'negative'}>{s.averageR>=0?'+':''}{fmt(s.averageR)}R <small>(× planned risk)</small></dd></div></dl>
         </section>
       </div>
       <div className="results-layout result-workspace"><div className="results-main">
