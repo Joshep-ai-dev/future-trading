@@ -14,23 +14,26 @@ from server.core.serialization import optional_volume
 from server.market.data import TIMEFRAMES, load_bars
 from server.market.market_refresh import refresh_service
 from server.market.forming_candle import forming_candle, fetch_live_minutes
+from server.paper.session_store import FileSessionStore
 
 STATE = Path(__file__).resolve().parents[2] / 'data' / 'paper_trading.json'
 
 
 class PaperTrading:
-    def __init__(self, path=STATE, loader=load_bars, refresh=refresh_service, now=time.time):
+    def __init__(self, path=STATE, loader=load_bars, refresh=refresh_service, now=time.time, store=None, live_fetch=None):
         self.path, self.loader, self.refresh, self.now = Path(path), loader, refresh, now
+        self.store = store or FileSessionStore(self.path)
+        self.name = getattr(store, 'user_id', 'local')
         self.lock = threading.RLock()
         self.stop = threading.Event()
         self.thread = None
         self.quote_thread = None
-        self.live_fetch = fetch_live_minutes
+        self.live_fetch = live_fetch or fetch_live_minutes
         self.error = None
         self.replay_tick = self.now()
         self.live_check = 0
         try:
-            self.state = json.loads(self.path.read_text(encoding='utf-8')) if self.path.exists() else None
+            self.state = self.store.load()
             if self.state:
                 old_settings = self.state['settings']['bb_reversal']
                 if old_settings.get('hedge_mode'):
@@ -38,15 +41,15 @@ class PaperTrading:
                     self.error = 'This saved session used removed hedge mode. Start a new virtual session; the previous session will be archived.'
                 else:
                     old_settings.pop('hedge_mode', None)
-        except (OSError, ValueError) as error:
+        except Exception as error:
             self.state = None
             self.error = f'Could not restore saved paper session: {error}'
 
-    def save(self):
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self.path.with_suffix('.json.tmp')
-        temporary.write_text(json.dumps(self.state, allow_nan=False), encoding='utf-8')
-        temporary.replace(self.path)
+    def save(self, force=False):
+        try:
+            self.store.save(self.state, force=force)
+        except Exception as error:
+            self.error = f'Could not save the paper session: {error}'
 
     def status(self):
         with self.lock:
@@ -110,12 +113,7 @@ class PaperTrading:
             minutes = minutes.loc[minutes.index >= pd.Timestamp(minute_start,unit='s',tz='UTC')]
             if replay_end is not None:
                 minutes = minutes.loc[minutes.index < pd.Timestamp(replay_end,unit='s',tz='UTC')]
-            if self.state:
-                archive = self.path.with_name(f'paper_trading_{self.state["startedAt"]}_{time.time_ns()}.json')
-                archive.write_text(json.dumps(self.state,allow_nan=False),encoding='utf-8')
-            elif self.path.exists():
-                archive = self.path.with_name(f'paper_trading_unreadable_{time.time_ns()}.json')
-                archive.write_bytes(self.path.read_bytes())
+            self.store.archive(self.state)
             self.state = dict(running=True, startedAt=now, tradingFrom=first,
                 settings=request.model_dump(mode='json'), candles=candles,
                 lastProcessed=None, lastCheck=None, balance=float(request.capital),
@@ -126,7 +124,7 @@ class PaperTrading:
                 minuteCandles=self.encode(minutes),quoteTime=None,quoteError=None)
             self.replay_tick = self.now()
             self.error = None
-            self.save()
+            self.save(force=True)
             return self.status()
 
     @staticmethod
@@ -302,18 +300,22 @@ class PaperTrading:
             while not self.stop.is_set():
                 self.cycle()
                 self.stop.wait(1)
-        self.thread = threading.Thread(target=loop,name='paper-trading',daemon=True)
+        self.thread = threading.Thread(target=loop,name=f'paper-trading-{self.name}',daemon=True)
         self.thread.start()
         def quotes():
             while not self.stop.is_set():
                 before=time.monotonic()
                 self.update_quote()
                 self.stop.wait(max(.05,1-(time.monotonic()-before)))
-        self.quote_thread=threading.Thread(target=quotes,name='paper-live-price',daemon=True)
+        self.quote_thread=threading.Thread(target=quotes,name=f'paper-live-price-{self.name}',daemon=True)
         self.quote_thread.start()
 
     def shutdown(self):
         self.stop.set()
+        try:
+            self.store.flush()
+        except Exception:
+            pass
         if self.thread:
             self.thread.join(timeout=1)
         if self.quote_thread:

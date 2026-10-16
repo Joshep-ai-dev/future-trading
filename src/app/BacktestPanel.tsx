@@ -94,6 +94,11 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
     try{setResult(await api<BacktestResult>('/api/backtest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(settings)}));setRunId(value=>value+1);}
     catch(e){setError(String(e));}finally{setBusy(false);}
   }
+  async function openRun(id:number){
+    setBusy(true);setError('');onViewChange('results');
+    try{const opened=await api<BacktestResult>(`/api/backtests/${id}`);setResult(opened);setRunId(value=>value+1);}
+    catch(e){setError(String(e));}finally{setBusy(false);}
+  }
   async function runFineTune(){
     setTuning(true);setTuneError('');setTuneResult(null);setTuneProgress({percent:0,message:'Connecting to the tuning worker'});
     try{
@@ -189,6 +194,6 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
 
     </div>}
     {error&&view!=='paper'&&<p className="error" role="alert">{error}</p>}
-    {view==='results'&&<div id="page-results" role="tabpanel" aria-labelledby="tab-results" hidden={view!=='results'}><ResultsWorkspace key={runId} result={result} busy={busy} stale={stale} onRun={()=>void run()} onConfigure={()=>onViewChange('strategy')} onExport={download} summary={[['Period (UTC)',`${settings.start_date} → ${settings.end_date}`],['Timeframe',settings.entry_timeframe],['Starting balance',`$${fmt(settings.capital)}`],['Leverage',`${settings.max_leverage}×`],['Per trade',settings.bb_reversal.amount_unit==='percent'?`${settings.bb_reversal.amount_per_trade}% of balance`:`$${fmt(settings.bb_reversal.amount_per_trade)}`]]}/></div>}
+    {view==='results'&&<div id="page-results" role="tabpanel" aria-labelledby="tab-results" hidden={view!=='results'}><ResultsWorkspace key={runId} result={result} busy={busy} stale={stale} onRun={()=>void run()} onConfigure={()=>onViewChange('strategy')} onExport={download} onOpenRun={id=>void openRun(id)} onApplySettings={()=>{if(result)setSettings(restoreSettings(result.settings,range));}} summary={[['Period (UTC)',`${settings.start_date} → ${settings.end_date}`],['Timeframe',settings.entry_timeframe],['Starting balance',`$${fmt(settings.capital)}`],['Leverage',`${settings.max_leverage}×`],['Per trade',settings.bb_reversal.amount_unit==='percent'?`${settings.bb_reversal.amount_per_trade}% of balance`:`$${fmt(settings.bb_reversal.amount_per_trade)}`]]}/></div>}
   </Suspense></section>;
 }

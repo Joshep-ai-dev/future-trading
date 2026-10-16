@@ -5,14 +5,15 @@ import {AssetTable,OrderTable,PositionTable} from './ExchangeTables';
 import {EmptyState,Panel,TabBar} from '../../shared/ui/ui';
 import {useExchangeStream} from '../../shared/api/useExchangeStream';
 import LiveTradeHistory from './LiveTradeHistory';
+import {BotEventLog} from './TradingHistory';
 
-type AccountTab='positions'|'orders'|'history'|'assets';
+type AccountTab='positions'|'orders'|'history'|'assets'|'botlog';
 export default function ExchangeOverview({venue}:{venue:ExchangeVenue}){
   const {data,connected,error}=useExchangeStream(venue);
   const [tab,setTab]=useState<AccountTab>('positions');
   const [busy,setBusy]=useState(false);
   const [message,setMessage]=useState('');
-  const section=tab==='assets'?'balance':tab==='history'?'orders':tab;
+  const section=tab==='assets'?'balance':tab==='history'||tab==='botlog'?'orders':tab;
   const sectionError=data?.errors[section];
   const positions=data?.positions;
   const orders=data?.orders;
@@ -37,6 +38,7 @@ export default function ExchangeOverview({venue}:{venue:ExchangeVenue}){
       {value:'orders',label:'Open orders',count:orders?.length,controls:`exchange-${venue}-orders`},
       {value:'history',label:'P&L',controls:`exchange-${venue}-history`},
       {value:'assets',label:'Assets',controls:`exchange-${venue}-assets`},
+      {value:'botlog',label:'Bot log',controls:`exchange-${venue}-botlog`},
     ]} value={tab} onChange={setTab} label="Exchange activity" idPrefix={idPrefix} trailing={<span>{venue.toUpperCase()} · XAGUSDT</span>}/>
     {(error||data?.errors.connection)&&<p className="exchange-inline-error" role="status">{error||data?.errors.connection} Displayed values may be stale.</p>}
     {data?.executionError&&<p className="exchange-inline-error">{data.executionError}</p>}
@@ -51,6 +53,7 @@ export default function ExchangeOverview({venue}:{venue:ExchangeVenue}){
         !sectionError&&<EmptyState compact title={orders?'No standard open orders':'Loading orders'} description="Conditional and protective stops may be listed separately on the exchange."/>)}
       {tab==='assets'&&<AssetTable balance={data?.balance}/>}
       {tab==='history'&&<LiveTradeHistory venue={venue}/>}
+      {tab==='botlog'&&<BotEventLog/>}
     </div>
     {message&&<p className="exchange-inline-error" role="status">{message}</p>}
     <div className="exchange-activity-footer"><span>Exchange account · USDT</span><span>{lastUpdate?`Account snapshot ${new Date(lastUpdate).toLocaleTimeString()}`:'Waiting for account data'}</span></div>

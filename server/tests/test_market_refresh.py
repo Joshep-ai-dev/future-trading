@@ -98,7 +98,7 @@ class BBIntegrationTests(unittest.TestCase):
             self.assertEqual(cfg.max_leverage,5)
 
     def test_api_strategy_and_period_output_are_json_serializable(self):
-        from server.app import backtest
+        from server.app import _run_backtest as backtest
         from server.strategies.strategy import BacktestRequest
         cfg=BacktestRequest(strategy='bb_outer_reversal',start_date='2026-01-01',
             validation_date='2026-01-02',end_date='2026-01-03',bb_reversal={'bb_length':5})
@@ -118,7 +118,7 @@ class BBIntegrationTests(unittest.TestCase):
         self.assertGreater(result['backtest']['summary']['fees'],0)
 
     def test_backtest_volume_is_optional_when_strategy_output_drops_it(self):
-        from server.app import backtest
+        from server.app import _run_backtest as backtest
         from server.strategies.strategy import BacktestRequest
         cfg=BacktestRequest(start_date='2026-01-01',end_date='2026-01-03')
         index=pd.date_range('2025-12-31',periods=900,freq='5min',tz='UTC')

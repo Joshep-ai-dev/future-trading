@@ -46,7 +46,7 @@ export type PeriodResult = {
 };
 export type Confirmation = {stage: string; timeframe: string; closeTime: number; ema20: number; ema50: number; rsi20: number | null};
 export type IndicatorPoint = {time: number; ema20: number | null; ema50: number | null; rsi20: number | null; bbBasis?: number | null; bbUpper?: number | null; bbLower?: number | null; trendSma?:number|null; adx?:number|null; atr?:number|null; bbWidthPct?:number|null};
-export type BacktestResult = {strategyName: string; executionTimeframe: string; barSeconds: number; indicators: IndicatorPoint[]; settings: BacktestSettings; backtest: PeriodResult; candles: Analysis['candles']};
+export type BacktestResult = {runId?: number|null; strategyName: string; executionTimeframe: string; barSeconds: number; indicators: IndicatorPoint[]; settings: BacktestSettings; backtest: PeriodResult; candles: Analysis['candles']};
 export type TuneMetrics = {averageWin?:number;averageLoss?:number;payoffRatio?:number|null;score:number;trades:number;wins:number;losses:number;winRate:number;netPnl:number;returnPct:number;maxDrawdownPct:number;averageLossPct:number};
 export type FineTuneCase = {
   id:string;rank:number;bestSettings:BacktestSettings;

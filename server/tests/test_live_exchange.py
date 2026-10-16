@@ -152,11 +152,13 @@ class ExchangeConnectionTests(unittest.TestCase):
         self.exchange.create_order.assert_not_called()
 
     def test_htx_backward_candles_omit_limit_and_use_until(self) -> None:
-        from server.app import exchange_candles, live_exchange
+        from types import SimpleNamespace
+        from server.app import exchange_candles
         self.exchange.timeframes = {'1m': '1min', '5m': '5min'}
         self.exchange.fetch_ohlcv.return_value = [[1_699_999_700_000, 1, 2, 1, 2, 10]]
-        with patch.object(live_exchange, '_get', return_value=(self.exchange, self.market)):
-            result = exchange_candles('htx', '5m', before=1_700_000_000)
+        service = SimpleNamespace(_get=lambda venue: (self.exchange, self.market))
+        with patch('server.app.workspace', return_value=SimpleNamespace(exchange=service)):
+            result = exchange_candles('htx', '5m', before=1_700_000_000, request=None)
         self.exchange.fetch_ohlcv.assert_called_once_with(
             self.market['symbol'], '5m', since=1_699_850_000_000,
             params={'until': 1_699_999_999_999})

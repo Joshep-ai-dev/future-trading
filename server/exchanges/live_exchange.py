@@ -393,6 +393,12 @@ class AutomaticLiveBot:
         self.error = None
         self.started_at = None
         self.strategy_state = None
+        self.on_event = None
+
+    def _event(self, kind, **detail):
+        if self.on_event:
+            try:self.on_event(self.venue or detail.get('venue') or '', kind, detail)
+            except Exception:pass
 
     def status(self):
         with self.lock:
@@ -435,6 +441,7 @@ class AutomaticLiveBot:
         self.running=True
         self.thread=threading.Thread(target=self._run,name=f'live-strategy-{venue}',daemon=True)
         self.thread.start()
+        self._event('start',timeframe=timeframe,leverage=request.max_leverage,capital=available)
         return self.status()
 
     @staticmethod
@@ -462,6 +469,7 @@ class AutomaticLiveBot:
                 with self.lock:
                     self.error='Live strategy paused after an exchange or data error. Check the exchange position and protective stop before resuming.'
                     self.running=False
+                self._event('error',message=str(error)[:300])
                 break
             self.stop_event.wait(1)
 
@@ -557,6 +565,7 @@ class AutomaticLiveBot:
         position=dict(direction=side,quantity=result['quantity'],entryPrice=result.get('entryPrice') or close,
                       stop=stop,stopOrderId=result['protectiveStop'].get('id'))
         with self.lock:self.position=position
+        self._event('open',direction=side,quantity=position['quantity'],price=position['entryPrice'],stop=stop)
 
     def _close(self,exchange,market,venue,position):
         side='sell' if position['direction']=='long' else 'buy'
@@ -566,6 +575,7 @@ class AutomaticLiveBot:
             try:self.service.cancel_stop(venue,stop_id)
             except Exception:pass
         with self.lock:self.position=None
+        self._event('close',direction=position['direction'],quantity=position['quantity'],entryPrice=position.get('entryPrice'))
 
     def _trail(self,exchange,market,venue,position,simulated,close):
         offset=float(simulated['stop'])-float(simulated['entry_price'])
@@ -590,11 +600,13 @@ class AutomaticLiveBot:
         with self.lock:
             position['stop']=new_stop['triggerPrice']
             position['stopOrderId']=new_stop.get('id')
+        self._event('trail',direction=position['direction'],stop=position['stop'])
 
     def stop(self):
         with self.lock:
             self.running=False
             self.stop_event.set()
+        self._event('stop')
         result=self.status()
         result['message']='Automation stopped. Any open position and its exchange hosted stop remain active; manage them at the exchange or close from this terminal.'
         return result

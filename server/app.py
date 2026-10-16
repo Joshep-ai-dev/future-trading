@@ -15,27 +15,34 @@ from server.market.data import load_bars
 from server.strategies.strategy import BacktestRequest
 from server.strategies.bb_reversal_adapter import run_bb_reversal_backtest
 from server.market.market_refresh import refresh_service
-from server.paper.paper_trading import paper_service
-from server.exchanges.live_exchange import live_exchange, live_bot
-from server.storage.profile_store import profile_store
+from server.storage.user_data_store import user_data_store
+from server.core.workspaces import WorkspaceRegistry
 from server.storage.credential_store import credential_store
 from server.core.serialization import optional_volume
-from server.exchanges.exchange_stream import ExchangeStreams
 from server.strategies.fine_tuning import fine_tune
 from server.storage.auth_store import SESSION_DAYS, auth_store
 
-exchange_streams = ExchangeStreams(live_exchange)
+workspaces = WorkspaceRegistry(user_data_store)
+
+
+def workspace(request: Request):
+    """The signed-in user's isolated paper, exchange and live-bot services."""
+    return workspaces.get(int(request.state.user['id']))
 
 @asynccontextmanager
 async def lifespan(app):
     auth_store.initialize()
+    if auth_store.available():
+        try:
+            user_data_store.initialize()
+            workspaces.restore_running()
+        except Exception:
+            logging.getLogger(__name__).exception('User data storage is unavailable')
     refresh_service.start()
-    paper_service.start()
     try:
         yield
     finally:
-        await exchange_streams.close()
-        paper_service.shutdown()
+        await workspaces.shutdown()
         refresh_service.shutdown()
 
 
@@ -131,14 +138,15 @@ class LiveBotStartRequest(BBBacktestRequest):
     confirmation: Literal['START LIVE STRATEGY']
 
 @app.post('/api/chart-view')
-def session_chart(parameters: ChartViewRequest):
+def session_chart(parameters: ChartViewRequest, request: Request):
+    ws = workspace(request)
     from server.market.chart_view import chart_view
-    with paper_service.lock:
-        state = paper_service.state
+    with ws.paper.lock:
+        state = ws.paper.state
         if not state or state['startedAt'] != parameters.session_id:
             raise HTTPException(status_code=409, detail='The paper session has changed. Reload its chart.')
         replay = state.get('mode') == 'replay'
-        clock = min(parameters.clock, state.get('virtualTime',0) if replay else paper_service.now())
+        clock = min(parameters.clock, state.get('virtualTime',0) if replay else ws.paper.now())
         snapshots = list(state.get('minuteCandles',[]))
         settings = dict(state['settings']['bb_reversal'])
     try:
@@ -210,18 +218,19 @@ def auth_user_level(user_id: int, parameters: AccountLevelRequest, request: Requ
 
 
 @app.get('/api/profiles')
-def list_profiles():
-    return profile_store.list()
+def list_profiles(request: Request):
+    return user_data_store.list_profiles(int(request.state.user['id']))
 
 
 @app.post('/api/profiles')
-def save_profile(parameters: ProfileSaveRequest):
-    return profile_store.save(parameters.name, parameters.settings.model_dump(mode='json'))
+def save_profile(parameters: ProfileSaveRequest, request: Request):
+    return user_data_store.save_profile(int(request.state.user['id']), parameters.name.strip(),
+                                        parameters.settings.model_dump(mode='json'))
 
 
 @app.delete('/api/profiles')
-def delete_profile(name: str = Query(min_length=1, max_length=48)):
-    if not profile_store.delete(name.strip()):
+def delete_profile(request: Request, name: str = Query(min_length=1, max_length=48)):
+    if not user_data_store.delete_profile(int(request.state.user['id']), name.strip()):
         raise HTTPException(status_code=404, detail='Saved setup not found')
     return {'deleted': name.strip()}
 
@@ -237,8 +246,9 @@ def market_refresh():
 
 
 @app.get('/api/paper')
-def paper_status():
-    return paper_service.status()
+def paper_status(request: Request):
+    ws = workspace(request)
+    return ws.paper.status()
 
 
 class ExchangeConnectRequest(BaseModel):
@@ -273,13 +283,15 @@ class ExchangeCloseRequest(BaseModel):
 
 @app.get('/api/exchange/status')
 def exchange_status(request: Request):
-    return {'venues':live_exchange.status(),'bot':live_bot.status(),'savedVenues':credential_store.venues(request.state.user['id'])}
+    ws = workspace(request)
+    return {'venues':ws.exchange.status(),'bot':ws.bot.status(),'savedVenues':credential_store.venues(request.state.user['id'])}
 
 
 @app.post('/api/exchange/connect')
 def exchange_connect(parameters: ExchangeConnectRequest, request: Request):
+    ws = workspace(request)
     try:
-        result = live_exchange.connect(parameters.venue,parameters.api_key,parameters.secret,parameters.passphrase)
+        result = ws.exchange.connect(parameters.venue,parameters.api_key,parameters.secret,parameters.passphrase)
         credential_store.save(parameters.venue,parameters.api_key,parameters.secret,parameters.passphrase,request.state.user['id'])
         return result
     except ValueError as error:
@@ -290,17 +302,19 @@ def exchange_connect(parameters: ExchangeConnectRequest, request: Request):
 
 
 @app.get('/api/exchange/overview')
-def exchange_overview(venue: Literal['okx','htx','mexc','binance']):
+def exchange_overview(venue: Literal['okx','htx','mexc','binance'], request: Request):
+    ws = workspace(request)
     try:
-        return live_exchange.overview(venue)
+        return ws.exchange.overview(venue)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
 
 @app.get('/api/exchange/trade-history')
-def exchange_trade_history(venue: Literal['okx','htx','mexc','binance']):
+def exchange_trade_history(venue: Literal['okx','htx','mexc','binance'], request: Request):
+    ws = workspace(request)
     try:
-        return {'trades': live_exchange.trade_history(venue)}
+        return {'trades': ws.exchange.trade_history(venue)}
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except Exception as error:
@@ -308,21 +322,23 @@ def exchange_trade_history(venue: Literal['okx','htx','mexc','binance']):
 
 
 @app.get('/api/exchange/stream')
-async def exchange_stream(venue: Literal['okx','htx','mexc','binance']):
+async def exchange_stream(venue: Literal['okx','htx','mexc','binance'], request: Request):
+    ws = workspace(request)
     try:
-        live_exchange._get(venue)
+        ws.exchange._get(venue)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
-    return StreamingResponse(exchange_streams.events(venue), media_type='text/event-stream',
+    return StreamingResponse(ws.streams.events(venue), media_type='text/event-stream',
                              headers={'Cache-Control':'no-cache', 'X-Accel-Buffering':'no'})
 
 
 @app.get('/api/exchange/candles')
 def exchange_candles(venue: Literal['okx','htx','mexc','binance'],
                      timeframe: Literal['1m','3m','5m','10m','15m','30m','1h','4h','1d'] = '1m',
-                     before: int | None = None):
+                     before: int | None = None, *, request: Request):
+    ws = workspace(request)
     try:
-        exchange, market = live_exchange._get(venue)
+        exchange, market = ws.exchange._get(venue)
         durations = {'1m':60,'3m':180,'5m':300,'10m':600,'15m':900,'30m':1800,'1h':3600,'4h':14400,'1d':86400}
         supported = [key for key in durations if key in exchange.timeframes
                      and durations[key] <= durations[timeframe] and durations[timeframe] % durations[key] == 0]
@@ -350,18 +366,20 @@ def exchange_candles(venue: Literal['okx','htx','mexc','binance'],
 
 
 @app.post('/api/exchange/disconnect')
-def exchange_disconnect(parameters: ExchangeDisconnectRequest):
+def exchange_disconnect(parameters: ExchangeDisconnectRequest, request: Request):
+    ws = workspace(request)
     try:
-        return live_exchange.disconnect(parameters.venue)
+        return ws.exchange.disconnect(parameters.venue)
     except ValueError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
 
 
 @app.post('/api/exchange/reconnect')
 def exchange_reconnect(parameters: ExchangeDisconnectRequest, request: Request):
+    ws = workspace(request)
     try:
         credentials = credential_store.load(parameters.venue,request.state.user['id'])
-        return live_exchange.connect(parameters.venue, **credentials)
+        return ws.exchange.connect(parameters.venue, **credentials)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except Exception as error:
@@ -375,12 +393,13 @@ def exchange_forget(parameters: ExchangeDisconnectRequest, request: Request):
 
 
 @app.post('/api/exchange/order')
-def exchange_order(parameters: ExchangeOrderRequest):
+def exchange_order(parameters: ExchangeOrderRequest, request: Request):
+    ws = workspace(request)
     try:
-        exchange,market=live_exchange.execution_client(parameters.venue)
+        exchange,market=ws.exchange.execution_client(parameters.venue)
         exchange.set_margin_mode('isolated',market['symbol'])
         exchange.set_leverage(parameters.leverage,market['symbol'])
-        return live_exchange.open_with_stop(parameters.venue,parameters.direction,parameters.quantity,
+        return ws.exchange.open_with_stop(parameters.venue,parameters.direction,parameters.quantity,
                                             parameters.stop_price,parameters.take_profit_price)
     except ValueError as error:
         raise HTTPException(status_code=400,detail=str(error)) from error
@@ -389,9 +408,10 @@ def exchange_order(parameters: ExchangeOrderRequest):
 
 
 @app.post('/api/exchange/close')
-def exchange_close(parameters: ExchangeCloseRequest):
+def exchange_close(parameters: ExchangeCloseRequest, request: Request):
+    ws = workspace(request)
     try:
-        return live_exchange.close_position(parameters.venue)
+        return ws.exchange.close_position(parameters.venue)
     except ValueError as error:
         raise HTTPException(status_code=400,detail=str(error)) from error
     except Exception as error:
@@ -399,9 +419,10 @@ def exchange_close(parameters: ExchangeCloseRequest):
 
 
 @app.post('/api/exchange/auto/start')
-def exchange_auto_start(parameters: LiveBotStartRequest):
+def exchange_auto_start(parameters: LiveBotStartRequest, request: Request):
+    ws = workspace(request)
     try:
-        return live_bot.start(parameters.venue,parameters)
+        return ws.bot.start(parameters.venue,parameters)
     except ValueError as error:
         raise HTTPException(status_code=400,detail=str(error)) from error
     except Exception as error:
@@ -409,8 +430,9 @@ def exchange_auto_start(parameters: LiveBotStartRequest):
 
 
 @app.post('/api/exchange/auto/stop')
-def exchange_auto_stop():
-    return live_bot.stop()
+def exchange_auto_stop(request: Request):
+    ws = workspace(request)
+    return ws.bot.stop()
 
 
 class PaperStartRequest(BBBacktestRequest):
@@ -441,9 +463,10 @@ class PaperStartRequest(BBBacktestRequest):
 
 
 @app.post('/api/paper/start')
-def paper_start(parameters: PaperStartRequest):
+def paper_start(parameters: PaperStartRequest, request: Request):
+    ws = workspace(request)
     try:
-        return paper_service.begin(parameters)
+        return ws.paper.begin(parameters)
     except (ValueError, OSError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
@@ -453,17 +476,19 @@ class ReplaySpeed(BaseModel):
 
 
 @app.post('/api/paper/speed')
-def paper_speed(parameters: ReplaySpeed):
+def paper_speed(parameters: ReplaySpeed, request: Request):
+    ws = workspace(request)
     try:
-        return paper_service.set_speed(parameters.speed)
+        return ws.paper.set_speed(parameters.speed)
     except (ValueError, OSError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
 
 @app.post('/api/paper/{action}')
-def paper_action(action: Literal['pause', 'resume']):
+def paper_action(action: Literal['pause', 'resume'], request: Request):
+    ws = workspace(request)
     try:
-        return paper_service.set_running(action == 'resume')
+        return ws.paper.set_running(action == 'resume')
     except (ValueError, OSError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
@@ -497,15 +522,77 @@ def data_range():
         raise HTTPException(status_code=400, detail=str(error)) from error
 
 
+def _run_backtest(parameters: BBBacktestRequest):
+    if parameters.strategy != 'bb_outer_reversal':
+        raise ValueError('Only BB Outer Band Reversal + Trailing SL is supported')
+    frame, _ = load_bars(parameters.entry_timeframe)
+    return run_bb_reversal_backtest(frame, parameters)
+
+
 @app.post('/api/backtest')
-def backtest(parameters: BBBacktestRequest):
+def backtest(parameters: BBBacktestRequest, request: Request):
     try:
-        if parameters.strategy != 'bb_outer_reversal':
-            raise ValueError('Only BB Outer Band Reversal + Trailing SL is supported')
-        frame, _ = load_bars(parameters.entry_timeframe)
-        return run_bb_reversal_backtest(frame, parameters)
+        result = _run_backtest(parameters)
     except (ValueError, OSError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+    try:
+        result['runId'] = user_data_store.save_backtest(int(request.state.user['id']), result)
+    except Exception:
+        logger.exception('Could not save backtest result')
+        result['runId'] = None
+    return result
+
+
+@app.get('/api/backtests')
+def backtest_history(request: Request):
+    return user_data_store.list_backtests(int(request.state.user['id']))
+
+
+@app.get('/api/backtests/{run_id}')
+def backtest_open(run_id: int, request: Request):
+    """Reopen a saved run: stored summary and trades, chart rebuilt from its settings."""
+    saved = user_data_store.get_backtest(int(request.state.user['id']), run_id)
+    if not saved:
+        raise HTTPException(status_code=404, detail='Saved backtest not found')
+    try:
+        result = _run_backtest(BBBacktestRequest(**saved['settings']))
+    except (ValueError, OSError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    result['backtest']['summary'], result['backtest']['trades'] = saved['summary'], saved['trades']
+    result['runId'] = run_id
+    return result
+
+
+class BacktestRename(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    name: str | None = Field(default=None, max_length=80)
+
+
+@app.patch('/api/backtests/{run_id}')
+def backtest_rename(run_id: int, parameters: BacktestRename, request: Request):
+    user_data_store.rename_backtest(int(request.state.user['id']), run_id, (parameters.name or '').strip() or None)
+    return {'id': run_id, 'name': parameters.name}
+
+
+@app.delete('/api/backtests/{run_id}')
+def backtest_delete(run_id: int, request: Request):
+    user_data_store.delete_backtest(int(request.state.user['id']), run_id)
+    return {'deleted': run_id}
+
+
+@app.get('/api/paper/history')
+def paper_history(request: Request):
+    return user_data_store.paper_history(int(request.state.user['id']))
+
+
+@app.get('/api/paper/history/{session_started}/trades')
+def paper_history_trades(session_started: int, request: Request):
+    return user_data_store.paper_trades(int(request.state.user['id']), session_started)
+
+
+@app.get('/api/exchange/bot-events')
+def bot_events(request: Request):
+    return user_data_store.bot_events(int(request.state.user['id']))
 
 
 @app.post('/api/backtest/fine-tune')
