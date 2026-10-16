@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
-from server.strategies.ml.models import TrainedModel, train_model
+from server.strategies.ml.models import fit_model
 
 MIN_TRAIN_ROWS = 300
 
@@ -28,7 +28,7 @@ class Fold:
     test_start: int
     test_end: int
     train_rows: int
-    models: list[TrainedModel]
+    models: list
     weights: list[float]
 
 
@@ -75,11 +75,10 @@ def _train_fold(features: pd.DataFrame, labels: pd.Series, train_slice: slice, m
     cached = fold_cache.get(cache_key)
     if cached is not None:
         return cached
-    x, y = window_x.to_numpy()[mask], window_y.to_numpy()[mask]
     trained, weights = [], []
     for name, weight in models.items():
         if weight > 0:
-            trained.append(train_model(name, x, y, list(features.columns)))
+            trained.append(fit_model(name, features, labels, train_slice))
             weights.append(float(weight))
     fold = Fold(0, 0, int(mask.sum()), trained, weights)
     fold_cache.put(cache_key, fold)
@@ -105,9 +104,10 @@ def walk_forward(features: pd.DataFrame, labels: pd.Series, *, start_index: int,
         fold = _train_fold(features, labels, slice(train_start, train_end), models, key)
         if fold is None:
             continue
-        block = features.iloc[block_start:block_end].to_numpy()
+        rows = slice(block_start, block_end)
         total = sum(fold.weights)
-        blended = sum(weight*model.predict(block) for model, weight in zip(fold.models, fold.weights))/total
+        blended = sum(weight*np.nan_to_num(model.predict_rows(features, rows), nan=1/3)
+                      for model, weight in zip(fold.models, fold.weights))/total
         probabilities[block_start:block_end] = blended
         truth = labels.iloc[block_start:block_end].to_numpy()
         known = np.isfinite(truth)

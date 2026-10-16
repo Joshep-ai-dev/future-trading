@@ -8,7 +8,7 @@ import pandas as pd
 from server.strategies.execution import ExecutionSettings, run_signal_backtest
 from server.strategies.ml.features import FEATURE_GROUPS, build_features
 from server.strategies.ml.labels import LONG, NONE, SHORT, triple_barrier
-from server.strategies.ml.models import MODELS, train_model
+from server.strategies.ml.models import MODELS, fit_model
 from server.strategies.ml.strategy import MLSettings, run_ml_backtest, signals_from
 from server.strategies.ml.walk_forward import fold_cache, walk_forward
 
@@ -100,16 +100,29 @@ class ExecutionTests(unittest.TestCase):
 
 
 class ModelTests(unittest.TestCase):
-    def test_available_models_train_and_return_three_ordered_probabilities(self):
+    def test_every_available_model_trains_and_returns_three_ordered_probabilities(self):
         rng = np.random.default_rng(1)
-        x = rng.normal(size=(600, 5))
-        y = np.where(x[:, 0] > .5, LONG, np.where(x[:, 0] < -.5, SHORT, NONE))
+        features = pd.DataFrame(rng.normal(size=(700, 5)), columns=list('abcde'))
+        labels = pd.Series(np.where(features.a > .5, LONG, np.where(features.a < -.5, SHORT, NONE)).astype(float))
         for key, spec in MODELS.items():
             if not spec.available():
                 continue
-            probabilities = train_model(key, x, y, list('abcde')).predict(x[:10])
-            self.assertEqual(probabilities.shape, (10, 3), key)
-            np.testing.assert_allclose(probabilities.sum(axis=1), 1, atol=1e-6, err_msg=key)
+            model = fit_model(key, features, labels, slice(0, 600))
+            probabilities = model.predict_rows(features, slice(600, 700))
+            self.assertEqual(probabilities.shape, (100, 3), key)
+            np.testing.assert_allclose(probabilities.sum(axis=1), 1, atol=1e-5, err_msg=key)
+
+    def test_sequence_predictions_ignore_later_candles(self):
+        if not MODELS['cnn_1d'].available():
+            self.skipTest('PyTorch not installed')
+        rng = np.random.default_rng(2)
+        features = pd.DataFrame(rng.normal(size=(500, 4)), columns=list('abcd'))
+        labels = pd.Series(np.where(features.a > 0, LONG, SHORT).astype(float))
+        model = fit_model('cnn_1d', features, labels, slice(0, 400))
+        before = model.predict_rows(features, slice(400, 450))
+        changed = features.copy()
+        changed.iloc[450:] = 99.
+        np.testing.assert_allclose(model.predict_rows(changed, slice(400, 450)), before, atol=1e-6)
 
 
 class WalkForwardTests(unittest.TestCase):

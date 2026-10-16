@@ -1,5 +1,6 @@
 """Hourly public OKX candle catch-up; atomic cache writes preserve original CSV."""
 import json
+from http.client import HTTPException
 import logging
 import threading
 import time
@@ -30,7 +31,7 @@ def fetch_page(after=None):
             if str(payload.get('code')) != '0':
                 raise ValueError('OKX: ' + str(payload.get('msg', payload)))
             return payload['data']
-        except (OSError, ValueError):
+        except (OSError, ValueError, HTTPException):  # HTTPException covers truncated responses.
             if attempt == 2:
                 raise
             time.sleep(2 ** attempt)

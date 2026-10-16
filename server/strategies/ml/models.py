@@ -87,6 +87,7 @@ class ModelSpec:
     build: Callable[[int], object]
     requires: str | None = None
     balanced: bool = True
+    sequence: str | None = None  # 'cnn' or 'lstm' for PyTorch window models; None for tabular models.
 
     def available(self) -> bool:
         return self.requires is None or _installed(self.requires)
@@ -100,6 +101,8 @@ MODELS: dict[str, ModelSpec] = {spec.key: spec for spec in (
     ModelSpec('extra_trees', 'Extra trees', 'Bagged trees', 'More randomised forest; adds diversity to an ensemble.', _extra_trees),
     ModelSpec('logistic', 'Logistic regression', 'Linear', 'Simple linear baseline on scaled features.', _logistic),
     ModelSpec('neural_net', 'Neural network (MLP)', 'Deep learning', 'Two-layer neural network on scaled features with early stopping.', _neural),
+    ModelSpec('cnn_1d', '1D-CNN', 'Deep learning', 'Dilated convolutions over the last 32 candles of features; learns short patterns.', None, 'torch', sequence='cnn'),
+    ModelSpec('lstm', 'LSTM', 'Deep learning', 'Recurrent network over the last 32 candles; slower, learns longer dependencies.', None, 'torch', sequence='lstm'),
 )}
 
 
@@ -120,6 +123,9 @@ class TrainedModel:
     estimator: object
     classes: np.ndarray
     feature_names: list[str]
+
+    def predict_rows(self, features, rows: slice) -> np.ndarray:
+        return self.predict(features.iloc[rows].to_numpy())
 
     def predict(self, features: np.ndarray) -> np.ndarray:
         """Probabilities with columns (short, none, long), zero for classes unseen in training."""
@@ -156,3 +162,22 @@ def train_model(key: str, features: np.ndarray, labels: np.ndarray, feature_name
         fit_args['sample_weight'] = _sample_weights(target)
     estimator.fit(features, target, **fit_args)
     return TrainedModel(key, estimator, present, feature_names)
+
+
+def fit_model(key: str, features, labels, rows: slice, seed: int = 7):
+    """Train ``key`` on the labelled rows in ``rows`` of the full feature table.
+
+    Sequence models may read lookback context before ``rows.start``; tabular
+    models use only the rows themselves. The result has ``predict_rows``.
+    """
+    spec = MODELS.get(key)
+    if spec is None:
+        raise ValueError(f'Unknown model: {key}')
+    if not spec.available():
+        raise ValueError(f'{spec.label} needs the "{spec.requires}" package. Install requirements.txt and restart.')
+    if spec.sequence:
+        from server.strategies.ml.sequence import fit_sequence
+        return fit_sequence(key, spec.sequence, features, labels, rows, seed=seed)
+    window_x, window_y = features.iloc[rows], labels.iloc[rows]
+    mask = window_y.notna().to_numpy()
+    return train_model(key, window_x.to_numpy()[mask], window_y.to_numpy()[mask], list(features.columns), seed)
