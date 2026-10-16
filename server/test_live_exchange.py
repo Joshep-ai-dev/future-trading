@@ -150,3 +150,14 @@ class ExchangeConnectionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Take profit'):
             self.service.open_with_stop('htx', 'long', 1, 56, 55)
         self.exchange.create_order.assert_not_called()
+
+    def test_htx_backward_candles_omit_limit_and_use_until(self) -> None:
+        from .app import exchange_candles, live_exchange
+        self.exchange.timeframes = {'1m': '1min', '5m': '5min'}
+        self.exchange.fetch_ohlcv.return_value = [[1_699_999_700_000, 1, 2, 1, 2, 10]]
+        with patch.object(live_exchange, '_get', return_value=(self.exchange, self.market)):
+            result = exchange_candles('htx', '5m', before=1_700_000_000)
+        self.exchange.fetch_ohlcv.assert_called_once_with(
+            self.market['symbol'], '5m', since=1_699_850_000_000,
+            params={'until': 1_699_999_999_999})
+        self.assertTrue(result['hasMore'])

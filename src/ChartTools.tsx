@@ -31,7 +31,9 @@ export default function ChartTools({chartRef,valueLabel='Price',horizontalLabel=
     const scale=chartRef.current?.timeScale(), range=scale?.getVisibleLogicalRange();
     if(!scale||!range)return;
     const middle=(range.from+range.to)/2, span=Math.max(8,(range.to-range.from)*factor);
-    scale.setVisibleLogicalRange({from:middle-span/2,to:middle+span/2});
+    const next={from:middle-span/2,to:middle+span/2};
+    scale.setVisibleLogicalRange(next);
+    if(factor>1&&next.from<150&&hasMore&&!loading)onEarlier?.();
   }
   function zoomValue(factor:number) {
     onNavigate?.();
@@ -47,7 +49,7 @@ export default function ChartTools({chartRef,valueLabel='Price',horizontalLabel=
   }
   return <div className="chart-actions">
     <div className="chart-toolbar" role="group" aria-label={`${valueLabel} chart controls`}>
-      <div><span>{horizontalLabel}</span><button className="secondary" type="button" aria-label={`Zoom in ${horizontalLabel.toLowerCase()}`} onClick={()=>zoomTime(.7)}>+</button><button className="secondary" type="button" aria-label={`Zoom out ${horizontalLabel.toLowerCase()}`} onClick={()=>zoomTime(1/.7)}>−</button></div>
+      <div><span>{horizontalLabel}</span><button className="secondary" type="button" title="Show half as much time" aria-label={`Zoom in ${horizontalLabel.toLowerCase()}`} onClick={()=>zoomTime(.5)}>+</button><button className="secondary" type="button" title="Show twice as much time and load older candles" aria-label={`Zoom out ${horizontalLabel.toLowerCase()}`} onClick={()=>zoomTime(2)}>−</button></div>
       <div><span>{valueLabel}</span><button className="secondary" type="button" aria-label={`Zoom in ${valueLabel.toLowerCase()}`} onClick={()=>zoomValue(.7)}>+</button><button className="secondary" type="button" aria-label={`Zoom out ${valueLabel.toLowerCase()}`} onClick={()=>zoomValue(1/.7)}>−</button></div>
       <button className="secondary" type="button" onClick={reset}>Fit / reset</button>
       {onFullscreen&&<button className="secondary" type="button" aria-label={fullscreen?'Exit chart fullscreen':'Show chart fullscreen'} aria-pressed={fullscreen} onClick={onFullscreen}>{fullscreen?'Exit fullscreen':'Fullscreen'}</button>}

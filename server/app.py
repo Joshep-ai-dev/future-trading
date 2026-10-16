@@ -221,7 +221,14 @@ def exchange_candles(venue: Literal['okx','htx','mexc','binance'],
         source = max(supported, key=lambda key: durations[key]) if supported else '1m'
         limit = 500
         since = None if before is None else max(0, before * 1000 - limit * durations[source] * 1000)
-        candles = exchange.fetch_ohlcv(market['symbol'], source, since=since, limit=limit)
+        if venue == 'htx' and before is not None:
+            # HTX contract klines ignore `from`/`to` when `size` is present.
+            # CCXT adds `size` whenever limit is supplied, so omit it for
+            # backward pages and bound the request explicitly with `until`.
+            candles = exchange.fetch_ohlcv(market['symbol'], source, since=since,
+                                           params={'until': before * 1000 - 1})
+        else:
+            candles = exchange.fetch_ohlcv(market['symbol'], source, since=since, limit=limit)
         if before is not None:
             candles = [candle for candle in candles if candle[0] < before * 1000]
         # Exchanges apply different per-request caps (often 100-300 rows), so a
