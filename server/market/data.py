@@ -13,10 +13,14 @@ def load_bars(timeframe='1m', path=CSV):
     df = pd.read_csv(path)
     # Only the default instrument includes the downloaded overlay. Test/custom
     # CSVs stay independent. Atomic replacement lets readers see a whole cache.
-    cache = CSV.with_name('OKX_XAG-USDT-SWAP_1m_updates.csv')
-    if Path(path).resolve() == CSV.resolve() and cache.exists():
-        df = pd.concat([df, pd.read_csv(cache)], ignore_index=True)
-        df = df.drop_duplicates('timestamp_ms', keep='last')
+    if Path(path).resolve() == CSV.resolve():
+        # Older backfilled history first, then the source, then newer updates (later wins on overlap).
+        history = CSV.with_name('OKX_XAG-USDT-SWAP_1m_history.csv')
+        cache = CSV.with_name('OKX_XAG-USDT-SWAP_1m_updates.csv')
+        parts = [pd.read_csv(history)] if history.exists() else []
+        parts += [df] + ([pd.read_csv(cache)] if cache.exists() else [])
+        if len(parts) > 1:
+            df = pd.concat(parts, ignore_index=True).drop_duplicates('timestamp_ms', keep='last')
     cols = ['timestamp_ms', 'open', 'high', 'low', 'close', 'volume_contracts']
     if not set(cols).issubset(df.columns) or df.empty:
         raise ValueError('CSV is empty or missing required OHLCV columns.')

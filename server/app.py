@@ -16,6 +16,7 @@ from server.strategies.strategy import BacktestRequest
 from server.strategies.bb_reversal_adapter import run_bb_reversal_backtest
 from server.strategies.registry import get_strategy
 from server.market.market_refresh import refresh_service
+from server.market.history_backfill import history_backfill
 from server.storage.user_data_store import user_data_store
 from server.core.workspaces import WorkspaceRegistry
 from server.storage.credential_store import credential_store
@@ -44,6 +45,7 @@ async def lifespan(app):
         yield
     finally:
         await workspaces.shutdown()
+        history_backfill.shutdown()
         refresh_service.shutdown()
 
 
@@ -54,7 +56,7 @@ AUTH_COOKIE = 'silver_session'
 TRADER_PATHS = ('/api/exchange/connect', '/api/exchange/disconnect', '/api/exchange/reconnect',
                 '/api/exchange/forget', '/api/exchange/order', '/api/exchange/close',
                 '/api/exchange/auto/', '/api/paper/start', '/api/paper/speed', '/api/paper/pause',
-                '/api/paper/resume', '/api/profiles', '/api/market-refresh')
+                '/api/paper/resume', '/api/profiles', '/api/market-refresh', '/api/market-backfill')
 
 
 @app.middleware('http')
@@ -239,6 +241,29 @@ def delete_profile(request: Request, name: str = Query(min_length=1, max_length=
 @app.get('/api/market-status')
 def market_status():
     return refresh_service.status()
+
+
+class BackfillRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    days: int = Field(ge=1, le=3650)
+
+
+@app.get('/api/market-backfill')
+def market_backfill_status():
+    return history_backfill.status()
+
+
+@app.post('/api/market-backfill')
+def market_backfill(parameters: BackfillRequest):
+    try:
+        return history_backfill.start(parameters.days)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.post('/api/market-backfill/stop')
+def market_backfill_stop():
+    return history_backfill.stop()
 
 
 @app.post('/api/market-refresh')
