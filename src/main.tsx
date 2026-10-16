@@ -1,12 +1,12 @@
 import {useCallback,useEffect,useState} from 'react';
 import {createRoot} from 'react-dom/client';
-import {api} from './api';
-import type {Page} from './Tabs';
-import AppHeader from './components/AppHeader';
-import BacktestPanel from './BacktestPanel';
-import MarketStatus from './MarketStatus';
-import AuthScreen,{type SignedInUser} from './AuthScreen';
-import {useExchangeVenue} from './exchangeVenue';
+import {api} from './shared/api/api';
+import type {Page} from './app/Tabs';
+import AppHeader from './app/layout/AppHeader';
+import BacktestPanel from './app/BacktestPanel';
+import MarketStatus from './shared/ui/MarketStatus';
+import AuthScreen,{type SignedInUser} from './features/auth/AuthScreen';
+import {useExchangeVenue} from './shared/api/exchangeVenue';
 import './style.css';
 
 type Range={startDate:string;endDate:string};

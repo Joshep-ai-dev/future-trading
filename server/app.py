@@ -11,18 +11,18 @@ from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from .data import load_bars
-from .strategy import BacktestRequest
-from .bb_reversal_adapter import run_bb_reversal_backtest
-from .market_refresh import refresh_service
-from .paper_trading import paper_service
-from .live_exchange import live_exchange, live_bot
-from .profile_store import profile_store
-from .credential_store import credential_store
-from .serialization import optional_volume
-from .exchange_stream import ExchangeStreams
-from .fine_tuning import fine_tune
-from .auth_store import SESSION_DAYS, auth_store
+from server.market.data import load_bars
+from server.strategies.strategy import BacktestRequest
+from server.strategies.bb_reversal_adapter import run_bb_reversal_backtest
+from server.market.market_refresh import refresh_service
+from server.paper.paper_trading import paper_service
+from server.exchanges.live_exchange import live_exchange, live_bot
+from server.storage.profile_store import profile_store
+from server.storage.credential_store import credential_store
+from server.core.serialization import optional_volume
+from server.exchanges.exchange_stream import ExchangeStreams
+from server.strategies.fine_tuning import fine_tune
+from server.storage.auth_store import SESSION_DAYS, auth_store
 
 exchange_streams = ExchangeStreams(live_exchange)
 
@@ -132,7 +132,7 @@ class LiveBotStartRequest(BBBacktestRequest):
 
 @app.post('/api/chart-view')
 def session_chart(parameters: ChartViewRequest):
-    from .chart_view import chart_view
+    from server.market.chart_view import chart_view
     with paper_service.lock:
         state = paper_service.state
         if not state or state['startedAt'] != parameters.session_id:
@@ -575,7 +575,7 @@ def history(parameters: CandleRequest):
 
 @app.get('/api/costs/htx')
 def htx_cost_snapshot():
-    from .htx_costs import fetch_htx_costs
+    from server.exchanges.htx_costs import fetch_htx_costs
     try:
         return fetch_htx_costs()
     except Exception as error:
