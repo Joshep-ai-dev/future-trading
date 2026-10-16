@@ -1,0 +1,215 @@
+/* Live exchange workspace */
+
+.exchange-market-header {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.exchange-instrument {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+}
+
+.exchange-instrument h1 {
+  margin: 0 0 5px;
+  font-size: 18px;
+}
+
+.exchange-instrument h1>span {
+  font-size: 9px;
+  padding: 3px 5px;
+  border: 1px solid #334154;
+  border-radius: 3px;
+  color: #a2b3cb;
+  vertical-align: middle;
+}
+
+.exchange-instrument small,.exchange-last small {
+  display: block;
+  color: #8090a8;
+  font-size: 11px;
+}
+
+.exchange-last strong {
+  font-size: 28px;
+  letter-spacing: -1px;
+  color: #eef4fc;
+}
+
+.exchange-last small {
+  margin-top: 3px;
+}
+
+.exchange-activity {
+  background: #10151e;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  min-width: 0;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+}
+
+.exchange-account-strip {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+}
+
+.exchange-account-strip>div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.exchange-account-strip small {
+  font-size: 10px;
+  color: #8293ab;
+}
+
+.exchange-account-strip strong {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.exchange-account-strip strong span {
+  font-size: 10px;
+  font-weight: 400;
+  color: #7d8fa7;
+}
+
+.exchange-activity table {
+  border-collapse: collapse;
+  width: 100%;
+  white-space: nowrap;
+  text-align: left;
+  font-size: 11px;
+}
+
+.exchange-activity th {
+  padding: 18px 14px 12px;
+  color: #72849e;
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.exchange-activity td {
+  padding: 12px 14px 20px;
+  border-bottom: 1px solid #1d2736;
+}
+
+.exchange-activity th:first-child,.exchange-activity td:first-child {
+  padding-left: 20px;
+}
+
+.exchange-activity td strong {
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.exchange-activity td small {
+  font-size: 9px;
+  color: #8495ac;
+}
+
+.exchange-position-tags {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.exchange-position-tags span {
+  padding: 3px 5px;
+  border-radius: 2px;
+  background: #1c2635;
+  color: #b8c8de;
+  font-size: 9px;
+  text-transform: capitalize;
+}
+
+.exchange-position-tags span.long {
+  background: #087f66;
+  color: #eafff7;
+}
+
+.exchange-position-tags span.short {
+  background: #a12e48;
+  color: #fff1f4;
+}
+
+.exchange-activity-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 20px;
+  border-top: 1px solid var(--border);
+  color: #657891;
+  font-size: 9px;
+}
+
+.exchange-inline-error {
+  font-size: 11px;
+  line-height: 1.6;
+  padding: 10px 16px;
+  margin: 0;
+  border-bottom: 1px solid #2c2a25;
+}
+
+.live-terminal-grid .terminal-main {
+  gap: 14px;
+}
+
+.live-terminal-grid .terminal-sidebar {
+  gap: 14px;
+}
+
+.live-price-panel .chart-resize {
+  height: 540px;
+}
+
+.live-terminal-controls .live-risk-note {
+  font-size: 9px;
+}
+
+@media (max-width:900px) {
+  .live-terminal-grid .terminal-sidebar {
+    display: grid;
+    grid-template-columns: minmax(0,1fr) minmax(0,1fr);
+    align-items: start;
+  }
+  .live-terminal-grid .paper-running-notice {
+    grid-column: 1/-1;
+  }
+  .exchange-market-header {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width:600px) {
+  .exchange-instrument h1 {
+    font-size: 15px;
+  }
+  .exchange-last strong {
+    font-size: 24px;
+  }
+  .exchange-account-strip {
+    flex-wrap: wrap;
+  }
+  .exchange-account-strip strong {
+    font-size: 13px;
+  }
+  .exchange-activity-footer {
+    padding: 10px 14px;
+    font-size: 8px;
+  }
+  .live-terminal-grid .terminal-sidebar {
+    display: flex;
+  }
+  .live-price-panel .chart-resize {
+    height: 460px;
+  }
+}

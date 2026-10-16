@@ -2,12 +2,12 @@ import {useState,type ReactNode} from 'react';
 import {fmt} from './types';
 import {formatTradingTime,type TradingTimeZone} from './tradingTime';
 
-export type PnlTrade={id:number;direction:number;pnl:number;entry:number;exit:number;quantity:number;exitTime:number};
+export type PnlTrade={id:number;direction:number;pnl:number;entry:number|null;exit:number|null;quantity:number;exitTime:number};
 const money=(value:number)=>`${value>0?'+':value<0?'-':''}$${fmt(Math.abs(value))}`;
 const tone=(value:number)=>value>0?'profit':value<0?'loss':'flat';
 
 export default function TradeView({trades,capital,unrealized=0,scope,children,onSelect,timeZone='UTC'}:{
-  trades:PnlTrade[];capital:number;unrealized?:number;scope:'Session'|'Backtest';children:ReactNode;onSelect?:(id:number)=>void;timeZone?:TradingTimeZone;
+  trades:PnlTrade[];capital:number;unrealized?:number;scope:'Session'|'Backtest'|'Live';children:ReactNode;onSelect?:(id:number)=>void;timeZone?:TradingTimeZone;
 }){
   const storageKey=`silver.trades.view.${scope}`;
   const [view,setView]=useState<'table'|'grid'>(()=>{try{return localStorage.getItem(storageKey)==='grid'?'grid':'table';}catch{return 'table';}});
@@ -22,7 +22,7 @@ export default function TradeView({trades,capital,unrealized=0,scope,children,on
   const selected=trades.find(t=>t.id===selectedId);
   function changeView(next:'table'|'grid'){setView(next);try{localStorage.setItem(storageKey,next);}catch{/* Storage can be unavailable. */}}
   return <>
-    <div className="trade-view-bar"><div className="trade-view-context"><strong>{scope==='Session'?'Session performance':'Trade performance'}</strong><small>{trades.length} closed trades · USDT</small></div><div className="trade-view-switch" role="group" aria-label={`${scope} trade display`}>
+    <div className="trade-view-bar"><div className="trade-view-context"><strong>{scope==='Session'?'Session performance':scope==='Live'?'Exchange performance':'Trade performance'}</strong><small>{trades.length} closed trades · USDT</small></div><div className="trade-view-switch" role="group" aria-label={`${scope} trade display`}>
       <button type="button" aria-pressed={view==='table'} onClick={()=>changeView('table')}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h12M2 8h12M2 12h12"/></svg>Table</button>
       <button type="button" aria-pressed={view==='grid'} onClick={()=>changeView('grid')}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2h4v4H2zM10 2h4v4h-4zM2 10h4v4H2zM10 10h4v4h-4z"/></svg>P&amp;L grid</button>
     </div></div>

@@ -5,12 +5,28 @@ export type IndicatorKind='atr'|'adx'|'rsi';
 
 export type IndicatorConfig={atrLength:number;atrThreshold:number;atrSmoothing:'RMA'|'SMA'|'EMA'|'WMA';adxLength:number;adxThreshold:number;displaySmoothing:number;showStatus:boolean;rsiLength:number;rsiUpper:number;rsiLower:number};
 export const defaultIndicators:IndicatorConfig={atrLength:14,atrThreshold:0.03,atrSmoothing:'RMA',adxLength:14,adxThreshold:25,displaySmoothing:1,showStatus:true,rsiLength:14,rsiUpper:85,rsiLower:15};
+const settingsChanged='silver:chart-indicator-settings-changed';
 export function readIndicatorSettings():IndicatorConfig{
   try{
     const c={...defaultIndicators,...JSON.parse(localStorage.getItem('silver.chart.indicatorSettings')??'{}')};
     if(!Number.isFinite(c.atrThreshold)||c.atrThreshold<0||![c.atrLength,c.adxLength,c.rsiLength].every(v=>Number.isInteger(v)&&v>=1&&v<=1000)||!Number.isInteger(c.displaySmoothing)||c.displaySmoothing<1||c.displaySmoothing>10||!Number.isFinite(c.adxThreshold)||c.adxThreshold<0||c.adxThreshold>100||!['RMA','SMA','EMA','WMA'].includes(c.atrSmoothing)||typeof c.showStatus!=='boolean'||![c.rsiUpper,c.rsiLower].every(v=>Number.isFinite(v)&&v>=0&&v<=100)||c.rsiLower>=c.rsiUpper)return defaultIndicators;
     return c;
   }catch{return defaultIndicators;}
+}
+export function useIndicatorSettings(){
+  const [settings,setSettings]=useState(readIndicatorSettings);
+  useEffect(()=>{
+    const read=()=>setSettings(readIndicatorSettings());
+    const storage=(event:StorageEvent)=>{if(event.key==='silver.chart.indicatorSettings'||event.key===null)read();};
+    window.addEventListener(settingsChanged,read);window.addEventListener('storage',storage);
+    return()=>{window.removeEventListener(settingsChanged,read);window.removeEventListener('storage',storage);};
+  },[]);
+  function update(next:IndicatorConfig){
+    setSettings(next);
+    try{localStorage.setItem('silver.chart.indicatorSettings',JSON.stringify(next));}catch{/* Keep settings for this session. */}
+    window.dispatchEvent(new Event(settingsChanged));
+  }
+  return [settings,update] as const;
 }
 export default function IndicatorSettings({kind,value,onApply,onClose}:{kind:IndicatorKind;value:IndicatorConfig;onApply:(config:IndicatorConfig)=>void;onClose:()=>void}){
   const [draft,setDraft]=useState(value);

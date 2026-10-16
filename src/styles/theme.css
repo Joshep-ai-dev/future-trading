@@ -1,0 +1,745 @@
+/* Workspace layout and page-specific composition. Shared controls live in components.css. */
+
+.app-shell {
+  max-width: 1920px;
+  padding: 0 24px;
+}
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  min-height: 68px;
+  height: auto;
+  gap: 32px;
+  background: var(--background);
+}
+
+.brand {
+  font-size: 16px;
+  letter-spacing: 1px;
+}
+
+.brand-mark {
+  background: #2e7df615;
+  border-color: #2e7df630;
+  border-radius: 5px;
+}
+
+.brand-sub {
+  font-size: 8px;
+  letter-spacing: 1.6px;
+}
+
+.app-header .page-tabs {
+  align-self: stretch;
+  padding: 0;
+  border-bottom: 0;
+  min-height: 68px;
+  gap: 26px;
+}
+
+.app-header .page-tabs > button {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.header-account {
+  gap: 12px;
+}
+
+.header-exchange-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-exchange-picker > span {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: none;
+}
+
+.header-exchange-picker select, .header-mode-picker select {
+  width: auto;
+  min-width: 125px;
+  height: 34px;
+  background: var(--field);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 10px;
+  color: var(--text);
+  font-size: 11px;
+}
+
+.header-mode-picker select {
+  min-width: 116px;
+}
+
+.app-footer {
+  padding: 18px 0;
+  margin-top: 24px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.secondary {
+  background: var(--surface-raised);
+  border-color: var(--border);
+  color: #bcc6d5;
+}
+
+.text-button {
+  color: #7faefb;
+}
+
+.terminal-panel, .settings-section, .settings-profiles, .fine-tune-panel {
+  background: var(--panel);
+  border-color: var(--border);
+  border-radius: var(--radius);
+}
+
+.panel-heading {
+  padding: 16px 20px;
+}
+
+.panel-heading h2 {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.panel-heading small {
+  font-size: 10px;
+}
+
+.terminal-grid, .results-layout {
+  gap: 16px;
+}
+
+.terminal-sidebar {
+  gap: 16px;
+}
+
+.terminal-sidebar .bot-form {
+  padding: 20px;
+}
+
+.terminal-sidebar .bot-form label {
+  font-size: 11px;
+}
+
+.terminal-sidebar .bot-form input, .terminal-sidebar .bot-form select {
+  height: 40px;
+  font-size: 12px;
+  background: var(--field);
+  border-color: var(--border);
+}
+
+.chart-actions {
+  background: #12151a;
+  border-color: var(--border);
+}
+
+.chart-toolbar button {
+  background: var(--surface-raised);
+  color: #aebcd1;
+}
+
+.chart-toolbar, .indicator-switch {
+  gap: 6px;
+}
+
+.chart-timeframe-select {
+  background: var(--field);
+  border-color: var(--border);
+}
+
+.trading-chart-heading {
+  min-height: 56px;
+}
+
+.chart-mode {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.market-bar {
+  min-height: 90px;
+  gap: 32px;
+}
+
+.market-price strong {
+  font-size: 28px;
+}
+
+.market-bar .ui-metric > strong {
+  font-size: 16px;
+}
+
+.market-bar .ui-metric > span {
+  font-size: 10px;
+}
+
+.live-terminal-grid {
+  grid-template-columns: minmax(0, 1fr) 320px;
+}
+
+.exchange-market-header {
+  min-height: 90px;
+  gap: 28px;
+  margin-bottom: 16px;
+  padding: 18px 0;
+}
+
+.exchange-market-header .ui-metric {
+  gap: 7px;
+}
+
+.exchange-market-header .ui-metric > strong {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.exchange-market-header > .ui-status {
+  margin-left: auto;
+  background: transparent;
+}
+
+.exchange-instrument h1 > .ui-status {
+  vertical-align: middle;
+  border: 0;
+  font-size: 8px;
+}
+
+.exchange-instrument .instrument-icon {
+  width: 36px;
+  height: 36px;
+  font-size: 20px;
+}
+
+.exchange-activity {
+  margin-top: 16px;
+}
+
+.exchange-account-strip {
+  gap: 32px;
+  padding: 18px 20px;
+  background: #111419;
+}
+
+.exchange-account-strip .ui-metric {
+  gap: 7px;
+}
+
+.exchange-account-strip .ui-metric > strong {
+  font-size: 17px;
+}
+
+.exchange-account-strip > .ui-status {
+  margin-left: auto;
+}
+
+.exchange-account-strip > .ui-metric {
+  flex-direction: column;
+}
+
+.exchange-activity .ui-table td {
+  font-size: 11px;
+}
+
+.exchange-position-tags .ui-status {
+  text-transform: capitalize;
+}
+
+.exchange-activity-content {
+  min-height: 180px;
+}
+
+.exchange-inline-error {
+  background: #e0ad5408;
+  color: var(--warning);
+  border-bottom-color: #e0ad5425;
+}
+
+.live-method-section {
+  padding: 20px;
+}
+
+.live-terminal-controls .live-method-section {
+  padding: 20px;
+}
+
+.live-risk-note {
+  font-size: 10px;
+  line-height: 1.65;
+}
+
+.account-page {
+  display: block;
+  width: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 0;
+}
+
+.workspace-loading {
+  display: grid;
+  place-items: center;
+  min-height: 360px;
+  color: var(--muted);
+}
+
+.settings-profiles {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.profile-description strong {
+  font-size: 13px;
+}
+
+.profile-description small {
+  max-width: 420px;
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+.profile-actions {
+  gap: 8px;
+}
+
+.profile-actions input, .profile-actions select {
+  height: 36px;
+  background: var(--field);
+  border-color: var(--border);
+  font-size: 11px;
+}
+
+.profile-actions button {
+  font-size: 11px;
+}
+
+.settings-layout {
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.settings-navigation {
+  position: sticky;
+  top: 88px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.configuration-profile {
+  padding: 22px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.configuration-profile h2 {
+  font-size: 14px;
+}
+
+.settings-navigation nav {
+  padding: 10px;
+}
+
+.settings-navigation nav button {
+  min-height: 42px;
+  border-radius: 4px;
+  font-size: 12px;
+  padding: 10px;
+}
+
+.settings-navigation nav button.current {
+  background: #2e7df612;
+  color: #88b3ff;
+  border-color: transparent;
+}
+
+.settings-navigation nav button span {
+  color: #5e7597;
+  font-size: 10px;
+}
+
+.configuration-summary {
+  border-top: 1px solid var(--border);
+  padding: 20px;
+}
+
+.configuration-summary dl {
+  padding: 0;
+}
+
+.configuration-summary dt, .configuration-summary dd {
+  font-size: 11px;
+}
+
+.configuration-form .settings-section {
+  margin-bottom: 16px;
+  padding: 24px;
+  scroll-margin-top: 88px;
+}
+
+.configuration-form .settings-section h3 {
+  font-size: 14px;
+  margin-bottom: 20px;
+  font-weight: 500;
+}
+
+.configuration-form .settings-grid {
+  gap: 20px;
+}
+
+.configuration-form .settings-grid label {
+  font-size: 12px;
+  color: #9da8b8;
+}
+
+.configuration-form .settings-grid input, .configuration-form .settings-grid select {
+  height: 42px;
+  margin-top: 8px;
+  border-color: var(--border);
+  background: var(--field);
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.configuration-form .settings-grid .ui-field {
+  display: flex;
+}
+
+.configuration-form .settings-grid .ui-field input {
+  margin-top: 0;
+}
+
+.configuration-form .settings-help {
+  margin-top: 16px;
+  max-width: 900px;
+  font-size: 11px;
+  line-height: 1.75;
+}
+
+.configuration-form .exit-settings > h3 {
+  font-size: 17px;
+  padding: 4px 0;
+}
+
+.configuration-form .exit-settings > p {
+  font-size: 12px;
+  margin: 8px 0 22px;
+}
+
+.configuration-runbar {
+  padding: 20px;
+  border-color: var(--border);
+  background: var(--panel);
+  gap: 20px;
+}
+
+.configuration-runbar strong {
+  font-size: 13px;
+}
+
+.configuration-runbar small {
+  margin-top: 6px;
+  font-size: 11px;
+}
+
+.configuration-run-actions {
+  flex-wrap: wrap;
+}
+
+.execution-notes {
+  border-color: var(--border);
+  background: var(--panel);
+  font-size: 12px;
+}
+
+.result-scorecards {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--border);
+  gap: 1px;
+  margin-bottom: 20px;
+}
+
+.result-scorecards > .ui-metric {
+  padding: 24px;
+  background: var(--panel);
+}
+
+.run-context {
+  border-color: var(--border);
+  background: var(--panel);
+  margin-bottom: 16px;
+  padding: 14px 20px;
+  font-size: 11px;
+}
+
+.run-label {
+  color: #a2b9dc;
+  font-size: 10px;
+}
+
+.results-layout {
+  grid-template-columns: minmax(0, 1fr) 280px;
+}
+
+.results-main, .results-sidebar {
+  gap: 16px;
+}
+
+.results-ledger table th, .results-ledger table td {
+  padding: 14px;
+  font-size: 11px;
+}
+
+.results-ledger table th {
+  color: var(--muted);
+  background: #111419;
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.result-breakdown dt, .result-breakdown dd, .trade-inspector dt, .trade-inspector dd {
+  font-size: 11px;
+}
+
+.analysis-empty-panel {
+  margin-bottom: 20px;
+}
+
+.trade-view-bar {
+  padding: 16px 20px;
+  background: #111419;
+  border-color: var(--border);
+}
+
+.trade-view-context strong {
+  font-size: 12px;
+}
+
+.trade-view-context small {
+  font-size: 10px;
+}
+
+.trade-view-switch button {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--muted);
+}
+
+.trade-view-switch button[aria-pressed=true] {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.pagination button {
+  background: var(--surface-raised);
+  border-color: var(--border);
+  font-size: 11px;
+}
+
+@media (max-width: 1200px) {
+  .app-header {
+    gap: 24px;
+  }
+  .app-header .page-tabs {
+    gap: 20px;
+  }
+  .header-account > .ui-status {
+    display: none;
+  }
+  .header-exchange-picker > span {
+    display: none;
+  }
+  .live-terminal-grid {
+    grid-template-columns: minmax(0, 1fr) 290px;
+  }
+  .settings-profiles {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 1000px) {
+  .app-shell {
+    padding: 0 16px;
+  }
+  .app-header {
+    flex-wrap: wrap;
+    padding-top: 12px;
+    gap: 0;
+  }
+  .app-header .page-tabs {
+    order: 3;
+    width: 100%;
+    min-height: 48px;
+    margin-top: 8px;
+    gap: 28px;
+  }
+  .header-account {
+    margin-left: auto;
+  }
+  .settings-navigation {
+    top: 126px;
+  }
+  .configuration-form .settings-section {
+    scroll-margin-top: 126px;
+  }
+  .exchange-market-header {
+    flex-wrap: wrap;
+    gap: 22px;
+  }
+}
+
+@media (max-width: 900px) {
+  .settings-layout, .results-layout {
+    grid-template-columns: 1fr;
+  }
+  .settings-navigation {
+    position: static;
+  }
+  .configuration-profile, .configuration-summary {
+    display: none;
+  }
+  .settings-navigation nav {
+    display: flex;
+    overflow-x: auto;
+    gap: 8px;
+  }
+  .settings-navigation nav button {
+    width: auto;
+    flex: none;
+  }
+  .settings-navigation nav button span {
+    display: none;
+  }
+  .results-sidebar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+  .live-terminal-grid {
+    grid-template-columns: minmax(0, 1fr) 280px;
+  }
+  .live-terminal-grid .terminal-sidebar {
+    display: flex;
+  }
+}
+
+@media (max-width: 700px) {
+  .live-terminal-grid {
+    grid-template-columns: 1fr;
+  }
+  .terminal-grid .terminal-sidebar {
+    display: flex;
+  }
+  .results-sidebar {
+    grid-template-columns: 1fr;
+  }
+  .exchange-account-strip {
+    gap: 24px;
+    padding: 16px;
+    flex-wrap: wrap;
+  }
+  .exchange-account-strip > .ui-status {
+    margin-left: 0;
+  }
+  .exchange-market-header .ui-metric:nth-last-child(2) {
+    display: none;
+  }
+  .exchange-market-header > .ui-status {
+    margin-left: 0;
+  }
+  .configuration-runbar {
+    align-items: flex-start;
+  }
+  .configuration-run-actions {
+    width: 100%;
+  }
+  .configuration-run-actions > button {
+    flex: 1;
+  }
+}
+
+@media (max-width: 500px) {
+  .app-shell {
+    padding: 0 10px;
+  }
+  .brand {
+    font-size: 14px;
+    gap: 8px;
+  }
+  .brand-mark {
+    width: 28px;
+    height: 28px;
+  }
+  .brand-sub {
+    font-size: 6px;
+  }
+  .header-account {
+    gap: 6px;
+  }
+  .header-exchange-picker select {
+    min-width: 70px;
+    max-width: 100px;
+    font-size: 10px;
+  }
+  .header-mode-picker select {
+    min-width: 95px;
+    max-width: 112px;
+    font-size: 10px;
+  }
+  .app-header .page-tabs {
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .app-header .page-tabs > button {
+    font-size: 11px;
+  }
+  .exchange-market-header {
+    gap: 16px;
+  }
+  .exchange-last strong {
+    font-size: 24px;
+  }
+  .exchange-instrument h1 {
+    font-size: 15px;
+  }
+  .exchange-market-header > .ui-status {
+    width: auto;
+  }
+  .exchange-account-strip {
+    gap: 16px;
+  }
+  .exchange-account-strip .ui-metric > strong {
+    font-size: 14px;
+  }
+  .configuration-form .settings-section {
+    padding: 18px 16px;
+  }
+  .configuration-form .settings-grid {
+    gap: 16px;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .result-scorecards > .ui-metric {
+    padding: 18px 16px;
+  }
+  .profile-actions {
+    width: 100%;
+  }
+  .profile-actions input, .profile-actions select {
+    min-width: 0;
+    width: 100%;
+  }
+}

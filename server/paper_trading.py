@@ -8,6 +8,7 @@ import time
 import pandas as pd
 
 from .bb_outer_reversal import Settings, run_backtest
+from .serialization import optional_volume
 from .data import TIMEFRAMES, load_bars
 from .market_refresh import refresh_service
 from .forming_candle import forming_candle, fetch_live_minutes
@@ -128,7 +129,8 @@ class PaperTrading:
 
     @staticmethod
     def encode(frame):
-        return [dict(time=int(t.timestamp()), **{k:float(r[k]) for k in ('open','high','low','close')})
+        return [dict(time=int(t.timestamp()), **{k:float(r[k]) for k in ('open','high','low','close')},
+                     **optional_volume(r['volume'] if 'volume' in frame.columns else None))
                 for t,r in frame.iterrows()]
 
     def set_running(self, running):

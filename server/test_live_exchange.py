@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import ccxt
 
-from .live_exchange import LiveExchange
+from .live_exchange import AutomaticLiveBot, LiveExchange
 
 
 class ExchangeConnectionTests(unittest.TestCase):
@@ -79,3 +79,74 @@ class ExchangeConnectionTests(unittest.TestCase):
         self.assertIn('positions', result['errors'])
         self.assertNotIn('private-secret', str(result))
         self.assertEqual(result['market']['last'], 32)
+
+    def test_disconnect_preserves_exchange_positions_and_orders(self) -> None:
+        self.service.clients['htx'] = self.exchange
+        self.service.markets['htx'] = self.market
+        result = self.service.disconnect('htx')
+        self.assertFalse(result['connected'])
+        self.assertNotIn('htx', self.service.clients)
+        self.exchange.close.assert_called_once()
+        self.exchange.fetch_positions.assert_not_called()
+        self.exchange.create_order.assert_not_called()
+        self.exchange.cancel_order.assert_not_called()
+
+    def test_disconnect_stops_only_the_selected_venues_bot(self) -> None:
+        self.service.clients['htx'] = self.exchange
+        self.service.markets['htx'] = self.market
+        bot = MagicMock(venue='htx', thread=None)
+        self.service.auto_bot = bot
+        self.service.disconnect('htx')
+        bot.stop.assert_called_once()
+        bot.venue = 'okx'
+        bot.stop.reset_mock()
+        self.service.disconnect('htx')
+        bot.stop.assert_not_called()
+
+    def test_disconnect_waits_for_bot_request_before_releasing_client(self) -> None:
+        self.service.clients['htx'] = self.exchange
+        self.service.markets['htx'] = self.market
+        bot = MagicMock(venue='htx')
+        bot.thread.is_alive.return_value = True
+        self.service.auto_bot = bot
+        with self.assertRaisesRegex(ValueError, 'finishing an exchange request'):
+            self.service.disconnect('htx')
+        bot.stop.assert_called_once()
+        bot.thread.join.assert_called_once_with(timeout=15)
+        self.assertIn('htx', self.service.clients)
+        self.exchange.close.assert_not_called()
+
+    def test_live_sizing_uses_available_margin_and_never_falls_back_to_equity(self) -> None:
+        self.exchange.id = 'htx'
+        self.exchange.options = {}
+        bot = AutomaticLiveBot(self.service)
+        self.exchange.fetch_balance.return_value = {'free': {'USDT': 4.96}, 'total': {'USDT': 783}}
+        self.assertEqual(bot._available_usdt(self.exchange), 4.96)
+        for free in (0, -1, None, float('nan'), float('inf')):
+            with self.subTest(free=free):
+                self.exchange.fetch_balance.return_value = {'free': {'USDT': free}, 'total': {'USDT': 783}}
+                with self.assertRaises(ValueError):
+                    bot._available_usdt(self.exchange)
+
+    def test_trade_history_uses_only_exchange_reported_realized_pnl(self) -> None:
+        self.service.clients['htx'] = self.exchange
+        self.service.markets['htx'] = {**self.market, 'contractSize': 0.1}
+        self.exchange.has['fetchClosedOrders'] = True
+        self.exchange.fetch_closed_orders.return_value = [
+            {'id': '1', 'side': 'sell', 'filled': 20, 'average': 57.5,
+             'timestamp': 1_700_000_000_000, 'info': {'real_profit': '12.5'}},
+            {'id': '2', 'side': 'buy', 'filled': 1, 'average': 57,
+             'timestamp': 1_700_000_100_000, 'info': {}},
+        ]
+        result = self.service.trade_history('htx')
+        self.assertEqual(result, [{'id': '1', 'side': 'sell', 'pnl': 12.5, 'price': 57.5,
+                                   'quantity': 2., 'timestamp': 1_700_000_000}])
+
+    def test_take_profit_is_optional_and_validated_before_entry(self) -> None:
+        self.service.clients['htx'] = self.exchange
+        self.service.markets['htx'] = self.market
+        self.exchange.fetch_positions.return_value = []
+        self.exchange.fetch_ticker.return_value = {'last': 57}
+        with self.assertRaisesRegex(ValueError, 'Take profit'):
+            self.service.open_with_stop('htx', 'long', 1, 56, 55)
+        self.exchange.create_order.assert_not_called()

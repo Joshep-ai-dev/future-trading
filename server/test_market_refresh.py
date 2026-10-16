@@ -117,6 +117,20 @@ class BBIntegrationTests(unittest.TestCase):
         self.assertIn('trendSma',result['indicators'][0])
         self.assertGreater(result['backtest']['summary']['fees'],0)
 
+    def test_backtest_volume_is_optional_when_strategy_output_drops_it(self):
+        from .app import backtest
+        from .strategy import BacktestRequest
+        cfg=BacktestRequest(start_date='2026-01-01',end_date='2026-01-03')
+        index=pd.date_range('2025-12-31',periods=900,freq='5min',tz='UTC')
+        import numpy as np
+        close=100+np.sin(np.arange(len(index))/3)
+        frame=pd.DataFrame(dict(open=close-.1,high=close+.3,low=close-.3,
+                                close=close,volume=np.ones(len(index))),index=index)
+        with patch('server.app.load_bars',return_value=(frame,{})):
+            result=backtest(cfg)
+        json.dumps(result,allow_nan=False)
+        self.assertEqual(result['candles'][0]['volume'],1.)
+
     def test_unknown_or_invalid_strategy_parameters_are_rejected(self):
         from .strategy import BacktestRequest
         from pydantic import ValidationError

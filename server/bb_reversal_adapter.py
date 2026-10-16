@@ -8,6 +8,7 @@ import pandas as pd
 from .bb_outer_reversal import Settings, run_backtest
 from .data import TIMEFRAMES
 from .strategy import metrics, seconds
+from .serialization import optional_volume
 
 
 def run_bb_reversal_backtest(frame, settings):
@@ -57,7 +58,11 @@ def run_bb_reversal_backtest(frame, settings):
     candles, points = [], []
     for stamp, bar in displayed.iterrows():
         t = int(stamp.timestamp())
-        candles.append(dict(time=t, **{key:float(bar[key]) for key in ('open','high','low','close')}))
+        volume = bar.get('volume')
+        if volume is None and 'volume' in clean.columns and stamp in clean.index:
+            volume = clean.at[stamp, 'volume']
+        candles.append(dict(time=t, **{key:float(bar[key]) for key in ('open','high','low','close')},
+                            **optional_volume(volume)))
         point = dict(time=t, ema20=None, ema50=None, rsi20=None)
         for key, source in [('bbBasis','bb_basis'), ('bbUpper','bb_upper'), ('bbLower','bb_lower'),
                             ('trendSma','trend_sma'), ('adx','adx'), ('atr','atr'), ('bbWidthPct','bb_width_pct')]:

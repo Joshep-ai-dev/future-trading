@@ -1,14 +1,18 @@
 import {StopOverlay} from './StopOverlay';
-import {useEffect, useMemo, useRef, useState} from 'react';
-import {CandlestickSeries, ColorType, createChart, createSeriesMarkers, LineSeries, BaselineSeries, LineStyle, LineType, type IChartApi, type ISeriesApi, type UTCTimestamp, type SeriesMarker} from 'lightweight-charts';
+import {useEffect, useRef, useState} from 'react';
+import {CandlestickSeries, ColorType, createChart, createSeriesMarkers, HistogramSeries, LineSeries, BaselineSeries, LineStyle, LineType, type IChartApi, type ISeriesApi, type UTCTimestamp, type SeriesMarker} from 'lightweight-charts';
 import {fillMarker,FillLabels} from './fillMarkers';
 import ChartTools,{chartInteraction,resizeChart} from './ChartTools';
 import {captureViewport,restoreViewport} from './chartViewport';
 import {chartTimeOptions,formatChartTime,readChartTimeZone,useChartTimeZone} from './chartTimeZone';
 import {chartOscillators} from './chartOscillators';
-import {readIndicatorSettings} from './IndicatorSettings';
+import IndicatorSettings,{useIndicatorSettings,type IndicatorKind} from './IndicatorSettings';
 import {useChartIndicatorSelection,toggleChartIndicator} from './chartIndicatorSelection';
 import {fmt, type Analysis, type PeriodResult, type Trade, type IndicatorPoint, type BacktestSettings} from './types';
+import {chartVolume} from './chartVolume';
+import {indicatorColor} from './indicatorColors';
+import {displayAdx} from './adxDisplay';
+import IndicatorHeader from './IndicatorHeader';
 
 export function EquityChart({period,initialValue=0,trades}: {
   period: Pick<PeriodResult,'name'>; initialValue?:number; trades:{pnl:number}[];
@@ -73,7 +77,12 @@ export default function BacktestChart({candles,trades,selected,onSelect,indicato
   const [readout,setReadout] = useState('Hover for candle time and prices.');
   const selectedIndicators=useChartIndicatorSelection();
   const [follow,setFollow]=useState(true);
-  const indicatorConfig=useMemo(()=>readIndicatorSettings(),[]);
+  const [indicatorConfig,setIndicatorConfig]=useIndicatorSettings();
+  const [settingsOpen,setSettingsOpen]=useState<IndicatorKind|null>(null);
+  const [paneHeaders,setPaneHeaders]=useState<{kind:IndicatorKind;top:number}[]>([]);
+  const [paneValues,setPaneValues]=useState<Record<IndicatorKind,number|null>>({atr:null,adx:null,rsi:null});
+  const [hiddenIndicators,setHiddenIndicators]=useState<Record<IndicatorKind,boolean>>({atr:false,adx:false,rsi:false});
+  const indicatorSeries=useRef(new Map<IndicatorKind,ISeriesApi<'Line'>>());
   function toggleIndicator(key:'atr'|'adx'|'rsi'){
     toggleChartIndicator(key);
   }
@@ -92,17 +101,33 @@ export default function BacktestChart({candles,trades,selected,onSelect,indicato
     const price = chart.addSeries(CandlestickSeries,{borderVisible:false,upColor:'#26a69a',downColor:'#ef5350',wickUpColor:'#26a69a',wickDownColor:'#ef5350',priceFormat:{type:'price',precision:3,minMove:.001}});
     price.priceScale().applyOptions({scaleMargins:{top:.18,bottom:.22}});
     price.setData(view.map(c=>({...c,time:c.time as UTCTimestamp})));
+    const volume=chart.addSeries(HistogramSeries,{priceScaleId:'',priceFormat:{type:'volume'},lastValueVisible:false,priceLineVisible:false});
+    volume.priceScale().applyOptions({scaleMargins:{top:.8,bottom:0}});
+    volume.setData(chartVolume(view));
     const oscillatorData=chartOscillators(view,barSeconds,indicatorConfig.atrLength,indicatorConfig.adxLength,indicatorConfig.atrSmoothing,indicatorConfig.rsiLength);
+    const lastOscillator=oscillatorData.at(-1);
+    setPaneValues({atr:lastOscillator?.atr??null,adx:lastOscillator?.adx??null,rsi:lastOscillator?.rsi??null});
     const oscillatorKinds=(['atr','adx','rsi'] as const).filter(key=>selectedIndicators[key]);
+    indicatorSeries.current.clear();
     for(const [index,key] of oscillatorKinds.entries()){
       const colors={atr:'#38d9ff',adx:'#90a4ae',rsi:'#bd93f9'};
       const series=chart.addSeries(LineSeries,{color:colors[key],lineWidth:1,title:key==='atr'?`ATR (${indicatorConfig.atrLength})`:key==='adx'?`ADX (${indicatorConfig.adxLength})`:`RSI (${indicatorConfig.rsiLength})`,priceLineVisible:false,priceFormat:{type:'price',precision:key==='atr'?3:2,minMove:key==='atr'?.001:.01},...(key==='rsi'?{autoscaleInfoProvider:()=>({priceRange:{minValue:0,maxValue:100}})}:{})},index+1);
-      series.setData(oscillatorData.map(point=>point[key]===null?{time:point.time as UTCTimestamp}:{time:point.time as UTCTimestamp,value:point[key]}));
+      series.applyOptions({visible:!hiddenIndicators[key]});indicatorSeries.current.set(key,series);
+      if(key==='adx')series.setData(displayAdx(oscillatorData,indicatorConfig.displaySmoothing).map(point=>point.display===null?{time:point.time as UTCTimestamp}:{time:point.time as UTCTimestamp,value:point.display,color:point.color}));
+      else series.setData(oscillatorData.map(point=>point[key]===null?{time:point.time as UTCTimestamp}:{time:point.time as UTCTimestamp,value:point[key],color:indicatorColor(key,point[key],indicatorConfig)}));
       if(key==='rsi')for(const [value,color,title] of [[indicatorConfig.rsiUpper,'#ff8191','Upper'],[50,'#61718b','Mid'],[indicatorConfig.rsiLower,'#43d9a5','Lower']] as const)series.createPriceLine({price:value,color,title,lineStyle:LineStyle.Dashed,lineWidth:1,axisLabelVisible:true});
       if(key==='atr')series.createPriceLine({price:indicatorConfig.atrThreshold,color:'#ffb74d',title:'Threshold',lineStyle:LineStyle.Dashed,lineWidth:1,axisLabelVisible:true});
       if(key==='adx')for(const [value,color,title] of [[20,'#90a4aea6','20 Weak'],[25,'#26a69acc','25 Trend'],[indicatorConfig.adxThreshold,'#ff40ff','Entry']] as const)series.createPriceLine({price:value,color,title,lineStyle:LineStyle.Dashed,lineWidth:1,axisLabelVisible:true});
     }
     if(oscillatorKinds.length)chart.panes().forEach((pane,index)=>pane.setStretchFactor(index===0?3:1));
+    let paneResize:ResizeObserver|null=null,paneFrame=0;
+    const measurePanes=()=>{
+      const root=ref.current;if(!root)return;
+      const base=root.getBoundingClientRect().top;
+      const headers=[...indicatorSeries.current].flatMap(([kind,series])=>{const element=series.getPane().getHTMLElement();return element?[{kind,top:element.getBoundingClientRect().top-base+6}]:[];});
+      setPaneHeaders(old=>JSON.stringify(old)===JSON.stringify(headers)?old:headers);
+    };
+    paneFrame=requestAnimationFrame(()=>{measurePanes();paneResize=new ResizeObserver(measurePanes);if(ref.current)paneResize.observe(ref.current);for(const series of indicatorSeries.current.values()){const element=series.getPane().getHTMLElement();if(element)paneResize.observe(element);}});
     if(indicators.length) {
       if(indicatorSettings.strategy==='chartart_v12'||indicatorSettings.strategy==='bb_outer_reversal') {
         for(const [key,color,title] of [['bbBasis','#63d6d0','BB basis'],['bbUpper','#7d8da5','BB upper'],['bbLower','#7d8da5','BB lower']] as const) {
@@ -173,6 +198,8 @@ export default function BacktestChart({candles,trades,selected,onSelect,indicato
       const c = typeof p.time==='number' ? byTime.get(p.time) : undefined;
       if(c) {
         const indicator=indicatorByTime.get(c.time);
+        const oscillator=oscillatorData.find(point=>point.time===c.time)??lastOscillator;
+        setPaneValues({atr:oscillator?.atr??null,adx:oscillator?.adx??null,rsi:oscillator?.rsi??null});
         const extra=indicatorSettings.strategy==='bb_outer_reversal'&&indicator?` Â· ADX ${fmt(indicator.adx??null)} Â· ATR ${fmt(indicator.atr??null,3)} Â· BB width ${fmt(indicator.bbWidthPct??null)}%`:'';
         setReadout(`${formatChartTime(c.time,readChartTimeZone())} Â· O ${fmt(c.open,3)} H ${fmt(c.high,3)} L ${fmt(c.low,3)} C ${fmt(c.close,3)}${extra}${fillReadouts.has(c.time)?` | ${fillReadouts.get(c.time)!.join(" | ")}`:""}`);
       }
@@ -188,9 +215,10 @@ export default function BacktestChart({candles,trades,selected,onSelect,indicato
     });
     return ()=>{
       viewportRef.current={dataKey,selectedId:selected?.id??null,viewport:captureViewport(chart,view.at(-1)?.time)};
+      paneResize?.disconnect();cancelAnimationFrame(paneFrame);indicatorSeries.current.clear();setPaneHeaders([]);
       stopResize();chartRef.current=null;chart.remove();
     };
-  },[candles,trades,selected,indicators,barSeconds,indicatorSettings,selectedIndicators,indicatorConfig]);
+  },[candles,trades,selected,indicators,barSeconds,indicatorSettings,selectedIndicators,indicatorConfig,hiddenIndicators]);
   useEffect(()=>{const options=chartTimeOptions(timeZone);chartRef.current?.applyOptions({localization:options.localization,timeScale:options.timeScale});},[timeZone]);
-  return <><ChartTools chartRef={chartRef} endLabel="Latest" onLatest={latest} onNavigate={holdView} showEarlier indicators={selectedIndicators} onToggleIndicator={toggleIndicator} follow={follow} onFollowChange={setFollow}/><p className="readout">{readout}</p><div className="chart-history-status" role="status">All candles in this backtest are loaded<span>Latest returns to the end of the test period</span></div><div className="chart-resize"><div ref={ref} className="chart-container position-chart" aria-label={`${timeframe} trade positions, indicators, entries, exits, stop and target zones`}/></div></>;
+  return <><ChartTools chartRef={chartRef} endLabel="Latest" onLatest={latest} onNavigate={holdView} showEarlier indicators={selectedIndicators} onToggleIndicator={toggleIndicator} follow={follow} onFollowChange={setFollow}/>{settingsOpen&&<IndicatorSettings key={settingsOpen} kind={settingsOpen} value={indicatorConfig} onApply={setIndicatorConfig} onClose={()=>setSettingsOpen(null)}/>}<p className="readout">{readout}</p><div className="chart-history-status" role="status">All candles in this backtest are loaded<span>Latest returns to the end of the test period</span></div><div className="chart-resize">{paneHeaders.map(({kind,top})=><IndicatorHeader key={kind} kind={kind} top={top} config={indicatorConfig} value={paneValues[kind]} hidden={hiddenIndicators[kind]} onSettings={()=>setSettingsOpen(kind)} onVisibility={()=>setHiddenIndicators(old=>({...old,[kind]:!old[kind]}))} onRemove={()=>{setHiddenIndicators(old=>({...old,[kind]:false}));toggleIndicator(kind);}}/>)}<div ref={ref} className="chart-container position-chart" aria-label={`${timeframe} trade positions, indicators, entries, exits, stop and target zones`}/></div></>;
 }

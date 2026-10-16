@@ -1,13 +1,21 @@
-import {useEffect,useState,type FormEvent} from 'react';
+import {Button,PageHeader} from './components/ui';
+import {lazy,Suspense,useEffect,useState,type FormEvent} from 'react';
 import {api} from './api';
 import {htxCostDefaults} from './executionCostDefaults';
-import BBReversalSettings,{bbDefaults} from './BBReversalSettings';
-import PaperTrading from './PaperTrading';
-import ResultsWorkspace from './ResultsWorkspace';
-import AccountPage from './AccountPage';
+import {bbDefaults} from './strategyDefaults';
+
+import LiveTrading from './LiveTrading';
+import StrategyNavigation from './components/StrategyNavigation';
+
+
 import LiveExecution from './LiveExecution';
 import type {Page} from './Tabs';
 import {fmt,type BacktestSettings,type BacktestResult,type FineTuneCase,type FineTuneResult,type TuneMetrics} from './types';
+
+const PaperTrading=lazy(()=>import('./PaperTrading'));
+const ResultsWorkspace=lazy(()=>import('./ResultsWorkspace'));
+const AccountPage=lazy(()=>import('./AccountPage'));
+const BBReversalSettings=lazy(()=>import('./BBReversalSettings'));
 
 function initial(range:{startDate:string;endDate:string}):BacktestSettings {
   return {bb_reversal:{...bbDefaults},atr_active:false,atr_period:14,atr_multiplier:2,ema_fast:20,ema_slow:50,rsi_period:20,rsi_threshold:50,rsi_active:true,bb_period:20,chartart_stop_pct:1,exit_condition:'none',stop_mode:'trailing',strategy:'bb_outer_reversal',direction_active:true,direction_timeframe:'1h',setup_active:true,setup_timeframe:'15m',entry_active:true,entry_timeframe:'5m',start_date:range.startDate,end_date:range.endDate,capital:2000,tick_size:.01,...htxCostDefaults,max_leverage:1,session_start:0,session_end:24,session_timezone:'UTC'};
@@ -124,17 +132,14 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
   const selectedTuneCase=tuneCases.find(candidate=>candidate.id===selectedTuneCaseId)??tuneCases[0];
   const stale=!!result&&Object.keys(settings).some(k=>JSON.stringify(settings[k as keyof BacktestSettings])!==JSON.stringify(result.settings[k as keyof BacktestSettings]));
   function download(){if(!result)return;const url=URL.createObjectURL(new Blob([JSON.stringify(result,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download='bb-reversal-backtest.json';link.click();URL.revokeObjectURL(url);}
-  const chapters=[['execution','Execution & allocation'],['filters','Entry filters'],['stops','Stops & trailing'],['rsi-exit','RSI + price exit'],['trend','Trend adjustment'],['range','Backtest range']];
-  return <section className="backtest">
-    <PaperTrading settings={settings} onChange={setSettings} onConfigure={()=>onViewChange('strategy')} visible={view==='paper'} accountMode={accountMode} liveControls={<LiveExecution view="terminal" settings={settings} onSettingsChange={setSettings} onConfigure={()=>onViewChange('strategy')} onManageAccount={()=>onViewChange('account')}/>}/>
+  return <section className="backtest"><Suspense fallback={<div className="workspace-loading" role="status">Loading workspace...</div>}>
+    {accountMode==='live'?(view==='paper'&&<LiveTrading settings={settings} controls={<LiveExecution view="terminal" settings={settings} onSettingsChange={setSettings} onConfigure={()=>onViewChange('strategy')} onManageAccount={()=>onViewChange('account')}/>}/>):<PaperTrading settings={settings} onChange={setSettings} onConfigure={()=>onViewChange('strategy')} visible={view==='paper'}/>}
+
     {view==='account'&&<AccountPage settings={settings} onBack={()=>onViewChange('paper')} accountMode={accountMode} onAccountModeChange={onAccountModeChange}/>}
-    <div id="page-strategy" role="tabpanel" aria-labelledby="tab-strategy" hidden={view!=='strategy'}>
-      <div className="workspace-heading"><div><span className="eyebrow">BOT CONFIGURATION</span><h1>Build your trading setup</h1><p>Configure once, then test or trade virtually. Your draft settings are saved in this browser.</p></div><div className="workspace-actions"><button className="secondary" disabled={busy} onClick={()=>setSettings(initial(range))}>Restore defaults</button><button className="secondary" onClick={()=>onViewChange('paper')}>Open terminal</button></div></div>
+    {view==='strategy'&&<div id="page-strategy" role="tabpanel" aria-labelledby="tab-strategy" hidden={view!=='strategy'}>
+      <PageHeader eyebrow="WORKSPACE / STRATEGY" title="Bot settings" description="Configure your strategy, save a setup, and validate it with a backtest." actions={<><Button variant="ghost" disabled={busy} onClick={()=>setSettings(initial(range))}>Restore defaults</Button><Button variant="secondary" onClick={()=>onViewChange('paper')}>Open terminal</Button></>}/>
       <section className="settings-profiles" aria-label="Saved trading bot setups"><div className="profile-description"><strong>Saved bot setups</strong><small>Save named settings in the backend database, then apply them to backtests and paper or live bot configuration.</small></div><div className="profile-actions"><select aria-label="Select saved bot setup" value={selectedProfile} onChange={event=>{setSelectedProfile(event.target.value);setProfileName(event.target.value);}}><option value="">Choose a saved setup</option>{profiles.map(profile=><option key={profile.name} value={profile.name}>{profile.name}</option>)}</select><input aria-label="Setup name" placeholder="Setup name" maxLength={48} value={profileName} onChange={event=>setProfileName(event.target.value)}/><button type="button" className="secondary" disabled={profileBusy||!profileName.trim()} onClick={()=>void saveProfile()}>{profiles.some(profile=>profile.name.toLocaleLowerCase()===profileName.trim().toLocaleLowerCase())?'Save changes':'Save setup'}</button><button type="button" className="secondary" disabled={profileBusy||!selectedProfile} onClick={applyProfile}>Apply</button><button type="button" className="secondary" disabled={profileBusy||!selectedProfile} onClick={()=>void deleteProfile()}>Delete</button></div>{profileMessage&&<small className="profile-message" role="status">{profileMessage}</small>}</section>
-      <div className="settings-layout"><aside className="settings-navigation"><div className="configuration-profile"><span className="strategy-icon">BB</span><h2>Outer Band Reversal</h2><p>Trailing stop loss</p><span className="paper-badge">BOTH DIRECTIONS</span></div>
-        <nav aria-label="Settings sections">{chapters.map(([key,label],i)=><button key={key} className={section===key?'current':''} onClick={()=>{setSection(key);document.getElementById(`settings-${key}`)?.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});}}><span>0{i+1}</span>{label}</button>)}</nav>
-        <div className="configuration-summary"><span className="eyebrow">YOUR CONFIGURATION</span><dl><div><dt>Timeframe</dt><dd>{settings.entry_timeframe.toUpperCase()}</dd></div><div><dt>Leverage</dt><dd>{settings.max_leverage}x</dd></div><div><dt>Trade amount</dt><dd>{settings.bb_reversal.amount_unit==='percent'?`${settings.bb_reversal.amount_per_trade}%`:`$${fmt(settings.bb_reversal.amount_per_trade)}`}</dd></div><div><dt>SMA adjustment</dt><dd>{settings.bb_reversal.use_sma_trend_adjustment?'On':'Off'}</dd></div></dl></div>
-      </aside><form className="configuration-form" onSubmit={run}><fieldset disabled={busy||tuning}>
+      <div className="settings-layout"><StrategyNavigation settings={settings} active={section} onChange={setSection}/><form className="configuration-form" onSubmit={run}><fieldset disabled={busy||tuning}>
         <BBReversalSettings settings={settings} onChange={setSettings}/>
         <section className="settings-section" id="settings-range"><div className="section-heading"><h3>Backtest range & account</h3><span className="paper-badge">SINGLE PERIOD</span></div><div className="settings-grid"><label>Starting balance ($)<input type="number" required min={1} max={1e9} step="any" value={settings.capital} onChange={e=>setSettings({...settings,capital:Number(e.target.value)})}/></label>
           {(['start_date','end_date'] as const).map((key,i)=><label key={key}>{['Start date (UTC)','End date (UTC, inclusive)'][i]}<input type="date" required min={key==='end_date'?settings.start_date:range.startDate} max={range.endDate} value={settings[key]} onChange={e=>setSettings({...settings,[key]:e.target.value})}/></label>)}
@@ -155,8 +160,8 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
         </>}
       </section>}
       <details className="execution-notes"><summary>Execution assumptions</summary><p>Signals use completed candles and fill at close. Stops include adverse gaps; trailing stops never loosen. Position notional is allocated amount times leverage. A depleted balance blocks new trades. Configured fees, slippage, spread and prorated funding are included. Session filters and liquidation are not modeled.</p></details></form></div>
-    </div>
+    </div>}
     {error&&view!=='paper'&&<p className="error" role="alert">{error}</p>}
-    <div id="page-results" role="tabpanel" aria-labelledby="tab-results" hidden={view!=='results'}><ResultsWorkspace key={runId} result={result} busy={busy} stale={stale} onRun={()=>void run()} onConfigure={()=>onViewChange('strategy')} onExport={download}/></div>
-  </section>;
+    {view==='results'&&<div id="page-results" role="tabpanel" aria-labelledby="tab-results" hidden={view!=='results'}><ResultsWorkspace key={runId} result={result} busy={busy} stale={stale} onRun={()=>void run()} onConfigure={()=>onViewChange('strategy')} onExport={download}/></div>}
+  </Suspense></section>;
 }

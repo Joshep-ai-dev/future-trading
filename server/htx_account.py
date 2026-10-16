@@ -1,5 +1,71 @@
 """Read classic HTX linear accounts when the V5 adapter exposes no USDT account."""
 from typing import Any
+import json
+import math
+
+
+def normalize_htx_balance(balance: dict) -> dict:
+    """Read HTX's available/available_margin fields consistently across adapter releases."""
+    info = balance.get('info') or {}
+    if not isinstance(info, dict):
+        return balance
+    data = info.get('data') or info
+    if not isinstance(data, dict) or not isinstance(data.get('details'), list):
+        return balance
+    for detail in data['details']:
+        if str(detail.get('currency', '')).upper() != 'USDT':
+            continue
+        raw = detail.get('available_margin')
+        if raw is None:
+            raw = detail.get('available')
+        if raw is None:
+            continue
+        try:
+            free = float(raw)
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(free):
+            continue
+        result = dict(balance)
+        result['free'] = dict(balance.get('free') or {}, USDT=free)
+        # Prefer explicit initial margin; never substitute wallet equity for spendable margin.
+        used = detail.get('initial_margin')
+        if used is not None:
+            try:
+                used = float(used)
+                if math.isfinite(used):
+                    result['used'] = dict(balance.get('used') or {}, USDT=used)
+            except (TypeError, ValueError):
+                pass
+        return result
+    return balance
+
+
+def rejection_reason(error: Exception) -> str:
+    """Classify structured exchange errors using fixed labels, never echo their text."""
+    response = {}
+    text = str(error)
+    try:
+        start = text.index('{')
+        response, _ = json.JSONDecoder().raw_decode(text[start:])
+        if not isinstance(response, dict):
+            response = {}
+    except (ValueError, json.JSONDecodeError):
+        pass
+    message = str(response.get('err-msg', response.get('err_msg', response.get('message', '')))).lower()
+    code = str(response.get('err-code', response.get('err_code', response.get('code', ''))))
+    suffix = f' ({code})' if code in ('401', '403', '1003', 'api-signature-not-valid', 'api-signature-check-failed') else ''
+    if type(error).__name__ == 'PermissionDenied':
+        return 'HTX denied access to this account API' + suffix
+    if 'ip address' in message or 'ip whitelist' in message:
+        return 'HTX reported an IP-address authentication restriction' + suffix
+    if 'timestamp' in message or 'expired' in message:
+        return 'HTX rejected the request timestamp' + suffix
+    if 'permission' in message:
+        return 'HTX rejected API permissions' + suffix
+    if 'access key' in message or 'accesskey' in message:
+        return 'HTX did not recognize the access key' + suffix
+    return 'HTX rejected authentication or account API access' + suffix
 
 
 def classic_request(exchange: Any, endpoint: str, params: dict) -> Any:

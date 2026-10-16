@@ -18,6 +18,7 @@ from .paper_trading import paper_service
 from .live_exchange import live_exchange, live_bot
 from .profile_store import profile_store
 from .credential_store import credential_store
+from .serialization import optional_volume
 from .exchange_stream import ExchangeStreams
 from .fine_tuning import fine_tune
 
@@ -146,6 +147,7 @@ class ExchangeOrderRequest(BaseModel):
     direction: Literal['long','short']
     quantity: float = Field(gt=0,le=1e9)
     stop_price: float = Field(gt=0,le=1e9)
+    take_profit_price: float | None = Field(default=None,gt=0,le=1e9)
     leverage: int = Field(ge=1,le=100)
     confirmation: Literal['PLACE LIVE ORDER']
 
@@ -187,6 +189,16 @@ def exchange_overview(venue: Literal['okx','htx','mexc','binance']):
         raise HTTPException(status_code=400, detail=str(error)) from error
 
 
+@app.get('/api/exchange/trade-history')
+def exchange_trade_history(venue: Literal['okx','htx','mexc','binance']):
+    try:
+        return {'trades': live_exchange.trade_history(venue)}
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(status_code=502, detail='Closed trade history is unavailable from the exchange.') from error
+
+
 @app.get('/api/exchange/stream')
 async def exchange_stream(venue: Literal['okx','htx','mexc','binance']):
     try:
@@ -199,14 +211,23 @@ async def exchange_stream(venue: Literal['okx','htx','mexc','binance']):
 
 @app.get('/api/exchange/candles')
 def exchange_candles(venue: Literal['okx','htx','mexc','binance'],
-                     timeframe: Literal['1m','3m','5m','10m','15m','30m','1h','4h','1d'] = '1m'):
+                     timeframe: Literal['1m','3m','5m','10m','15m','30m','1h','4h','1d'] = '1m',
+                     before: int | None = None):
     try:
         exchange, market = live_exchange._get(venue)
         durations = {'1m':60,'3m':180,'5m':300,'10m':600,'15m':900,'30m':1800,'1h':3600,'4h':14400,'1d':86400}
         supported = [key for key in durations if key in exchange.timeframes
                      and durations[key] <= durations[timeframe] and durations[timeframe] % durations[key] == 0]
         source = max(supported, key=lambda key: durations[key]) if supported else '1m'
-        return {'candles': exchange.fetch_ohlcv(market['symbol'], source, limit=500)}
+        limit = 500
+        since = None if before is None else max(0, before * 1000 - limit * durations[source] * 1000)
+        candles = exchange.fetch_ohlcv(market['symbol'], source, since=since, limit=limit)
+        if before is not None:
+            candles = [candle for candle in candles if candle[0] < before * 1000]
+        # Exchanges apply different per-request caps (often 100-300 rows), so a
+        # short page does not mean history ended. The client stops when a page
+        # contains no candle older than its current boundary.
+        return {'candles': candles, 'hasMore': bool(candles)}
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except Exception as error:
@@ -215,8 +236,10 @@ def exchange_candles(venue: Literal['okx','htx','mexc','binance'],
 
 @app.post('/api/exchange/disconnect')
 def exchange_disconnect(parameters: ExchangeDisconnectRequest):
-    live_exchange.disconnect(parameters.venue)
-    return {'venue':parameters.venue,'connected':False}
+    try:
+        return live_exchange.disconnect(parameters.venue)
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
 
 
 @app.post('/api/exchange/reconnect')
@@ -242,7 +265,8 @@ def exchange_order(parameters: ExchangeOrderRequest):
         exchange,market=live_exchange.execution_client(parameters.venue)
         exchange.set_margin_mode('isolated',market['symbol'])
         exchange.set_leverage(parameters.leverage,market['symbol'])
-        return live_exchange.open_with_stop(parameters.venue,parameters.direction,parameters.quantity,parameters.stop_price)
+        return live_exchange.open_with_stop(parameters.venue,parameters.direction,parameters.quantity,
+                                            parameters.stop_price,parameters.take_profit_price)
     except ValueError as error:
         raise HTTPException(status_code=400,detail=str(error)) from error
     except Exception as error:
@@ -418,7 +442,9 @@ def candle_page(frame, before=None, limit=5000):
         complete = complete.loc[complete.index < pd.Timestamp(before, unit='s', tz='UTC')]
     selected = complete.tail(limit)
     candles = [dict(time=int(t.timestamp()), open=float(row.open), high=float(row.high),
-                    low=float(row.low), close=float(row.close)) for t, row in selected.iterrows()]
+                    low=float(row.low), close=float(row.close),
+                    **optional_volume(row.volume if 'volume' in selected.columns else None))
+               for t, row in selected.iterrows()]
     return dict(candles=candles, hasMore=len(complete) > len(selected),
                 nextBefore=candles[0]['time'] if candles else None)
 

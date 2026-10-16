@@ -3,7 +3,7 @@ export type Analysis = {
   history?: {hasMore: boolean; nextBefore: number | null};
   params: Parameters; asOf: number; dataRange: {startDate: string; endDate: string};
   quality: {minuteBars: number; missingMinutes: number; excludedBars: number; completeBars: number};
-  candles: {time: number; open: number; high: number; low: number; close: number}[];
+  candles: {time: number; open: number; high: number; low: number; close: number; volume?: number}[];
 };
 export const fmt = (v: number | null, digits=2) => v === null ? '—' : v.toLocaleString('en-US', {maximumFractionDigits: digits});
 

@@ -1,0 +1,409 @@
+.live-terminal-controls .live-method-section {
+  padding: 0;
+}
+
+.live-terminal-controls .ui-tabs {
+  padding: 0 18px;
+  gap: 24px;
+}
+
+.live-terminal-controls .ui-tabs > button {
+  font-size: 14px;
+}
+
+.ticket-connection {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 18px 0;
+}
+
+.ticket-connection .ui-button {
+  min-height: 26px;
+  font-size: 10px;
+  padding: 4px;
+}
+
+.order-ticket {
+  padding: 16px 18px 20px;
+}
+
+.ticket-segment {
+  display: flex;
+  padding: 0;
+  border-radius: 4px;
+  background: var(--surface-raised);
+  margin-bottom: 16px;
+}
+
+.ticket-segment button {
+  width: 50%;
+  min-height: 32px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 7px;
+}
+
+.ticket-segment button[aria-pressed=true] {
+  background: #00a981;
+  color: white;
+  border-radius: 4px;
+}
+
+.ticket-mode-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.ticket-mode-row > .ui-status {
+  justify-content: center;
+  font-size: 11px;
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.ticket-mode-row select {
+  width: 100%;
+  height: 32px;
+  padding: 6px;
+  margin: 0;
+  background: var(--surface-raised);
+  border: 0;
+  color: var(--text);
+  font-size: 11px;
+  text-align: center;
+}
+
+.ticket-order-type {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ticket-order-type > strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.ticket-order-type > span {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.ticket-available {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 16px 0;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.ticket-available strong {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.ticket-available small {
+  font-size: 9px;
+}
+
+.ticket-market-price {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 38px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border-radius: 4px;
+  background: #242830;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.ticket-market-price strong {
+  color: #a6b3c6;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.ticket-market-price small {
+  font-size: 9px;
+}
+
+.ticket-size {
+  display: block;
+  margin-bottom: 16px;
+}
+
+.ticket-size > span {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.ticket-size > div {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--field);
+  overflow: hidden;
+}
+
+.ticket-size input {
+  min-width: 0;
+  width: 100%;
+  height: 42px;
+  border: 0;
+  margin: 0;
+  background: transparent;
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--text);
+  outline-offset: -2px;
+}
+
+.ticket-size select {
+  flex: none;
+  width: 72px;
+  height: 34px;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  padding: 6px;
+  font-size: 11px;
+  color: var(--text);
+}
+
+.ticket-stop {
+  gap: 8px;
+  margin: 0 0 16px;
+  font-size: 11px;
+}
+
+.ticket-tpsl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.ticket-tpsl legend {
+  padding: 0 6px;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ticket-tpsl .ticket-stop {
+  margin: 0;
+}
+
+.ticket-stop > span {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.ticket-stop small {
+  font-size: 9px;
+  color: var(--muted);
+}
+
+.ticket-stop input {
+  min-height: 40px;
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 12px;
+}
+
+.ticket-estimates {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
+
+.ticket-estimates > div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ticket-estimates span {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.ticket-estimates b {
+  font-size: 10px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.ticket-confirm {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 8px 0 16px;
+  color: #a1adbf;
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.ticket-confirm input {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 13px;
+  margin: 2px 0 0;
+  padding: 0;
+  accent-color: var(--blue);
+}
+
+.ticket-submit-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.ticket-submit-row .ui-button {
+  min-height: 40px;
+  border: 0;
+  font-size: 12px;
+}
+
+.ticket-buy {
+  background: #00a981;
+  color: white;
+}
+
+.ticket-sell {
+  background: #f03e61;
+  color: white;
+}
+
+.ticket-help {
+  margin: 12px 0 0;
+  font-size: 10px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+
+.ticket-position {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 0;
+}
+
+.ticket-position > strong {
+  font-size: 14px;
+}
+
+.ticket-close-panel dl {
+  padding: 0;
+  margin: 0 0 18px;
+}
+
+.ticket-close-panel dl > div {
+  padding: 12px 0;
+  font-size: 11px;
+}
+
+.ticket-close-panel > .ui-button {
+  width: 100%;
+}
+
+.live-terminal-controls .live-risk-note {
+  border-top: 1px solid var(--border);
+  margin: 0;
+  padding: 12px 18px;
+  font-size: 9px;
+  line-height: 1.7;
+}
+
+.live-assets .ui-panel-heading {
+  padding: 14px 18px;
+}
+
+.live-assets .ui-panel-heading h2 {
+  font-size: 14px;
+}
+
+.assets-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 18px 18px 8px;
+}
+
+.assets-heading strong {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.assets-heading span {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.live-assets dl {
+  margin: 0;
+  padding: 0 18px 12px;
+}
+
+.live-assets dl > div {
+  padding: 10px 0;
+  font-size: 11px;
+  border-bottom: 0;
+}
+
+.live-assets dd {
+  font-weight: 500;
+  color: var(--text);
+}
+
+.assets-pnl {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+}
+
+.assets-pnl span {
+  color: var(--muted);
+}
+
+.assets-pnl small {
+  display: block;
+  margin-top: 5px;
+  font-size: 9px;
+}
+
+.assets-pnl strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.assets-note {
+  padding: 0 18px 16px;
+  font-size: 9px;
+  color: var(--muted);
+}

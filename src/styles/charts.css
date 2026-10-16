@@ -1,0 +1,142 @@
+/* Compact trade balance chart: short axis ticks and deliberate two-row tools. */
+
+.balance-chart-shell .chart-toolbar {
+  display: grid;
+  grid-template-columns: repeat(2,minmax(0,1fr));
+  gap: 8px;
+  padding: 10px !important;
+  height: auto;
+  min-width: 0;
+}
+
+.balance-chart-shell .chart-toolbar>div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.balance-chart-shell .chart-toolbar>button {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.balance-chart-shell .chart-toolbar button {
+  padding: 5px 7px;
+  font-size: 10px;
+}
+
+.balance-chart-shell .chart-toolbar span {
+  font-size: 10px;
+}
+
+.balance-chart-shell .equity-resize {
+  height: 240px;
+  min-height: 200px;
+}
+
+.balance-chart-shell:fullscreen .chart-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.balance-chart-shell:fullscreen .chart-toolbar>div {
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.balance-chart-shell:fullscreen .chart-toolbar>button {
+  width: auto;
+}
+
+.balance-chart-shell:fullscreen .equity-resize {
+  height: auto;
+  min-height: 0;
+}
+
+.results-balance {
+  margin-top: 16px;
+}
+
+.results-balance .equity-resize {
+  height: 360px;
+  min-height: 260px;
+}
+
+.results-balance .chart-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 16px !important;
+}
+
+.results-balance .chart-toolbar>div {
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.results-balance .chart-toolbar>button {
+  width: auto;
+}
+
+.results-balance .balance-chart-shell:fullscreen .equity-resize {
+  height: auto;
+  min-height: 0;
+}
+
+@media (max-width:600px) {
+  .results-balance .equity-resize {
+    height: 280px;
+    min-height: 220px;
+  }
+}
+
+.configuration-run-actions {
+  align-items: flex-end;
+}
+
+.configuration-run-actions>label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 150px;
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.configuration-run-actions>label select {
+  height: 40px;
+  margin: 0;
+}
+
+.configuration-run-actions>button {
+  height: 40px;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.configuration-runbar>div:first-child {
+  min-width: 0;
+}
+
+@media (max-width:600px) {
+  .configuration-run-actions {
+    width: 100%;
+  }
+  .configuration-run-actions>label {
+    width: 100%;
+    min-width: 0;
+  }
+  .configuration-run-actions>button {
+    height: auto;
+    min-height: 40px;
+    white-space: normal;
+  }
+}

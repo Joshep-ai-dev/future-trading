@@ -1,32 +1,33 @@
+import {useState} from 'react';
 import {CHART_TIME_ZONES,saveChartTimeZone,useChartTimeZone,type ChartTimeZone} from './chartTimeZone';
 import LiveExecution from './LiveExecution';
+import {Button,PageHeader,Panel,StatusBadge} from './components/ui';
+import type {AccountMode} from './components/AppHeader';
 import type {BacktestSettings} from './types';
 
-type AccountMode='live'|'paper';
-
-function AccountPage({onBack,settings,accountMode,onAccountModeChange}:{onBack:()=>void;settings:BacktestSettings;accountMode:AccountMode;onAccountModeChange:(mode:AccountMode)=>void}){
-  const chartTimeZone=useChartTimeZone();
-  return <section className="account-page" aria-labelledby="account-page-title">
-    <div className="account-page-heading">
-      <div><span className="eyebrow">PROFILE · PREFERENCES</span><h1 id="account-page-title">Account</h1><p>Manage account access and the time zone used across your workspace.</p></div>
-      <button className="secondary" onClick={onBack}>Back to terminal</button>
-    </div>
-    <section className="account-preference-card account-mode-card" aria-labelledby="account-mode-title">
-      <div className="account-preference-heading"><span className="account-step">01</span><div><h2 id="account-mode-title">Account mode</h2><p>Choose whether the terminal uses virtual funds or a connected exchange.</p></div></div>
-      <div className="account-switch" role="radiogroup" aria-label="Account mode">
-        <label className={accountMode==='paper'?'selected':''}><input type="radio" name="account-mode" value="paper" checked={accountMode==='paper'} onChange={()=>onAccountModeChange('paper')}/><span>Paper account</span><small>Simulated orders</small></label>
-        <label className={accountMode==='live'?'selected':''}><input type="radio" name="account-mode" value="live" checked={accountMode==='live'} onChange={()=>onAccountModeChange('live')}/><span>Live exchange</span><small>Real XAG/USDT orders</small></label>
-      </div>
-    </section>
-    <section className="account-preference-card account-display-card" aria-labelledby="time-preferences-title">
-      <div className="account-preference-heading"><span className="account-step">02</span><div><h2 id="time-preferences-title">Time zone</h2><p>One preference keeps chart labels and trade history in sync.</p></div></div>
-      <label className="account-preference-field single-timezone-field"><span>Display and trading time zone</span><select aria-label="Display and trading time zone" value={chartTimeZone} onChange={event=>saveChartTimeZone(event.target.value as ChartTimeZone)}>{CHART_TIME_ZONES.map(zone=><option key={zone.value} value={zone.value}>{zone.label}</option>)}</select><small>Applies to candles, crosshairs, orders and trade timestamps. Market data and backtest date boundaries remain UTC. Saved in this browser.</small></label>
-    </section>
-    <section className="account-preference-card account-exchange-card" aria-labelledby="exchange-account-title">
-      <div className="account-preference-heading"><span className="account-step">03</span><div><h2 id="exchange-account-title">Exchange connection</h2><p>Connect an exchange API key for live XAG/USDT perpetual trading.</p></div></div>
-      <LiveExecution view="account" settings={settings}/>
-    </section>
-  </section>;
+type Section='connections'|'preferences';
+function SettingsIcon({section}:{section:Section}){
+  return <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">{section==='connections'?<><path d="m9 15 6-6M7 17l-2 2a4 4 0 0 1-6-6l5-5a4 4 0 0 1 6 0M17 7l2-2a4 4 0 0 1 6 6l-5 5a4 4 0 0 1-6 0" transform="translate(2 0) scale(.85)"/></>:<><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/></>}</svg>;
 }
 
-export default AccountPage;
+export default function AccountPage({onBack,settings,accountMode,onAccountModeChange}:{onBack:()=>void;settings:BacktestSettings;accountMode:AccountMode;onAccountModeChange:(mode:AccountMode)=>void}){
+  const chartTimeZone=useChartTimeZone();
+  const [section,setSection]=useState<Section>('connections');
+  return <section id="page-account" className="account-page account-settings-page" role="tabpanel" aria-labelledby="tab-account">
+    <PageHeader eyebrow="YOUR WORKSPACE" title="Account settings" description="Exchange access and preferences, all in one place." actions={<StatusBadge tone={accountMode==='live'?'warning':'neutral'} dot>{accountMode==='live'?'Live account':'Paper account'}</StatusBadge>}/>
+    <div className="account-settings-shell">
+      <aside className="account-navigation">
+        <div className="account-workspace-identity"><span>S</span><div><strong>Silver workspace</strong><small>Local trading terminal</small></div></div>
+        <nav aria-label="Account settings sections">{([['connections','Exchange connections'],['preferences','Preferences']] as const).map(([value,label])=><button type="button" key={value} aria-current={section===value?'page':undefined} onClick={()=>setSection(value)}><SettingsIcon section={value}/><span>{label}</span><span aria-hidden="true">›</span></button>)}</nav>
+        <div className="account-navigation-footer"><span className="ui-eyebrow">PRIVATE BY DESIGN</span><p>API credentials are encrypted in your local database.</p><Button variant="ghost" onClick={onBack}>← Back to trading</Button></div>
+      </aside>
+      <div className="account-settings-main">
+        {section==='connections'?<Panel className="account-connections-surface" title="Exchange connections" description="Manage API access to your trading venues."><LiveExecution view="account" settings={settings} onOpenTerminal={onBack}/></Panel>:<Panel title="Workspace preferences" description="Changes apply immediately to this browser." className="account-preferences-surface">
+          <div className="preference-row"><div><h3>Trading account</h3><p>Use virtual funds or your connected exchange account.</p></div><label className="ui-field"><span className="sr-only">Trading account mode</span><select aria-label="Trading account mode" value={accountMode} onChange={event=>onAccountModeChange(event.target.value as AccountMode)}><option value="paper">Paper account</option><option value="live">Live account</option></select></label></div>
+          <div className="preference-row"><div><h3>Chart & trading time zone</h3><p>Keep chart labels and trade history in the same time zone.</p></div><label className="ui-field"><span className="sr-only">Display and trading time zone</span><select aria-label="Display and trading time zone" value={chartTimeZone} onChange={event=>saveChartTimeZone(event.target.value as ChartTimeZone)}>{CHART_TIME_ZONES.map(zone=><option key={zone.value} value={zone.value}>{zone.label}</option>)}</select></label></div>
+          <div className="preferences-footer"><StatusBadge dot tone="positive">Saved automatically</StatusBadge><p>Preferences stay in this browser. Historical data boundaries remain UTC.</p></div>
+        </Panel>}
+      </div>
+    </div>
+  </section>;
+}

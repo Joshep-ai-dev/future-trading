@@ -1,4 +1,5 @@
 import TradeView from './TradeView';
+import {Button,EmptyState,Metric,PageHeader,Panel} from './components/ui';
 import {useMemo,useState} from 'react';
 import BacktestChart,{EquityChart} from './BacktestChart';
 import {fmt,type BacktestResult,type Trade} from './types';
@@ -19,15 +20,15 @@ export default function ResultsWorkspace({result,busy,stale,onRun,onConfigure,on
   const currentPage=Math.min(page,pages-1);
   const exits=useMemo(()=>Object.entries((p?.trades??[]).reduce<Record<string,number>>((counts,t)=>{counts[t.exitReason]=(counts[t.exitReason]??0)+1;return counts;},{})),[p]);
   return <>
-    <div className="workspace-heading"><div><span className="eyebrow">BACKTEST REPORT</span><h1>Backtest</h1><p>Review the run, its performance and every simulated trade.</p></div><div className="workspace-actions"><button className="secondary" onClick={onConfigure}>Edit settings</button>{result&&<button className="secondary" onClick={onExport}>Export JSON</button>}<button disabled={busy} onClick={onRun}>{busy?'Running…':'Run backtest'}</button></div></div>
+    <PageHeader eyebrow="WORKSPACE / RESEARCH" title="Backtest" description="Evaluate your strategy and inspect every simulated trade." actions={<><Button variant="secondary" onClick={onConfigure}>Edit settings</Button>{result&&<Button variant="secondary" onClick={onExport}>Export results</Button>}<Button disabled={busy} onClick={onRun}>{busy?'Running?':'Run backtest'}</Button></>}/>
     {stale&&<p className="notice">Settings have changed. These results use the previous configuration.</p>}
     {result&&p&&s?<>
       <div className="run-context"><span className="run-label">BB OUTER BAND REVERSAL</span><span>{result.executionTimeframe.toUpperCase()} candles</span><span>{result.settings.max_leverage}× leverage</span><span>{utc(p.start)} — {utc(p.end)} UTC</span><span className="paper-badge">SIMULATED</span></div>
-      <div className="result-scorecards">
-        <article><small>Net P&amp;L</small><strong className={s.netPnl>=0?'positive':'negative'}>{s.netPnl>=0?'+':''}${fmt(s.netPnl)}</strong><span className={s.returnPct>=0?'positive':'negative'}>{s.returnPct>=0?'+':''}{fmt(s.returnPct)}% return</span></article>
-        <article><small>Ending balance</small><strong>${fmt(s.endingBalance)}</strong><span>Started with ${fmt(result.settings.capital)}</span></article>
-        <article><small>Win rate</small><strong>{fmt(s.winRate)}%</strong><span>{s.wins} wins · {s.losses} losses</span></article>
-        <article><small>Max drawdown</small><strong className="negative">{fmt(s.maxDrawdownPct)}%</strong><span>Measured on closing equity</span></article>
+      <div className="ui-metric-grid result-scorecards">
+        <Metric label="Net P&L" value={`${s.netPnl>=0?'+':''}$${fmt(s.netPnl)}`} tone={s.netPnl>=0?'positive':'negative'} detail={`${fmt(s.returnPct)}% return`}/>
+        <Metric label="Ending balance" value={`$${fmt(s.endingBalance)}`} detail={`Starting balance $${fmt(result.settings.capital)}`}/>
+        <Metric label="Win rate" value={`${fmt(s.winRate)}%`} detail={`${s.wins} wins / ${s.losses} losses`}/>
+        <Metric label="Max drawdown" value={`${fmt(s.maxDrawdownPct)}%`} tone="negative" detail="Measured on closing equity"/>
       </div>
       <div className="results-layout"><div className="results-main">
         <section className="terminal-panel result-chart"><TradingChartHeader timeframe={result.executionTimeframe} mode="BACKTEST" caption={`Backtest executions on ${result.executionTimeframe} candles`} actions={<button className="text-button" onClick={()=>setSelectedId(null)}>Show latest ↗</button>}/>
@@ -43,6 +44,7 @@ export default function ResultsWorkspace({result,busy,stale,onRun,onConfigure,on
         <section className="terminal-panel trade-inspector"><div className="panel-heading"><h2>Position inspector</h2>{selected&&<span className="count-tag">#{selected.id}</span>}</div>{selected?<><div className="inspector-side"><span className={`side-badge ${selected.direction===1?'long':'short'}`}>{selected.direction===1?'LONG':'SHORT'}</span><strong className={selected.netPnl>=0?'positive':'negative'}>{selected.netPnl>=0?'+':''}${fmt(selected.netPnl)}</strong></div><dl>{[[`Entry candle (${tradingTimeZone})`,tradeTime(selected.entryTime,tradingTimeZone)],[`Exit candle (${tradingTimeZone})`,tradeTime(selected.exitTime,tradingTimeZone)],['Quantity',fmt(selected.quantity,4)],['Initial stop',fmt(selected.initialStop??selected.stop,3)],['Final stop',fmt(selected.finalStop??selected.stop,3)],['Planned risk',`$${fmt(selected.plannedRisk)}`],['Exit reason',reason(selected.exitReason)]].map(([label,value])=><div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>{(selected.stopHistory?.length??0)>1&&<details className="inspector-stops"><summary>Stop adjustments ({selected.stopHistory!.length-1})</summary><table><thead><tr><th>{tradingTimeZone} candle</th><th>Price</th></tr></thead><tbody>{selected.stopHistory!.map(h=><tr key={h.time}><td>{tradeTime(h.time,tradingTimeZone)}</td><td>{fmt(h.price,3)}</td></tr>)}</tbody></table></details>}</>:<div className="empty-position"><span className="empty-state-symbol">◇</span><h3>Inspect a trade</h3><p>Select a chart marker or ledger row to see entry, exit and stop details.</p></div>}</section>
         {!!exits.length&&<section className="terminal-panel"><div className="panel-heading"><h2>Exit distribution</h2></div><dl>{exits.map(([key,count])=><div key={key}><dt>{reason(key)}</dt><dd>{count}</dd></div>)}</dl></section>}
       </aside></div>
-    </>:<div className="analysis-empty"><span className="empty-chart-icon">⌁</span><h2>{busy?'Building your backtest':'Your strategy, measured'}</h2><p>{busy?'Processing completed candles and simulated trades…':'Choose your parameters and a date range, then run a backtest to explore performance and every executed trade.'}</p>{!busy&&<button onClick={onConfigure}>Configure backtest</button>}</div>}
+    </>:<Panel className="analysis-empty-panel"><EmptyState title={busy?'Building your backtest':'Test before you trade'} description={busy?'Processing completed candles and simulated trades?':'Set a date range and strategy parameters to review performance, risk, and individual trades.'} action={!busy&&<Button onClick={onConfigure}>Configure backtest</Button>}/></Panel>}
+
   </>;
 }

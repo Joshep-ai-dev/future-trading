@@ -5,11 +5,23 @@ import ccxt
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from .exchange_stream import ExchangeStreams, classic_auth
-from .htx_account import classic_balance, classic_positions
+from .htx_account import classic_balance, classic_positions, rejection_reason, normalize_htx_balance
 from .live_exchange import LiveExchange
 
 
 class HTXAccountTests(unittest.TestCase):
+    def test_v5_available_field_is_recognized_without_using_total_equity(self) -> None:
+        balance = {'total': {'USDT': 100}, 'free': {'USDT': None},
+                   'info': {'data': {'details': [{'currency': 'USDT', 'available': '4.96', 'initial_margin': '20'}]}}}
+        result = normalize_htx_balance(balance)
+        self.assertEqual(result['free']['USDT'], 4.96)
+        self.assertEqual(result['used']['USDT'], 20)
+        self.assertIsNone(balance['free']['USDT'])
+
+    def test_v5_zero_available_margin_is_preserved(self) -> None:
+        balance = {'total': {'USDT': 100}, 'info': {'details': [{'currency': 'USDT', 'available_margin': '0', 'available': '50'}]}}
+        self.assertEqual(normalize_htx_balance(balance)['free']['USDT'], 0)
+
     def test_v5_authentication_rejection_can_connect_classic_account(self) -> None:
         exchange = MagicMock()
         exchange.options = {}
@@ -26,9 +38,29 @@ class HTXAccountTests(unittest.TestCase):
         exchange.options = {}
         exchange.fetch_balance.side_effect = ccxt.AuthenticationError('private-key')
         exchange.request.side_effect = ccxt.AuthenticationError('private-secret')
-        with self.assertRaises(ccxt.AuthenticationError):
+        with self.assertRaises(ValueError) as caught:
             LiveExchange.account_balance(exchange, 'htx')
+        self.assertIn('V5:', str(caught.exception))
+        self.assertIn('Classic:', str(caught.exception))
+        self.assertNotIn('private-key', str(caught.exception))
+        self.assertNotIn('private-secret', str(caught.exception))
         self.assertNotIn('localAccountApi', exchange.options)
+
+    def test_rejected_v5_response_is_not_accepted_as_an_empty_balance(self) -> None:
+        exchange = MagicMock()
+        exchange.options = {}
+        exchange.fetch_balance.return_value = {'info': {'code': 401}, 'total': {}}
+        exchange.request.side_effect = ccxt.AuthenticationError('private-secret')
+        with self.assertRaisesRegex(ValueError, '401'):
+            LiveExchange.account_balance(exchange, 'htx')
+
+    def test_diagnostic_exposes_only_fixed_reason_and_allowed_code(self) -> None:
+        error = ccxt.AuthenticationError('htx {"err_code":403,"err_msg":"Signature not valid: IP address private-secret", "AccessKeyId":"private-key"}')
+        reason = rejection_reason(error)
+        self.assertIn('IP-address', reason)
+        self.assertIn('403', reason)
+        self.assertNotIn('private-secret', reason)
+        self.assertNotIn('private-key', reason)
 
     def test_empty_v5_balance_selects_classic_and_sums_account_modes(self) -> None:
         exchange = MagicMock()
@@ -105,6 +137,8 @@ class ExchangeStreamTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(payload['market']['last'], 32)
                 self.assertEqual(payload['streams']['market'], 'live')
                 self.assertNotIn('private-secret', event)
+                self.assertNotIn('book', payload)
+                client.watch_order_book.assert_not_called()
                 factory.assert_called_once()
                 await first.aclose()
                 client.close.assert_not_awaited()

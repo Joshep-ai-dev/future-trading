@@ -1,0 +1,772 @@
+.account-settings-page {
+  max-width: 1360px;
+  padding-bottom: 32px;
+}
+
+.account-settings-page .ui-page-header {
+  padding: 36px 0 30px;
+}
+
+.account-settings-page .ui-page-header h1 {
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -.7px;
+}
+
+.account-settings-page .ui-page-header p {
+  font-size: 13px;
+  margin-top: 9px;
+}
+
+.account-settings-shell {
+  display: grid;
+  grid-template-columns: 216px minmax(0, 1fr);
+  align-items: start;
+  gap: 28px;
+}
+
+.account-navigation {
+  position: sticky;
+  top: 92px;
+  padding-top: 4px;
+}
+
+.account-workspace-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 12px 24px;
+}
+
+.account-workspace-identity > span {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: #2e7df61a;
+  border: 1px solid #2e7df630;
+  color: #8bb8ff;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.account-workspace-identity strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.account-workspace-identity small {
+  display: block;
+  font-size: 10px;
+  margin-top: 5px;
+}
+
+.account-navigation nav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.account-navigation nav button {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  min-height: 44px;
+  padding: 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+  text-align: left;
+}
+
+.account-navigation nav button[aria-current=page] {
+  background: #2e7df613;
+  border-color: #2e7df621;
+  color: #8eb8ff;
+}
+
+.account-navigation nav button > span:last-child {
+  margin-left: auto;
+  font-size: 18px;
+  opacity: .65;
+}
+
+.account-navigation svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.account-navigation-footer {
+  margin: 28px 12px 0;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+
+.account-navigation-footer .ui-eyebrow {
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: #647084;
+}
+
+.account-navigation-footer p {
+  max-width: 170px;
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.account-navigation-footer .ui-button {
+  padding: 10px 0;
+  font-size: 11px;
+  margin-top: 12px;
+  color: #a4b7d1;
+}
+
+.account-settings-main {
+  min-width: 0;
+}
+
+.account-settings-main > .ui-panel {
+  border-radius: 9px;
+  border-color: #2b303b;
+  box-shadow: 0 8px 32px #0000000d;
+}
+
+.account-settings-main .ui-panel-heading {
+  padding: 24px 28px;
+}
+
+.account-settings-main .ui-panel-heading h2 {
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: -.2px;
+}
+
+.account-settings-main .ui-panel-heading p {
+  margin-top: 7px;
+  font-size: 12px;
+}
+
+.connections-workspace {
+  display: grid;
+  grid-template-columns: 195px minmax(0, 1fr);
+  min-height: 440px;
+}
+
+.connections-list {
+  padding: 22px 14px;
+  border-right: 1px solid var(--border);
+  background: #111419;
+}
+
+.connections-list-heading {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 10px 16px;
+  color: #758195;
+  font-size: 8px;
+  letter-spacing: .9px;
+}
+
+.connections-list-heading > span {
+  letter-spacing: 0;
+  color: #626f83;
+}
+
+.connection-choice {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 10px;
+  margin-bottom: 5px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.connection-choice.selected {
+  background: #202735;
+  border-color: #34425a;
+}
+
+.connection-choice:hover {
+  background: #1b2029;
+}
+
+.connection-choice.selected:hover {
+  background: #202735;
+}
+
+.connection-choice > input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  margin: 0;
+}
+
+.connection-choice:focus-within {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.connection-monogram {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  border: 1px solid #354052;
+  border-radius: 7px;
+  background: #222a36;
+  color: #a9bedc;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.connection-choice strong {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.connection-choice small {
+  display: block;
+  margin-top: 4px;
+  font-size: 9px;
+  color: #76849b;
+}
+
+.connection-choice > i {
+  margin-left: auto;
+  flex: 0 0 5px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #404b5c;
+}
+
+.connection-choice > i.connected {
+  background: var(--green);
+}
+
+.connection-detail {
+  padding: 28px;
+  min-width: 0;
+}
+
+.connection-detail-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.connection-detail-heading > div {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.connection-monogram--large {
+  width: 42px;
+  height: 42px;
+  flex-basis: 42px;
+  border-radius: 10px;
+  font-size: 19px;
+}
+
+.connection-detail-heading h2 {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -.3px;
+}
+
+.connection-detail-heading p {
+  font-size: 11px;
+  margin-top: 4px;
+}
+
+.connection-detail-heading .ui-status {
+  padding: 6px 8px;
+  font-size: 10px;
+}
+
+.connection-success {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 17px;
+  border: 1px solid #16c79a28;
+  border-radius: 6px;
+  background: #16c79a07;
+}
+
+.connection-success > span {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  border-radius: 50%;
+  background: #16c79a17;
+  color: var(--green);
+  font-size: 13px;
+}
+
+.connection-success strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: #c6e6db;
+}
+
+.connection-success p {
+  font-size: 11px;
+  margin-top: 6px;
+  line-height: 1.6;
+}
+
+.connection-metadata {
+  padding: 16px 0 8px;
+  margin: 0 0 18px;
+}
+
+.connection-metadata > div {
+  padding: 12px 0;
+  border-bottom: 1px solid #242a34;
+  font-size: 11px;
+}
+
+.connection-metadata > div:last-child {
+  border-bottom: 0;
+}
+
+.connection-metadata dt {
+  color: var(--muted);
+}
+
+.connection-metadata dd {
+  color: #c2ccdb;
+  font-size: 11px;
+}
+
+.connection-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.connection-actions .ui-button {
+  min-height: 38px;
+  padding: 9px 14px;
+  font-size: 11px;
+}
+
+.connection-actions .ui-button--danger {
+  margin-left: auto;
+}
+
+.connection-footnote {
+  margin-top: 14px;
+  max-width: 540px;
+  font-size: 10px;
+  line-height: 1.75;
+}
+
+.connection-security {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding-top: 20px;
+  margin-top: 26px;
+  border-top: 1px solid var(--border);
+  color: #6d7a8f;
+  font-size: 9px;
+}
+
+.connection-security .ui-button {
+  padding: 4px 0;
+  min-height: 28px;
+  color: #8898b0;
+  font-size: 10px;
+}
+
+.connection-intro {
+  font-size: 12px;
+  margin-bottom: 20px;
+}
+
+.connection-saved {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 16px;
+  background: #1b212c;
+  border: 1px solid #303b4e;
+  border-radius: 6px;
+  margin-bottom: 22px;
+}
+
+.connection-saved strong {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.connection-saved span {
+  display: block;
+  font-size: 10px;
+  color: var(--muted);
+  line-height: 1.6;
+  margin-top: 4px;
+}
+
+.connection-saved .ui-button {
+  font-size: 11px;
+}
+
+.connection-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  max-width: 650px;
+}
+
+.connection-form .ui-field {
+  font-size: 11px;
+}
+
+.connection-form .ui-field input {
+  min-height: 42px;
+  font-size: 12px;
+}
+
+.connection-form > .ui-button {
+  grid-column: 1 / -1;
+  justify-self: start;
+  min-width: 140px;
+  margin-top: 2px;
+  font-size: 11px;
+}
+
+.preference-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  align-items: center;
+  gap: 28px;
+  margin: 0 28px;
+  padding: 28px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.preference-row h3 {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.preference-row p {
+  margin-top: 7px;
+  font-size: 11px;
+  max-width: 350px;
+}
+
+.preference-row select {
+  height: 40px;
+  font-size: 12px;
+}
+
+.preferences-footer {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 22px 28px;
+}
+
+.preferences-footer p {
+  font-size: 10px;
+}
+
+.live-bot-panel {
+  padding: 18px;
+}
+
+.bot-strategy-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.bot-strategy-heading .strategy-icon {
+  font-size: 11px;
+  width: 32px;
+  height: 32px;
+  background: #2e7df615;
+  border: 1px solid #2e7df630;
+  border-radius: 6px;
+}
+
+.bot-strategy-heading strong {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.bot-strategy-heading small {
+  display: block;
+  margin-top: 5px;
+  font-size: 9px;
+}
+
+.bot-strategy-heading > .ui-status {
+  margin-left: auto;
+  font-size: 8px;
+}
+
+.bot-live-balance {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0;
+  padding: 14px;
+  background: var(--field);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
+
+.bot-live-balance span {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.bot-live-balance small {
+  display: block;
+  margin-top: 6px;
+  font-size: 8px;
+  color: #6e8f9f;
+}
+
+.bot-live-balance strong {
+  font-size: 16px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.bot-ticket-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.bot-ticket-fields .ui-field, .bot-allocation {
+  font-size: 11px;
+}
+
+.bot-ticket-fields input, .bot-ticket-fields select {
+  min-height: 38px;
+  font-size: 12px;
+  padding: 8px 10px;
+}
+
+.bot-allocation .ticket-size {
+  margin: 0;
+}
+
+.bot-allocation .ticket-size > div {
+  gap: 0;
+}
+
+.bot-allocation .ticket-size select {
+  width: 65px;
+  min-height: 34px;
+}
+
+.live-bot-panel > .ticket-help {
+  font-size: 9px;
+}
+
+.live-bot-panel > .ticket-estimates {
+  margin-top: 16px;
+}
+
+.bot-start-action {
+  width: 100%;
+  min-height: 40px;
+}
+
+.bot-active-summary {
+  padding: 14px;
+  border: 1px solid #16c79a25;
+  background: #16c79a06;
+  border-radius: 5px;
+  margin-top: 12px;
+}
+
+.bot-active-summary > p {
+  margin: 10px 0;
+  font-size: 10px;
+}
+
+.bot-active-summary > .ui-button {
+  width: 100%;
+  font-size: 11px;
+}
+
+.bot-settings-link {
+  border-top: 1px solid var(--border);
+  margin-top: 18px;
+  padding-top: 8px;
+}
+
+.bot-settings-link .ui-button {
+  padding-left: 0;
+  font-size: 10px;
+  color: #80aaf2;
+}
+
+@media (max-width: 1150px) {
+  .account-settings-shell {
+    grid-template-columns: 185px minmax(0, 1fr);
+    gap: 20px;
+  }
+  .connections-workspace {
+    grid-template-columns: 165px minmax(0, 1fr);
+  }
+  .connection-detail {
+    padding: 22px;
+  }
+  .connection-choice {
+    gap: 8px;
+    padding: 12px 8px;
+  }
+  .connection-choice .connection-monogram {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .account-settings-shell {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+  .account-navigation {
+    position: static;
+    padding: 0;
+  }
+  .account-workspace-identity, .account-navigation-footer {
+    display: none;
+  }
+  .account-navigation nav {
+    flex-direction: row;
+    gap: 10px;
+  }
+  .account-navigation nav button {
+    width: auto;
+    padding: 12px 16px;
+  }
+  .account-navigation nav button > span:last-child {
+    display: none;
+  }
+  .preference-row {
+    grid-template-columns: minmax(0, 1fr) 220px;
+    gap: 20px;
+  }
+}
+
+@media (max-width: 600px) {
+  .account-settings-page .ui-page-header {
+    padding: 24px 0;
+    gap: 12px;
+  }
+  .account-settings-page .ui-page-header h1 {
+    font-size: 24px;
+  }
+  .account-navigation nav button {
+    font-size: 11px;
+    padding: 10px 12px;
+    gap: 8px;
+  }
+  .account-settings-main .ui-panel-heading {
+    padding: 20px;
+  }
+  .connections-workspace {
+    grid-template-columns: 1fr;
+  }
+  .connections-list {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 14px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .connections-list-heading {
+    display: none;
+  }
+  .connection-choice {
+    flex: none;
+    margin: 0;
+    min-width: 110px;
+  }
+  .connection-choice > input {
+    pointer-events: none;
+  }
+  .connection-detail {
+    padding: 20px;
+  }
+  .connection-detail-heading {
+    gap: 10px;
+  }
+  .connection-detail-heading h2 {
+    font-size: 16px;
+  }
+  .connection-form {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .connection-actions {
+    flex-wrap: wrap;
+  }
+  .connection-actions .ui-button {
+    flex: 1;
+    white-space: normal;
+  }
+  .connection-security {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .connection-saved {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .preference-row {
+    grid-template-columns: 1fr;
+    gap: 16px;
+    margin: 0 20px;
+    padding: 22px 0;
+  }
+  .preferences-footer {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 20px;
+    gap: 10px;
+  }
+}

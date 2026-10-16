@@ -1,4 +1,4 @@
-import {memo,useEffect,useMemo,useState} from 'react';
+import {memo,useCallback,useEffect,useMemo,useState} from 'react';
 import {api} from './api';
 import PaperPriceChart from './PaperPriceChart';
 import TradingChartHeader from './TradingChartHeader';
@@ -24,9 +24,9 @@ export default function LiveMarketChart({venue,settings}:{venue:ExchangeVenue;se
       try{
         const result=await api<{candles:number[][]}>(`/api/exchange/candles?venue=${venue}&timeframe=${timeframe}`,{signal:abort.signal});
         const buckets=new Map<number,Candle>();
-        for(const [timestamp,open,high,low,close] of result.candles){
+        for(const [timestamp,open,high,low,close,volume=0] of result.candles){
           const time=Math.floor(timestamp/1000/duration)*duration,previous=buckets.get(time);
-          buckets.set(time,previous?{...previous,high:Math.max(previous.high,high),low:Math.min(previous.low,low),close}:{time,open,high,low,close});
+          buckets.set(time,previous?{...previous,high:Math.max(previous.high,high),low:Math.min(previous.low,low),close,volume:(previous.volume??0)+volume}:{time,open,high,low,close,volume});
         }
         if(!abort.signal.aborted){setCandles([...buckets.values()].sort((a,b)=>a.time-b.time));setLoaded(true);}
       }catch(reason){if(!abort.signal.aborted)setError(String(reason));}
@@ -35,12 +35,12 @@ export default function LiveMarketChart({venue,settings}:{venue:ExchangeVenue;se
   },[venue,timeframe,duration,available]);
   useEffect(()=>{
     if(!loaded||!data?.candle)return;
-    const [timestamp,open,high,low,close]=data.candle;
+    const [timestamp,open,high,low,close,volume=0]=data.candle;
     const time=Math.floor(timestamp/1000/duration)*duration;
     setCandles(previous=>{
       const last=previous.at(-1);
       if(last&&time<last.time)return previous;
-      const next=last?.time===time?{...last,high:Math.max(last.high,high),low:Math.min(last.low,low),close}:{time,open,high,low,close};
+      const next=last?.time===time?{...last,high:Math.max(last.high,high),low:Math.min(last.low,low),close,volume}:{time,open,high,low,close,volume};
       return [...(last?.time===time?previous.slice(0,-1):previous),next].slice(-1000);
     });
   },[data?.candle,loaded,duration]);
@@ -51,8 +51,17 @@ export default function LiveMarketChart({venue,settings}:{venue:ExchangeVenue;se
     const smaLength=settings.bb_reversal.sma_length,smaRows=candles.slice(Math.max(0,index-smaLength+1),index+1);
     return {time:c.time,bbBasis:basis,bbUpper:basis===null||deviation===null?null:basis+deviation,bbLower:basis===null||deviation===null?null:basis-deviation,trendSma:smaRows.length===smaLength?smaRows.reduce((sum,row)=>sum+row.close,0)/smaLength:null};
   }),[candles,settings.bb_reversal.bb_length,settings.bb_reversal.bb_mult,settings.bb_reversal.sma_length]);
+  const loadHistory=useCallback(async(before:number)=>{
+    const result=await api<{candles:number[][];hasMore:boolean}>(`/api/exchange/candles?venue=${venue}&timeframe=${timeframe}&before=${before}`);
+    const buckets=new Map<number,Candle>();
+    for(const [timestamp,open,high,low,close,volume=0] of result.candles){
+      const time=Math.floor(timestamp/1000/duration)*duration,previous=buckets.get(time);
+      buckets.set(time,previous?{...previous,high:Math.max(previous.high,high),low:Math.min(previous.low,low),close,volume:(previous.volume??0)+volume}:{time,open,high,low,close,volume});
+    }
+    return {candles:[...buckets.values()].filter(c=>c.time<before).sort((a,b)=>a.time-b.time),hasMore:result.hasMore};
+  },[venue,timeframe,duration]);
   return <section className="terminal-panel price-panel live-price-panel"><TradingChartHeader timeframe={timeframe} onTimeframeChange={value=>setTimeframe(value as BacktestSettings['entry_timeframe'])} mode={`${venue.toUpperCase()} LIVE MARKET`} caption="Exchange candles · streaming updates"/>
     {(error||data?.errors.candleStream||!connected)&&<p className="exchange-inline-error" role="status">{error||data?.errors.candleStream||'Connecting to exchange stream…'}</p>}
-    {candles.length?<StreamingPriceChart key={`${venue}-${timeframe}`} sessionId={0} allowLocalHistory={false} showSma={settings.bb_reversal.use_sma_trend_adjustment} timeframe={timeframe} atrLength={settings.bb_reversal.atr_length} adxLength={settings.bb_reversal.adx_length} candles={candles} indicators={indicators} stops={emptyStops} trades={emptyTrades} position={null} indicatorClock={(data?.sectionTimes.candle??data?.sectionTimes.market??0)/1000}/>:<div className="chart-empty"><h3>{error?'Exchange chart unavailable':'Connecting to live market'}</h3><p>{venue.toUpperCase()} XAG/USDT perpetual candles</p></div>}
+    {candles.length?<StreamingPriceChart key={`${venue}-${timeframe}`} sessionId={0} allowLocalHistory={false} loadHistory={loadHistory} historyLabel="Pan left to load exchange history" showSma={settings.bb_reversal.use_sma_trend_adjustment} timeframe={timeframe} atrLength={settings.bb_reversal.atr_length} adxLength={settings.bb_reversal.adx_length} candles={candles} indicators={indicators} stops={emptyStops} trades={emptyTrades} position={null} indicatorClock={(data?.sectionTimes.candle??data?.sectionTimes.market??0)/1000}/>:<div className="chart-empty"><h3>{error?'Exchange chart unavailable':'Connecting to live market'}</h3><p>{venue.toUpperCase()} XAG/USDT perpetual candles</p></div>}
   </section>;
 }

@@ -3,13 +3,15 @@ from __future__ import annotations
 
 import threading
 import time
+import json
+import math
 from typing import Literal
 
 import pandas as pd
 
 from .bb_outer_reversal import Settings, run_backtest
 from .data import TIMEFRAMES
-from .htx_account import classic_balance, classic_positions, classic_orders
+from .htx_account import classic_balance, classic_positions, classic_orders, rejection_reason, normalize_htx_balance
 
 
 VENUES = {
@@ -27,6 +29,7 @@ class LiveExchange:
         self.clients = {}
         self.markets = {}
         self.protective_orders = {}
+        self.take_profit_orders = {}
         self.auto_bot = None
 
     @staticmethod
@@ -93,18 +96,22 @@ class LiveExchange:
                     contractSize=market.get('contractSize'), usdtBalance=total)
 
     def disconnect(self, venue: str):
-        if self.auto_bot and self.auto_bot.running:
-            raise ValueError('Stop the live strategy before disconnecting the exchange')
-        if self.clients.get(venue):
-            active=[position for position in self.positions(venue) if float(position.get('contracts') or 0)!=0]
-            if active:
-                raise ValueError('Close the XAG/USDT position before disconnecting the exchange')
-        with self.lock:
+        bot = self.auto_bot
+        if bot and bot.venue == venue:
+            bot.stop()
+            thread = bot.thread
+            if thread and thread.is_alive():
+                thread.join(timeout=15)
+                if thread.is_alive():
+                    raise ValueError('The live bot is finishing an exchange request. No new cycles will start. Retry Disconnect after it finishes.')
+        # Do not cancel exchange orders or close positions when ending a local connection.
+        with self.trade_lock, self.lock:
             exchange = self.clients.pop(venue, None)
             self.markets.pop(venue, None)
         if exchange:
             exchange.close()
-        return dict(venue=venue, connected=False)
+        return dict(venue=venue, connected=False,
+                    message='Disconnected. Local automation stopped; exchange positions and orders remain active. Saved keys were kept.')
 
     def status(self):
         with self.lock:
@@ -199,12 +206,12 @@ class LiveExchange:
                     symbol=market['symbol'], reduceOnly=reduce_only)
 
     def open_with_stop(self, venue: str, direction: Literal['long', 'short'],
-                       quantity: float, stop_price: float):
+                       quantity: float, stop_price: float, take_profit_price: float | None = None):
         with self.trade_lock:
-            return self._open_with_stop_locked(venue,direction,quantity,stop_price)
+            return self._open_with_stop_locked(venue,direction,quantity,stop_price,take_profit_price)
 
     def _open_with_stop_locked(self, venue: str, direction: Literal['long', 'short'],
-                               quantity: float, stop_price: float):
+                               quantity: float, stop_price: float, take_profit_price: float | None = None):
         exchange, market = self._get(venue)
         positions = self.positions(venue)
         if any(float(position.get('contracts') or 0) != 0 for position in positions):
@@ -213,6 +220,9 @@ class LiveExchange:
         last = float(ticker.get('last') or 0)
         if not last or (direction == 'long' and stop_price >= last) or (direction == 'short' and stop_price <= last):
             raise ValueError('Stop must be below the current price for a long, or above it for a short')
+        if take_profit_price is not None and (direction == 'long' and take_profit_price <= last
+                                              or direction == 'short' and take_profit_price >= last):
+            raise ValueError('Take profit must be above the current price for a long, or below it for a short')
         side = 'buy' if direction == 'long' else 'sell'
         result = self.market_order(venue, side, quantity)
         contract_size = float(market.get('contractSize') or 1)
@@ -229,8 +239,20 @@ class LiveExchange:
             raise RuntimeError(f'Entry was sent but the protective stop was rejected; an emergency reduce-only close was sent: {error}') from error
         with self.lock:
             self.protective_orders[venue] = stop.get('id')
-        return dict(order=result, protectiveStop=stop, direction=direction, quantity=stop_quantity,
-                    entryPrice=result.get('average'))
+        take_profit = None
+        take_profit_error = None
+        if take_profit_price is not None:
+            try:
+                take_profit = self.set_stop(venue, direction, stop_quantity, take_profit_price)
+                with self.lock:
+                    self.take_profit_orders[venue] = take_profit.get('id')
+            except Exception:
+                # The required stop is already active, so keep the protected position and
+                # report that the optional take-profit must be added at the exchange.
+                take_profit_error = 'The position and stop are active, but the exchange rejected the take-profit order.'
+        return dict(order=result, protectiveStop=stop, takeProfit=take_profit,
+                    takeProfitError=take_profit_error, direction=direction,
+                    quantity=stop_quantity, entryPrice=result.get('average'))
 
     def close_position(self, venue: str):
         with self.trade_lock:
@@ -253,12 +275,14 @@ class LiveExchange:
         result = self.market_order(venue, side, base_quantity, reduce_only=True)
         with self.lock:
             stop_id = self.protective_orders.pop(venue, None)
-        if stop_id:
-            try:
-                self.cancel_stop(venue, stop_id)
-            except Exception:
-                # The remaining reduce-only stop cannot increase exposure.
-                pass
+            take_profit_id = self.take_profit_orders.pop(venue, None)
+        for stop_id in (stop_id, take_profit_id):
+            if stop_id:
+                try:
+                    self.cancel_stop(venue, stop_id)
+                except Exception:
+                    # The remaining reduce-only stop cannot increase exposure.
+                    pass
         return dict(venue=venue, closed=True, order=result)
 
     def set_stop(self, venue: str, direction: Literal['long', 'short'], quantity: float, trigger: float):
@@ -288,25 +312,56 @@ class LiveExchange:
         import ccxt
         try:
             balance = exchange.fetch_balance({'type': 'swap', 'subType': 'linear'})
+            info = balance.get('info')
+            if isinstance(info, dict) and str(info.get('code')) in ('401', '403'):
+                # Some adapter versions parse rejected V5 responses as empty balances.
+                raise ccxt.AuthenticationError('htx ' + json.dumps({'code': info['code']}))
         except (ccxt.AuthenticationError, ccxt.NotSupported) as v5_error:
             # A classic-account key can be rejected by V5 before returning a balance.
             # Confirm access through the classic API before declaring the key invalid.
             try:
                 balance = classic_balance(exchange)
-            except Exception:
-                raise v5_error
+            except Exception as classic_error:
+                raise ValueError('HTX authentication failed while reading the futures account balance. '
+                    f'V5: {rejection_reason(v5_error)}. Classic: {rejection_reason(classic_error)}. '
+                    'These checks used the saved or submitted credentials. If the key and IP were changed, re-enter the current key and secret instead of connecting the saved account.') from classic_error
             exchange.options['localAccountApi'] = 'classic'
             return balance
         if balance.get('total', {}).get('USDT') is None:
             balance = classic_balance(exchange)
             exchange.options['localAccountApi'] = 'classic'
-        return balance
+        return normalize_htx_balance(balance)
 
     def open_orders(self, venue: str) -> list[dict]:
         exchange, market = self._get(venue)
         if venue == 'htx' and exchange.options.get('localAccountApi') == 'classic':
             return classic_orders(exchange, market)
         return exchange.fetch_open_orders(market['symbol'])
+
+    def trade_history(self, venue: str) -> list[dict]:
+        exchange, market = self._get(venue)
+        if not exchange.has.get('fetchClosedOrders'):
+            return []
+        orders = exchange.fetch_closed_orders(market['symbol'], limit=100)
+        result = []
+        for order in orders:
+            info = order.get('info') if isinstance(order.get('info'), dict) else {}
+            raw_pnl = next((info.get(key) for key in ('real_profit', 'realized_pnl', 'realizedPnl', 'profit')
+                            if info.get(key) is not None), None)
+            try:
+                pnl = float(raw_pnl)
+            except (TypeError, ValueError):
+                continue
+            if not math.isfinite(pnl):
+                continue
+            amount = float(order.get('filled') or order.get('amount') or 0)
+            contract_size = float(market.get('contractSize') or 1)
+            price = float(order.get('average') or order.get('price') or 0)
+            timestamp = int((order.get('lastTradeTimestamp') or order.get('timestamp') or 0) / 1000)
+            result.append(dict(id=str(order.get('id') or timestamp), side=order.get('side'),
+                               pnl=pnl, price=price, quantity=amount * contract_size,
+                               timestamp=timestamp))
+        return result
 
     def positions(self, venue: str):
         exchange, market = self._get(venue)
@@ -349,6 +404,8 @@ class AutomaticLiveBot:
         active = [p for p in self.service.positions(venue) if float(p.get('contracts') or 0) != 0]
         if active:
             raise ValueError('Close the existing exchange position before starting the live strategy')
+        available = self._available_usdt(exchange)
+        request = request.model_copy(update={'capital': available})
         timeframe = request.entry_timeframe
         duration = TIMEFRAMES[timeframe]
         try:
@@ -462,8 +519,14 @@ class AutomaticLiveBot:
             self._trail(exchange,market,venue,live,simulated,close)
 
     def _available_usdt(self,exchange):
-        balance=exchange.fetch_balance()
-        return float((balance.get('free') or {}).get('USDT') or (balance.get('total') or {}).get('USDT') or 0)
+        balance=self.service.account_balance(exchange, exchange.id)
+        value=(balance.get('free') or {}).get('USDT')
+        if value is None:
+            raise ValueError('The exchange did not provide available USDT margin. Live sizing cannot use the total wallet balance.')
+        available=float(value)
+        if not math.isfinite(available) or available <= 0:
+            raise ValueError('Available USDT margin must be positive before starting or opening a live trade')
+        return available
 
     def _open(self,exchange,market,venue,request,direction,simulated,close):
         available=self._available_usdt(exchange)

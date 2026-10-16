@@ -1,0 +1,378 @@
+.ui-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 8px 14px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background .15s,border-color .15s,color .15s,transform .15s;
+}
+
+.ui-button:hover:not(:disabled) {
+  filter: none;
+  transform: translateY(-1px);
+}
+
+.ui-button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.ui-button--primary {
+  background: var(--blue);
+  color: white;
+}
+
+.ui-button--secondary {
+  background: var(--surface-raised);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.ui-button--ghost {
+  background: transparent;
+  color: var(--muted);
+}
+
+.ui-button--danger {
+  background: #f254711c;
+  border-color: #f2547140;
+  color: var(--red);
+}
+
+.ui-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  padding: 28px 0 24px;
+}
+
+.ui-eyebrow {
+  display: block;
+  margin-bottom: 9px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 1.1px;
+}
+
+.ui-page-header h1 {
+  font-size: 25px;
+  font-weight: 600;
+  letter-spacing: -.5px;
+}
+
+.ui-page-header p {
+  margin-top: 8px;
+  max-width: 660px;
+  font-size: 12px;
+}
+
+.ui-page-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.ui-panel {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.ui-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ui-panel-heading h2 {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.ui-panel-heading p {
+  margin-top: 5px;
+  font-size: 11px;
+}
+
+.ui-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+}
+
+.ui-metric {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 9px;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-metric > span {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.ui-metric > strong {
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -.4px;
+  color: var(--text);
+}
+
+.ui-metric > strong small {
+  margin-left: 6px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+.ui-metric > p {
+  font-size: 11px;
+}
+
+.ui-tone--positive {
+  --tone: var(--green);
+}
+
+.ui-tone--negative {
+  --tone: var(--red);
+}
+
+.ui-tone--warning {
+  --tone: var(--warning);
+}
+
+.ui-tone--accent {
+  --tone: var(--blue);
+}
+
+.ui-tone--neutral {
+  --tone: var(--muted);
+}
+
+.ui-metric.ui-tone--positive > strong, .ui-metric.ui-tone--negative > strong {
+  color: var(--tone);
+}
+
+.ui-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--tone) 10%, transparent);
+  color: var(--tone);
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.ui-status > i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.ui-tabs {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  min-height: 48px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ui-tabs > button {
+  position: relative;
+  align-self: stretch;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.ui-tabs > button[aria-selected=true] {
+  color: var(--text);
+}
+
+.ui-tabs > button[aria-selected=true]::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--blue);
+}
+
+.ui-tabs > button > span {
+  margin-left: 5px;
+  color: var(--blue);
+  font-size: 10px;
+}
+
+.ui-tabs-trailing {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.ui-empty {
+  display: flex;
+  min-height: 360px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px 20px;
+  text-align: center;
+}
+
+.ui-empty--compact {
+  min-height: 170px;
+}
+
+.ui-empty svg {
+  width: 38px;
+  height: 38px;
+  margin-bottom: 4px;
+  color: #586373;
+}
+
+.ui-empty h3 {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.ui-empty p {
+  max-width: 420px;
+  font-size: 12px;
+}
+
+.ui-empty .ui-button {
+  margin-top: 10px;
+}
+
+.ui-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.ui-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  white-space: nowrap;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-table th {
+  padding: 16px;
+  color: var(--muted);
+  background: var(--panel);
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.ui-table td {
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ui-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.ui-table tbody tr:hover {
+  background: #ffffff03;
+}
+
+.ui-table .ui-button {
+  min-height: 30px;
+  padding: 6px 10px;
+  font-size: 11px;
+}
+
+.ui-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.ui-field input, .ui-field select {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--field);
+  color: var(--text);
+  padding: 10px 12px;
+}
+
+.ui-field small {
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+@media (max-width: 800px) {
+  .ui-page-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 16px;
+    padding: 22px 0;
+  }
+  .ui-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ui-page-header h1 {
+    font-size: 22px;
+  }
+}
+
+@media (max-width: 500px) {
+  .ui-panel-heading {
+    padding: 16px;
+    align-items: flex-start;
+  }
+  .ui-tabs {
+    gap: 22px;
+    padding: 0 16px;
+    overflow-x: auto;
+  }
+  .ui-tabs > button {
+    min-height: 46px;
+  }
+  .ui-tabs-trailing {
+    display: none;
+  }
+  .ui-metric > strong {
+    font-size: 20px;
+  }
+}

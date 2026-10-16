@@ -1,6 +1,6 @@
 import {indicatorColor} from './indicatorColors';
 import IndicatorHeader from './IndicatorHeader';
-import IndicatorSettings,{readIndicatorSettings,type IndicatorConfig,type IndicatorKind} from './IndicatorSettings';
+import IndicatorSettings,{useIndicatorSettings,type IndicatorConfig,type IndicatorKind} from './IndicatorSettings';
 import {AdxDecoration,displayAdx} from './adxDisplay';
 import {chartOscillators} from './chartOscillators';
 import {chartTimeOptions,formatChartTime,useChartTimeZone} from './chartTimeZone';
@@ -10,26 +10,29 @@ import {api} from './api';
 import {mergeHistory} from './candleHistory';
 import {candleLogical,captureViewport,restoreViewport} from './chartViewport';
 import {useEffect,useRef,useState} from 'react';
-import {CandlestickSeries,ColorType,createChart,createSeriesMarkers,LineSeries,LineStyle,type AutoscaleInfo,type ISeriesApi,type IChartApi,type UTCTimestamp,type SeriesMarker} from 'lightweight-charts';
+import {CandlestickSeries,ColorType,createChart,createSeriesMarkers,HistogramSeries,LineSeries,LineStyle,type AutoscaleInfo,type ISeriesApi,type IChartApi,type UTCTimestamp,type SeriesMarker} from 'lightweight-charts';
 import {fillMarker,FillLabels} from './fillMarkers';
 import ChartTools,{chartInteraction,resizeChart} from './ChartTools';
 import {useChartIndicatorSelection,toggleChartIndicator} from './chartIndicatorSelection';
 import {fmt,type Analysis} from './types';
 import type {PaperTrade,Position} from './PaperTrading';
+import {chartVolume} from './chartVolume';
 
 type Point={time:number;bbBasis:number|null;bbUpper:number|null;bbLower:number|null;trendSma:number|null};
 type Data={candles:Analysis['candles'];indicators:Point[];stops:{time:number;price:number|null}[];trades:PaperTrade[];position:Position|null;indicatorClock:number};
-type Props=Data&{sessionId:number;showSma:boolean;timeframe:string;atrLength:number;adxLength:number;allowLocalHistory?:boolean};
+type HistoryPage={candles:Analysis['candles'];hasMore:boolean};
+type Props=Data&{sessionId:number;showSma:boolean;timeframe:string;atrLength:number;adxLength:number;allowLocalHistory?:boolean;loadHistory?:(before:number)=>Promise<HistoryPage>;historyLabel?:string};
 
 export default function PaperPriceChart(props:Props) {
   const container=useRef<HTMLDivElement>(null),chartRef=useRef<IChartApi|null>(null);
   const update=useRef<(data:Data)=>void>(()=>{});
   const selectedIndicators=useChartIndicatorSelection();
-  const [indicatorConfig,setIndicatorConfig]=useState(readIndicatorSettings),[settingsOpen,setSettingsOpen]=useState<IndicatorKind|null>(null);
+  const [indicatorConfig,setIndicatorConfig]=useIndicatorSettings();
+  const [settingsOpen,setSettingsOpen]=useState<IndicatorKind|null>(null);
   const timeZone=useChartTimeZone();
   const timeZoneRef=useRef(timeZone);timeZoneRef.current=timeZone;
   const configRef=useRef(indicatorConfig);configRef.current=indicatorConfig;
-  function applyIndicatorConfig(config:IndicatorConfig){setIndicatorConfig(config);try{localStorage.setItem('silver.chart.indicatorSettings',JSON.stringify(config));}catch{}}
+  function applyIndicatorConfig(config:IndicatorConfig){setIndicatorConfig(config);}
   const changePanels=useRef<(selection:{atr:boolean;adx:boolean;rsi:boolean},config:IndicatorConfig)=>void>(()=>{});
   function toggleIndicator(key:IndicatorKind){toggleChartIndicator(key);}
   const [paneHeaders,setPaneHeaders]=useState<{kind:IndicatorKind;top:number}[]>([]);
@@ -56,6 +59,8 @@ export default function PaperPriceChart(props:Props) {
     chartRef.current=chart;
     const price=chart.addSeries(CandlestickSeries,{borderVisible:false,upColor:'#26a69a',downColor:'#ef5350',wickUpColor:'#26a69a',wickDownColor:'#ef5350',priceFormat:{type:'price',precision:3,minMove:.001}});
     price.priceScale().applyOptions({scaleMargins:{top:.18,bottom:.22}});
+    const volume=chart.addSeries(HistogramSeries,{priceScaleId:'',priceFormat:{type:'volume'},lastValueVisible:false,priceLineVisible:false});
+    volume.priceScale().applyOptions({scaleMargins:{top:.8,bottom:0}});
     const markers=createSeriesMarkers(price,[]);
     const fillLabels=new FillLabels();price.attachPrimitive(fillLabels);
     const overlays=([['bbBasis','#63d6d0','BB middle'],['bbUpper','#7d8da5','BB upper'],['bbLower','#7d8da5','BB lower'],['trendSma','#d7ad69','Trend SMA']] as const).filter(([key])=>key!=='trendSma'||props.showSma).map(([key,color,title])=>({key,series:chart.addSeries(LineSeries,{color,lineWidth:1,title,priceLineVisible:false,lastValueVisible:false})}));
@@ -120,7 +125,7 @@ export default function PaperPriceChart(props:Props) {
     };
     let byTime=new Map<number,Analysis['candles'][number]>(),previousTime:number|undefined,previous:Data|null=null;
     let cached:Data['candles']=[],indicators:Point[]=[],latestData:Data|null=null;
-    let pending=false,more=props.allowLocalHistory!==false,failed=false,disposed=false,timer:ReturnType<typeof setTimeout>|undefined;
+    let pending=false,more=props.allowLocalHistory!==false||!!props.loadHistory,failed=false,disposed=false,timer:ReturnType<typeof setTimeout>|undefined;
     const abort=new AbortController();
     setLoading(false);setHasMore(more);setHistoryError('');
     async function earlier(){
@@ -128,7 +133,7 @@ export default function PaperPriceChart(props:Props) {
       if(pending||!more||before===undefined||!latestData)return;
       pending=true;failed=false;setLoading(true);setHistoryError('');
       try{
-        const page=await api<{candles:Data['candles'];hasMore:boolean}>('/api/candles',{method:'POST',headers:{'Content-Type':'application/json'},signal:abort.signal,body:JSON.stringify({timeframe:props.timeframe,before,limit:1000})});
+        const page=props.loadHistory?await props.loadHistory(before):await api<HistoryPage>('/api/candles',{method:'POST',headers:{'Content-Type':'application/json'},signal:abort.signal,body:JSON.stringify({timeframe:props.timeframe,before,limit:1000})});
         if(disposed)return;
         const older=page.candles.filter(c=>c.time<before);
         cached=mergeHistory(older,cached);
@@ -142,8 +147,10 @@ export default function PaperPriceChart(props:Props) {
       if(timer)clearTimeout(timer);
       timer=setTimeout(()=>{
         if(disposed||pending||!more||failed)return;
-        const range=chart.timeScale().getVisibleLogicalRange(),first=candleLogical(chart,cached[0]?.time);
-        if(range&&first!==null&&range.from<first+100)void earlier();
+        const range=chart.timeScale().getVisibleLogicalRange();
+        // Logical index zero is the oldest loaded candle. Prefetch before the
+        // user reaches the edge so wheel zooming and drag-panning stay fluid.
+        if(range&&range.from<150)void earlier();
       },150);
     }
     loadEarlier.current=()=>{void earlier();};
@@ -163,6 +170,7 @@ export default function PaperPriceChart(props:Props) {
       if(appendOnly&&previous){
         for(const candle of data.candles.slice(previous.candles.length-1))price.update({...candle,time:candle.time as UTCTimestamp});
       }else price.setData(data.candles.map(c=>({...c,time:c.time as UTCTimestamp})));
+      volume.setData(chartVolume(data.candles));
 
       if(!previous||data.indicators.at(-1)!==previous.indicators.at(-1)||data.indicators.length!==previous.indicators.length)
         for(const {key,series} of overlays)series.setData(data.indicators.map(p=>p[key]===null?{time:p.time as UTCTimestamp}:{time:p.time as UTCTimestamp,value:p[key]}));
@@ -208,10 +216,11 @@ export default function PaperPriceChart(props:Props) {
     });
     const stopResize=resizeChart(chart,container.current,()=>{if(following.current)latest();});
     return ()=>{paneResize?.disconnect();cancelAnimationFrame(paneFrame);updateVisibility.current=()=>{};disposed=true;abort.abort();if(timer)clearTimeout(timer);chart.timeScale().unsubscribeVisibleLogicalRangeChange(scheduleHistory);stopResize();changePanels.current=()=>{};loadEarlier.current=()=>{};update.current=()=>{};chartRef.current=null;chart.remove();};
-  },[props.sessionId,props.showSma,props.timeframe,props.allowLocalHistory]);
+  },[props.sessionId,props.showSma,props.timeframe,props.allowLocalHistory,props.loadHistory]);
   useEffect(()=>{chartRef.current?.applyOptions({localization:chartTimeOptions(timeZone).localization,timeScale:chartTimeOptions(timeZone).timeScale});},[timeZone]);
   useEffect(()=>{update.current(props);},[props]);
   useEffect(()=>{updateVisibility.current();},[hiddenIndicators]);
   useEffect(()=>{changePanels.current(selectedIndicators,indicatorConfig);},[selectedIndicators,indicatorConfig,props.sessionId,props.showSma,props.timeframe]);
-  return <><ChartTools chartRef={chartRef} onLatest={latest} onNavigate={holdView} onEarlier={props.allowLocalHistory===false?undefined:()=>loadEarlier.current()} loading={loading} hasMore={hasMore} showEarlier={props.allowLocalHistory!==false} indicators={selectedIndicators} onToggleIndicator={toggleIndicator} follow={follow} onFollowChange={setFollow}/>{settingsOpen&&<IndicatorSettings key={settingsOpen} kind={settingsOpen} value={indicatorConfig} onApply={applyIndicatorConfig} onClose={()=>setSettingsOpen(null)}/>}<p className="readout">{readout}</p>{historyError&&<p className="chart-history-status error" role="alert">{historyError} <button type="button" className="text-button" onClick={()=>loadEarlier.current()}>Retry</button></p>}<div className="chart-history-status" role="status">{loading?"Loading earlier candles...":props.allowLocalHistory===false?"Exchange candle history":hasMore?"Pan left to load history":"Beginning of available history"}<span>Pan right for newer candles · Latest returns to the current price</span></div><div className="chart-resize">{paneHeaders.map(({kind,top})=><IndicatorHeader key={kind} kind={kind} top={top} config={indicatorConfig} value={paneValues[kind]} hidden={hiddenIndicators[kind]} onSettings={()=>setSettingsOpen(kind)} onVisibility={()=>setHiddenIndicators(old=>({...old,[kind]:!old[kind]}))} onRemove={()=>{setHiddenIndicators(old=>({...old,[kind]:false}));toggleIndicator(kind);}}/>)}<div ref={container} onWheelCapture={holdView} onPointerDownCapture={holdView} className="chart-container position-chart" aria-label={props.allowLocalHistory===false?"Live exchange price chart":"Virtual bot price chart with buys, sells, exits and trailing stops"}/></div></>;
+  const canLoadHistory=props.allowLocalHistory!==false||!!props.loadHistory;
+  return <><ChartTools chartRef={chartRef} onLatest={latest} onNavigate={holdView} onEarlier={canLoadHistory?()=>loadEarlier.current():undefined} loading={loading} hasMore={hasMore} showEarlier={canLoadHistory} indicators={selectedIndicators} onToggleIndicator={toggleIndicator} follow={follow} onFollowChange={setFollow}/>{settingsOpen&&<IndicatorSettings key={settingsOpen} kind={settingsOpen} value={indicatorConfig} onApply={applyIndicatorConfig} onClose={()=>setSettingsOpen(null)}/>}<p className="readout">{readout}</p>{historyError&&<p className="chart-history-status error" role="alert">{historyError} <button type="button" className="text-button" onClick={()=>loadEarlier.current()}>Retry</button></p>}<div className="chart-history-status" role="status">{loading?"Loading earlier candles...":hasMore?props.historyLabel??"Scroll or drag left to load history":"Beginning of available history"}<span>Pan right for newer candles · Latest returns to the current price</span></div><div className="chart-resize">{paneHeaders.map(({kind,top})=><IndicatorHeader key={kind} kind={kind} top={top} config={indicatorConfig} value={paneValues[kind]} hidden={hiddenIndicators[kind]} onSettings={()=>setSettingsOpen(kind)} onVisibility={()=>setHiddenIndicators(old=>({...old,[kind]:!old[kind]}))} onRemove={()=>{setHiddenIndicators(old=>({...old,[kind]:false}));toggleIndicator(kind);}}/>)}<div ref={container} onWheelCapture={holdView} onPointerDownCapture={holdView} className="chart-container position-chart" aria-label={props.allowLocalHistory===false?"Live exchange price chart":"Virtual bot price chart with buys, sells, exits and trailing stops"}/></div></>;
 }
