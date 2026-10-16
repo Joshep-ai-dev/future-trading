@@ -43,8 +43,9 @@ export default function ResultsWorkspace({result,busy,stale,onRun,onConfigure,on
     let winStreak=0,lossStreak=0,run=0,sign=0;
     for(const v of pnls){const next=v>0?1:-1;run=next===sign?run+1:1;sign=next;if(next>0)winStreak=Math.max(winStreak,run);else lossStreak=Math.max(lossStreak,run);}
     const mean=(xs:number[])=>xs.length?xs.reduce((a,b)=>a+b,0)/xs.length:0;
-    return {avgWin:mean(wins),avgLoss:mean(losses),best:pnls.length?Math.max(...pnls):0,worst:pnls.length?Math.min(...pnls):0,winStreak,lossStreak};
-  },[pnls]);
+    const sides=(p?.trades??[]).reduce((acc,t)=>{if(t.direction===1){acc.longs++;acc.longPnl+=t.netPnl;}else{acc.shorts++;acc.shortPnl+=t.netPnl;}return acc;},{longs:0,shorts:0,longPnl:0,shortPnl:0});
+    return {...sides,avgWin:mean(wins),avgLoss:mean(losses),best:pnls.length?Math.max(...pnls):0,worst:pnls.length?Math.min(...pnls):0,winStreak,lossStreak};
+  },[pnls,p]);
   const days=p?Math.max(1,Math.round((p.end-p.start)/86400)):0;
   const exits=useMemo(()=>Object.entries((p?.trades??[]).reduce<Record<string,number>>((counts,t)=>{counts[t.exitReason]=(counts[t.exitReason]??0)+1;return counts;},{})),[p]);
   return <>
@@ -76,8 +77,8 @@ export default function ResultsWorkspace({result,busy,stale,onRun,onConfigure,on
         <section className="result-answer">
           <header><span>Trade details</span><em className="tag-neutral">{s.trades} trades</em></header>
           <dl className="answer-facts">
-            <div><dt>Avg win</dt><dd className="positive">{money(stats.avgWin)}</dd></div>
-            <div><dt>Avg loss</dt><dd className="negative">{money(stats.avgLoss)}</dd></div>
+            <div><dt>Longs ({stats.longs})</dt><dd className={stats.longPnl>=0?'positive':'negative'}>{money(stats.longPnl)}</dd></div>
+            <div><dt>Shorts ({stats.shorts})</dt><dd className={stats.shortPnl>=0?'positive':'negative'}>{money(stats.shortPnl)}</dd></div>
             <div><dt>Best</dt><dd className="positive">{money(stats.best)}</dd></div>
             <div><dt>Worst</dt><dd className="negative">{money(stats.worst)}</dd></div>
             <div><dt>Win streak</dt><dd>{stats.winStreak}</dd></div>
