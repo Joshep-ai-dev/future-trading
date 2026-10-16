@@ -14,18 +14,18 @@ export default function AccountPage({onBack,settings,accountMode,onAccountModeCh
   const chartTimeZone=useChartTimeZone();
   const [section,setSection]=useState<Section>('connections');
   return <section id="page-account" className="account-page account-settings-page" role="tabpanel" aria-labelledby="tab-account">
-    <PageHeader eyebrow="YOUR WORKSPACE" title="Account settings" description="Exchange access and preferences, all in one place." actions={<StatusBadge tone={accountMode==='live'?'warning':'neutral'} dot>{accountMode==='live'?'Live account':'Paper account'}</StatusBadge>}/>
+    <PageHeader eyebrow="YOUR WORKSPACE" title="Account settings" actions={<StatusBadge tone={accountMode==='live'?'warning':'neutral'} dot>{accountMode==='live'?'Live account':'Paper account'}</StatusBadge>}/>
     <div className="account-settings-shell">
       <aside className="account-navigation">
         <div className="account-workspace-identity"><span>S</span><div><strong>Silver workspace</strong><small>Local trading terminal</small></div></div>
         <nav aria-label="Account settings sections">{([['connections','Exchange connections'],['preferences','Preferences']] as const).map(([value,label])=><button type="button" key={value} aria-current={section===value?'page':undefined} onClick={()=>setSection(value)}><SettingsIcon section={value}/><span>{label}</span><span aria-hidden="true">›</span></button>)}</nav>
-        <div className="account-navigation-footer"><span className="ui-eyebrow">PRIVATE BY DESIGN</span><p>API credentials are encrypted in your local database.</p><Button variant="ghost" onClick={onBack}>← Back to trading</Button></div>
+        <div className="account-navigation-footer"><span className="ui-eyebrow">PRIVATE BY DESIGN</span><Button variant="ghost" onClick={onBack}>← Back to trading</Button></div>
       </aside>
       <div className="account-settings-main">
-        {section==='connections'?<Panel className="account-connections-surface" title="Exchange connections" description="Manage API access to your trading venues."><LiveExecution view="account" settings={settings} onOpenTerminal={onBack}/></Panel>:<Panel title="Workspace preferences" description="Changes apply immediately to this browser." className="account-preferences-surface">
-          <div className="preference-row"><div><h3>Trading account</h3><p>Use virtual funds or your connected exchange account.</p></div><label className="ui-field"><span className="sr-only">Trading account mode</span><select aria-label="Trading account mode" value={accountMode} onChange={event=>onAccountModeChange(event.target.value as AccountMode)}><option value="paper">Paper account</option><option value="live">Live account</option></select></label></div>
-          <div className="preference-row"><div><h3>Chart & trading time zone</h3><p>Keep chart labels and trade history in the same time zone.</p></div><label className="ui-field"><span className="sr-only">Display and trading time zone</span><select aria-label="Display and trading time zone" value={chartTimeZone} onChange={event=>saveChartTimeZone(event.target.value as ChartTimeZone)}>{CHART_TIME_ZONES.map(zone=><option key={zone.value} value={zone.value}>{zone.label}</option>)}</select></label></div>
-          <div className="preferences-footer"><StatusBadge dot tone="positive">Saved automatically</StatusBadge><p>Preferences stay in this browser. Historical data boundaries remain UTC.</p></div>
+        {section==='connections'?<Panel className="account-connections-surface" title="Exchange connections"><LiveExecution view="account" settings={settings} onOpenTerminal={onBack}/></Panel>:<Panel title="Workspace preferences" className="account-preferences-surface">
+          <div className="preference-row"><div><h3>Trading account</h3></div><label className="ui-field"><span className="sr-only">Trading account mode</span><select aria-label="Trading account mode" value={accountMode} onChange={event=>onAccountModeChange(event.target.value as AccountMode)}><option value="paper">Paper account</option><option value="live">Live account</option></select></label></div>
+          <div className="preference-row"><div><h3>Chart & trading time zone</h3></div><label className="ui-field"><span className="sr-only">Display and trading time zone</span><select aria-label="Display and trading time zone" value={chartTimeZone} onChange={event=>saveChartTimeZone(event.target.value as ChartTimeZone)}>{CHART_TIME_ZONES.map(zone=><option key={zone.value} value={zone.value}>{zone.label}</option>)}</select></label></div>
+          <div className="preferences-footer"><StatusBadge dot tone="positive">Saved automatically</StatusBadge></div>
         </Panel>}
       </div>
     </div>

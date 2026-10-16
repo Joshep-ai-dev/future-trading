@@ -23,6 +23,6 @@ export default function LiveTradeHistory({venue}:{venue:ExchangeVenue}){
     quantity:order.quantity,exitTime:order.timestamp,
   })),[orders]);
   if(error)return <div className="exchange-inline-error" role="status">{error}</div>;
-  if(!trades.length)return <EmptyState compact title="No realized P&L history" description="Closed exchange orders with reported realized P&L will appear here automatically."/>;
+  if(!trades.length)return <EmptyState compact title="No realized P&L history"/>;
   return <TradeView trades={trades} capital={0} scope="Live"><div className="table-scroll"><table><thead><tr><th>Close</th><th>Side</th><th>Quantity</th><th>Realized P&amp;L</th></tr></thead><tbody>{orders.map(order=><tr key={order.id}><td>{order.price}</td><td>{order.side}</td><td>{order.quantity}</td><td className={order.pnl>=0?'positive':'negative'}>{order.pnl>=0?'+':''}{order.pnl.toFixed(4)} USDT</td></tr>)}</tbody></table></div></TradeView>;
 }

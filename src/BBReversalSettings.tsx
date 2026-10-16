@@ -32,7 +32,7 @@ export default function BBReversalSettings({settings,onChange}:{settings:Backtes
   const renderFields=(keys:string[])=>fields.filter(([key])=>keys.includes(key)).map(([key,label,min,max])=><NumberField key={key} label={label} min={min} max={max} value={config[key]} onValueChange={value=>onChange({...settings,bb_reversal:{...config,[key]:value}})}/>);
 
   return <div className="exit-settings"><h3>BB Outer Band Reversal + Trailing SL</h3>
-    <p>BB Outer Band Reversal + Trailing SL. Both directions, alternating entries, with ATR and ADX confirmation. Changes apply to your next backtest or new virtual session.</p>
+
     <div className="settings-section" id="settings-execution"><h3>Execution & allocation</h3>
     <div className="settings-grid"><label>Execution timeframe<select value={settings.entry_timeframe} onChange={e=>onChange({...settings,entry_timeframe:e.target.value as BacktestSettings['entry_timeframe']})}>{['1m','3m','5m','10m','15m','30m','1h','4h','1d'].map(tf=><option key={tf}>{tf}</option>)}</select></label>
     <label>Leverage (x)<input aria-label="Leverage" type="number" required min={1} max={100} step={.5} value={settings.max_leverage} onChange={e=>onChange({...settings,max_leverage:Number(e.target.value)})}/></label>

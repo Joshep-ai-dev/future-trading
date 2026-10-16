@@ -54,7 +54,6 @@ export default function LiveExecution({view,settings,onSettingsChange,onConfigur
       {mode==='manual'?<ManualOrderTicket venue={venue} connected={connected} busy={busy} blocked={positionCheckFailed} botRunning={botForVenue} leverage={liveLeverage} onLeverageChange={setLiveLeverage} onRun={run}/>:<LiveBotPanel key={venue} venue={venue} settings={settings} onSettingsChange={onSettingsChange} onConfigure={onConfigure} bot={bot} connected={connected} busy={busy} blocked={positionCheckFailed} positionOpen={positionOpen} leverage={liveLeverage} onLeverageChange={setLiveLeverage} onRun={run}/>}
 
     </div>}
-    {view==='terminal'&&<p className="live-risk-note"><strong>Live order risk</strong> · Verify contract size, leverage, and protective stops on {selected.name} before submitting.</p>}
     {message&&<p className={message.startsWith('Error:')?'error':'live-result'} role="status">{message}</p>}
   </div>;
 }

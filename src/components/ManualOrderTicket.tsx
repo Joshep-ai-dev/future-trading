@@ -47,11 +47,9 @@ export default function ManualOrderTicket({venue,connected,busy,blocked,botRunni
       <label className="ticket-confirm"><input type="checkbox" checked={confirmed} disabled={disabled||positionOpen} onChange={event=>setConfirmed(event.target.checked)}/><span>I confirm this places a real market order.</span></label>
       <div className="ticket-submit-row"><Button className="ticket-buy" disabled={openDisabled||Number(stop)>=price!} onClick={()=>void open('long')}>{busy?'Submitting...':'Open Long'}</Button><Button className="ticket-sell" disabled={openDisabled||Number(stop)<=price!} onClick={()=>void open('short')}>{busy?'Submitting...':'Open Short'}</Button></div>
       {positionOpen&&<p className="ticket-help">An XAG position is already open. Select Close to manage it.</p>}
-      <p className="ticket-help">USDT sizing uses the latest quote; final fill and margin can differ. Set the stop below market for Long or above market for Short.</p>
     </>:<div className="ticket-close-panel">
       <div className="ticket-order-type"><strong>Market close</strong><StatusBadge>Reduce only</StatusBadge></div>
       {position?<><div className="ticket-position"><StatusBadge tone={position.side==='long'?'positive':'negative'}>{position.side.toUpperCase()}</StatusBadge><strong>{number(position.quantity)} XAG</strong></div><dl><div><dt>Entry price</dt><dd>{number(position.entryPrice,3)}</dd></div><div><dt>Mark price</dt><dd>{number(position.markPrice,3)}</dd></div><div><dt>Unrealized PnL</dt><dd className={(position.unrealizedPnl??0)<0?'negative':'positive'}>{number(position.unrealizedPnl,4)} USDT</dd></div></dl><Button variant="danger" disabled={disabled} onClick={()=>void close()}>Close entire {position.side} position</Button></>:<p className="ticket-help">{!accountVerified?'Waiting for verified position data.':positionOpen?'Multiple positions detected. Manage them on the exchange.':'No open XAG position to close.'}</p>}
-      <p className="ticket-help">A market close exits the entire position. Stop an active bot before closing manually.</p>
     </div>}
     {botRunning&&<p className="ticket-help">Stop the running strategy to enable manual orders.</p>}
   </div>;

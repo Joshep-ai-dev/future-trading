@@ -13,7 +13,7 @@ export default function StrategyNavigation({settings,active,onChange}:{settings:
     document.getElementById(`settings-${section}`)?.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});
   }
   return <aside className="settings-navigation" aria-label="Strategy configuration">
-    <div className="configuration-profile"><span className="strategy-icon">BB</span><h2>Outer Band Reversal</h2><p>Bollinger bands & trailing stops</p><StatusBadge>Strategy configuration</StatusBadge></div>
+    <div className="configuration-profile"><span className="strategy-icon">BB</span><h2>Outer Band Reversal</h2><StatusBadge>Strategy configuration</StatusBadge></div>
     <nav aria-label="Settings sections">{sections.map(([key,label],index)=><button key={key} type="button" className={active===key?'current':''} aria-current={active===key?'location':undefined} onClick={()=>select(key)}><span>{String(index+1).padStart(2,'0')}</span>{label}</button>)}</nav>
     <div className="configuration-summary"><span className="ui-eyebrow">CURRENT SETUP</span><dl>
       <div><dt>Timeframe</dt><dd>{settings.entry_timeframe.toUpperCase()}</dd></div>

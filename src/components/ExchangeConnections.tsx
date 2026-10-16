@@ -36,7 +36,7 @@ export default function ExchangeConnections({venue,statuses,savedVenues,busy,onV
     <div className="connection-detail">
       <div className="connection-detail-heading"><div><span className="connection-monogram connection-monogram--large" aria-hidden="true">{exchange.name.slice(0,1)}</span><div><h2>{exchange.name}</h2><p>USDT perpetual trading</p></div></div><StatusBadge dot tone={connected?'positive':'neutral'}>{connected?'Connected':'Disconnected'}</StatusBadge></div>
       {connected?<>
-        <div className="connection-success"><span aria-hidden="true">✓</span><div><strong>Your exchange is connected</strong><p>View market data, positions, and orders in the trading terminal.</p></div></div>
+        <div className="connection-success"><span aria-hidden="true">✓</span><div><strong>Your exchange is connected</strong></div></div>
         <dl className="connection-metadata"><div><dt>Contract</dt><dd>{account.symbol}</dd></div><div><dt>Credential storage</dt><dd>{saved?'Encrypted on this computer':'Current session only'}</dd></div><div><dt>Connection</dt><dd>Local API session</dd></div></dl>
         <div className="connection-actions"><Button onClick={onOpenTerminal}>Open trading terminal <span aria-hidden="true">↗</span></Button><Button variant="danger" disabled={busy} onClick={disconnect}>{busy?'Working...':'Disconnect'}</Button></div>
         <p className="connection-footnote">Disconnect stops local automation and monitoring. It keeps your saved keys and leaves exchange positions, orders, and stops active.</p>
