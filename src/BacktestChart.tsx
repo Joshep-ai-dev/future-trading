@@ -77,6 +77,7 @@ export default function BacktestChart({candles,trades,selected,onSelect,indicato
   const [readout,setReadout] = useState('Hover for candle time and prices.');
   const selectedIndicators=useChartIndicatorSelection();
   const [follow,setFollow]=useState(true);
+  const [strategyVisible,setStrategyVisible]=useState(true);
   const [indicatorConfig,setIndicatorConfig]=useIndicatorSettings();
   const [settingsOpen,setSettingsOpen]=useState<IndicatorKind|null>(null);
   const [paneHeaders,setPaneHeaders]=useState<{kind:IndicatorKind;top:number}[]>([]);
@@ -131,17 +132,17 @@ export default function BacktestChart({candles,trades,selected,onSelect,indicato
     if(indicators.length) {
       if(indicatorSettings.strategy==='chartart_v12'||indicatorSettings.strategy==='bb_outer_reversal') {
         for(const [key,color,title] of [['bbBasis','#63d6d0','BB basis'],['bbUpper','#7d8da5','BB upper'],['bbLower','#7d8da5','BB lower']] as const) {
-          chart.addSeries(LineSeries,{color,lineWidth:1,title,priceLineVisible:false,lastValueVisible:false}).setData(
+          chart.addSeries(LineSeries,{color,lineWidth:1,title,visible:strategyVisible,priceLineVisible:false,lastValueVisible:false}).setData(
             indicators.map(p=>p[key]==null?{time:p.time as UTCTimestamp}:{time:p.time as UTCTimestamp,value:p[key]}));
         }
       } else {
       for(const [key,color,title] of [['ema20','#e0c278',`EMA ${indicatorSettings.ema_fast}`],['ema50','#88bfff',`EMA ${indicatorSettings.ema_slow}`]] as const) {
-        chart.addSeries(LineSeries,{color,lineWidth:1,title,priceLineVisible:false,lastValueVisible:false}).setData(
+        chart.addSeries(LineSeries,{color,lineWidth:1,title,visible:strategyVisible,priceLineVisible:false,lastValueVisible:false}).setData(
           indicators.map(p=>p[key]===null?{time:p.time as UTCTimestamp}:{time:p.time as UTCTimestamp,value:p[key]}));
       }
       }
       if(indicatorSettings.strategy==='bb_outer_reversal'&&indicatorSettings.bb_reversal.use_sma_trend_adjustment!==false) {
-        chart.addSeries(LineSeries,{color:'#d7ad69',lineWidth:2,title:'Trend SMA',priceLineVisible:false,lastValueVisible:false}).setData(
+        chart.addSeries(LineSeries,{color:'#d7ad69',lineWidth:2,title:'Trend SMA',visible:strategyVisible,priceLineVisible:false,lastValueVisible:false}).setData(
           indicators.map(p=>p.trendSma==null?{time:p.time as UTCTimestamp}:{time:p.time as UTCTimestamp,value:p.trendSma}));
       }
       if(indicatorSettings.strategy!=='bb_outer_reversal'&&(indicatorSettings.strategy!=='mtf'||indicatorSettings.rsi_active)) {
@@ -218,7 +219,7 @@ export default function BacktestChart({candles,trades,selected,onSelect,indicato
       paneResize?.disconnect();cancelAnimationFrame(paneFrame);indicatorSeries.current.clear();setPaneHeaders([]);
       stopResize();chartRef.current=null;chart.remove();
     };
-  },[candles,trades,selected,indicators,barSeconds,indicatorSettings,selectedIndicators,indicatorConfig,hiddenIndicators]);
+  },[candles,trades,selected,indicators,barSeconds,indicatorSettings,selectedIndicators,indicatorConfig,hiddenIndicators,strategyVisible]);
   useEffect(()=>{const options=chartTimeOptions(timeZone);chartRef.current?.applyOptions({localization:options.localization,timeScale:options.timeScale});},[timeZone]);
-  return <><ChartTools chartRef={chartRef} endLabel="Latest" onLatest={latest} onNavigate={holdView} showEarlier indicators={selectedIndicators} onToggleIndicator={toggleIndicator} follow={follow} onFollowChange={setFollow}/>{settingsOpen&&<IndicatorSettings key={settingsOpen} kind={settingsOpen} value={indicatorConfig} onApply={setIndicatorConfig} onClose={()=>setSettingsOpen(null)}/>}<p className="readout">{readout}</p><div className="chart-history-status" role="status">All candles in this backtest are loaded<span>Latest returns to the end of the test period</span></div><div className="chart-resize">{paneHeaders.map(({kind,top})=><IndicatorHeader key={kind} kind={kind} top={top} config={indicatorConfig} value={paneValues[kind]} hidden={hiddenIndicators[kind]} onSettings={()=>setSettingsOpen(kind)} onVisibility={()=>setHiddenIndicators(old=>({...old,[kind]:!old[kind]}))} onRemove={()=>{setHiddenIndicators(old=>({...old,[kind]:false}));toggleIndicator(kind);}}/>)}<div ref={ref} className="chart-container position-chart" aria-label={`${timeframe} trade positions, indicators, entries, exits, stop and target zones`}/></div></>;
+  return <><ChartTools chartRef={chartRef} endLabel="Latest" onLatest={latest} onNavigate={holdView} showEarlier indicators={selectedIndicators} onToggleIndicator={toggleIndicator} strategyVisible={strategyVisible} onToggleStrategy={()=>setStrategyVisible(value=>!value)} follow={follow} onFollowChange={setFollow}/>{settingsOpen&&<IndicatorSettings key={settingsOpen} kind={settingsOpen} value={indicatorConfig} onApply={setIndicatorConfig} onClose={()=>setSettingsOpen(null)}/>}<p className="readout">{readout}</p><div className="chart-history-status" role="status">All candles in this backtest are loaded<span>Latest returns to the end of the test period</span></div><div className="chart-resize">{paneHeaders.map(({kind,top})=><IndicatorHeader key={kind} kind={kind} top={top} config={indicatorConfig} value={paneValues[kind]} hidden={hiddenIndicators[kind]} onSettings={()=>setSettingsOpen(kind)} onVisibility={()=>setHiddenIndicators(old=>({...old,[kind]:!old[kind]}))} onRemove={()=>{setHiddenIndicators(old=>({...old,[kind]:false}));toggleIndicator(kind);}}/>)}<div ref={ref} className="chart-container position-chart" aria-label={`${timeframe} trade positions, indicators, entries, exits, stop and target zones`}/></div></>;
 }

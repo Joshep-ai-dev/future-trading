@@ -18,12 +18,13 @@ export function resizeChart(chart:IChartApi,element:HTMLDivElement,initialView:(
   return ()=>observer.disconnect();
 }
 
-export default function ChartTools({chartRef,valueLabel='Price',horizontalLabel='Time',onFullscreen,fullscreen=false,endLabel='Latest',onLatest,onEarlier,onNavigate,loading=false,hasMore=false,indicators,onToggleIndicator,follow,onFollowChange,showEarlier=false}: {
+export default function ChartTools({chartRef,valueLabel='Price',horizontalLabel='Time',onFullscreen,fullscreen=false,endLabel='Latest',onLatest,onEarlier,onNavigate,loading=false,hasMore=false,indicators,onToggleIndicator,strategyVisible,onToggleStrategy,follow,onFollowChange,showEarlier=false}: {
   chartRef: {current:IChartApi|null}; valueLabel?:string; onLatest?:()=>void;
   endLabel?:string;horizontalLabel?:string;onFullscreen?:()=>void;fullscreen?:boolean;
   onEarlier?:()=>void; loading?:boolean; hasMore?:boolean;
   onNavigate?:()=>void;
   indicators?:{atr:boolean;adx:boolean;rsi:boolean};onToggleIndicator?:(key:'atr'|'adx'|'rsi')=>void;
+  strategyVisible?:boolean;onToggleStrategy?:()=>void;
   follow?:boolean;onFollowChange?:(value:boolean)=>void;showEarlier?:boolean;
 }) {
   function zoomTime(factor:number) {
@@ -56,7 +57,10 @@ export default function ChartTools({chartRef,valueLabel='Price',horizontalLabel=
       {onLatest&&<button className="secondary" type="button" onClick={onLatest}>{endLabel}</button>}
       {(onEarlier||showEarlier)&&<button className="secondary" type="button" disabled={loading||!hasMore||!onEarlier} onClick={onEarlier}>{loading?'Loading history…':hasMore?'Load earlier':'Load earlier'}</button>}
     </div>
-    {indicators&&onToggleIndicator&&<div className="indicator-switch" role="group" aria-label="Chart indicators"><span>Indicators</span>{(['atr','adx','rsi'] as const).map(key=><button key={key} type="button" aria-pressed={indicators[key]} onClick={()=>onToggleIndicator(key)}>{key.toUpperCase()}</button>)}</div>}
+    {(strategyVisible!==undefined&&onToggleStrategy||indicators&&onToggleIndicator)&&<div className="indicator-switch" role="group" aria-label="Chart overlays and indicators">
+      {strategyVisible!==undefined&&onToggleStrategy&&<><span>Overlays</span><button type="button" aria-pressed={strategyVisible} title={`${strategyVisible?'Hide':'Show'} strategy curves`} onClick={onToggleStrategy}>Strategy</button></>}
+      {indicators&&onToggleIndicator&&<><span>Indicators</span>{(['atr','adx','rsi'] as const).map(key=><button key={key} type="button" aria-pressed={indicators[key]} onClick={()=>onToggleIndicator(key)}>{key.toUpperCase()}</button>)}</>}
+    </div>}
     {follow!==undefined&&onFollowChange&&<label className="follow-toggle"><input type="checkbox" checked={follow} onChange={event=>{onNavigate?.();onFollowChange(event.target.checked);if(event.target.checked)onLatest?.();}}/> Follow price</label>}
   </div>;
 }
