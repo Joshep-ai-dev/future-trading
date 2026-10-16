@@ -1,0 +1,242 @@
+/* Bot status card (paper and live sidebars) and the chart readiness badge. */
+
+.bot-status {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.bot-status > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.bot-status h2 {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.bot-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--surface-raised);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.bot-status-pill i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.bot-status-pill.is-scan {
+  background: var(--accent-soft);
+  color: #8fb3ff;
+}
+
+.bot-status-pill.is-scan i {
+  animation: bot-pulse 1.6s ease-in-out infinite;
+}
+
+.bot-status-pill.is-active {
+  background: #0ecb811f;
+  color: var(--green);
+}
+
+@keyframes bot-pulse {
+  50% { opacity: .3; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bot-status-pill.is-scan i { animation: none; }
+}
+
+.bot-status-meta,
+.bot-status-note,
+.bot-status-empty {
+  color: var(--faint);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.bot-status-empty {
+  padding: 8px 0 4px;
+  color: var(--muted);
+}
+
+.bot-side {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--field);
+}
+
+.bot-side-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+}
+
+.bot-side-head span {
+  flex: 1;
+  color: var(--muted);
+}
+
+.bot-side-head strong {
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.bot-side--long .bot-side-head strong { color: var(--green); }
+.bot-side--short .bot-side-head strong { color: var(--red); }
+
+.bot-side-head em {
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.bot-side--long .bot-side-head em { background: #0ecb8126; color: var(--green); }
+.bot-side--short .bot-side-head em { background: #f6465d26; color: var(--red); }
+
+.bot-side-track {
+  height: 6px;
+  margin: 9px 0 10px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--surface-raised);
+}
+
+.bot-side-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  transition: width .3s ease;
+}
+
+.bot-side--long .bot-side-track i { background: var(--green); }
+.bot-side--short .bot-side-track i { background: var(--red); }
+
+.bot-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bot-checks li {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  color: var(--faint);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.bot-checks li.passed {
+  border-color: #0ecb8155;
+  background: #0ecb8114;
+  color: #5fe0ad;
+}
+
+.bot-checks li span {
+  font-weight: 700;
+}
+
+.bot-status-position {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.bot-status-position .side-badge {
+  align-self: flex-start;
+}
+
+.bot-status-position dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+  margin: 0;
+  padding: 0;
+}
+
+.bot-status-position dt {
+  color: var(--faint);
+  font-size: 10.5px;
+}
+
+.bot-status-position dd {
+  margin: 3px 0 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Chart badge sits under the chart header, left of the price scale. */
+.price-panel {
+  position: relative;
+}
+
+.bot-chart-badge {
+  position: absolute;
+  top: 54px;
+  right: 82px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: #12161ce6;
+  backdrop-filter: blur(6px);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.bot-chart-badge > span:not(.bot-status-pill) {
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.badge-long { background: #0ecb811a; color: var(--green); }
+.badge-short { background: #f6465d1a; color: var(--red); }
+.badge-signal.long { background: var(--green); color: #0b0e11; }
+.badge-signal.short { background: var(--red); color: #fff; }
+
+@media (max-width: 1199px) {
+  .bot-chart-badge {
+    top: 88px;
+  }
+}
+
+@media (max-width: 600px) {
+  .bot-chart-badge {
+    right: 64px;
+    font-size: 10px;
+  }
+}

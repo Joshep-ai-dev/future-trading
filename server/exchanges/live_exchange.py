@@ -10,6 +10,7 @@ from typing import Literal
 import pandas as pd
 
 from server.strategies.bb_outer_reversal import Settings, run_backtest
+from server.strategies.readiness import strategy_readiness
 from server.market.data import TIMEFRAMES
 from server.exchanges.htx_account import classic_balance, classic_positions, classic_orders, rejection_reason, normalize_htx_balance
 
@@ -508,26 +509,6 @@ class AutomaticLiveBot:
                 self.strategy_state=self._strategy_state(signal,request,simulated,float(row.close),int(stamp.timestamp()))
 
     def _strategy_state(self, signal, request, simulated, close, timestamp):
-        config=request.bb_reversal
-        def metric(value):
-            number=float(value)
-            return number if math.isfinite(number) else None
-        common=[
-            ('ATR',bool(signal.atr>=config['min_atr']),metric(signal.atr),float(config['min_atr'])),
-            ('BB width',bool(signal.bb_width_pct>=config['min_bb_width_pct']),metric(signal.bb_width_pct),float(config['min_bb_width_pct'])),
-            ('ADX',bool(signal.adx>config['adx_threshold']),metric(signal.adx),float(config['adx_threshold'])),
-            ('Trend ready',bool(not config.get('use_sma_trend_adjustment',True) or signal.sma_ready),None,None),
-        ]
-        def side(rebound,direction_allowed):
-            checks=common+[
-                ('Band rebound',bool(rebound),None,None),
-                ('Direction allowed',bool(direction_allowed),None,None),
-            ]
-            return dict(readiness=round(100*sum(int(item[1]) for item in checks)/len(checks)),
-                        checks=[dict(label=label,passed=passed,value=value,threshold=threshold)
-                                for label,passed,value,threshold in checks])
-        long=side(signal.long_rebound,signal.long_direction_allowed)
-        short=side(signal.short_rebound,signal.short_direction_allowed)
         live=self.position
         close_state=None
         if live:
@@ -535,9 +516,7 @@ class AutomaticLiveBot:
             close_state=dict(direction=live['direction'],entryPrice=float(live['entryPrice']),stop=float(live['stop']),
                              stopDistance=max(0.,float(distance)),trailingActive=bool(simulated and simulated.get('trailing_active')))
         return dict(status='position_open' if live else 'scanning',timestamp=timestamp,close=float(close),
-                    longReadiness=long['readiness'],shortReadiness=short['readiness'],
-                    longChecks=long['checks'],shortChecks=short['checks'],closeState=close_state,
-                    signal='long' if bool(signal.long_signal) else 'short' if bool(signal.short_signal) else None)
+                    closeState=close_state,**strategy_readiness(signal,request.bb_reversal))
 
     def _apply_bar(self,exchange,market,venue,request,signal,simulated,close):
         signal_direction=1 if bool(signal.long_signal) else -1 if bool(signal.short_signal) else 0

@@ -1,5 +1,5 @@
 """Persisted, causal candle-based paper trading. Never submits exchange orders."""
-from dataclasses import replace
+from dataclasses import asdict, replace
 import json
 from pathlib import Path
 import threading
@@ -8,6 +8,7 @@ import time
 import pandas as pd
 
 from server.strategies.bb_outer_reversal import Settings, run_backtest
+from server.strategies.readiness import strategy_readiness
 from server.core.serialization import optional_volume
 from server.market.data import TIMEFRAMES, load_bars
 from server.market.market_refresh import refresh_service
@@ -214,6 +215,16 @@ class PaperTrading:
             if position:
                 position['entry_time'] = int(position['entry_time'].timestamp())
             bars = result['bars']
+            close = float(bars.close.iloc[-1])
+            close_state = None
+            if position:
+                distance = (close-float(position['stop'])) if position['direction'] == 1 else (float(position['stop'])-close)
+                close_state = dict(direction='long' if position['direction'] == 1 else 'short',
+                                   entryPrice=float(position['entry_price']), stop=float(position['stop']),
+                                   stopDistance=max(0., float(distance)), trailingActive=bool(position.get('trailing_active')))
+            strategy_state = dict(status='position_open' if position else 'scanning',
+                                  timestamp=int(bars.index[-1].timestamp()), close=close, closeState=close_state,
+                                  **strategy_readiness(bars.iloc[-1], asdict(config)))
             chart_indicators, chart_stops = [], []
             for stamp, bar in bars.tail(1000).iterrows():
                 point = dict(time=int(stamp.timestamp()))
@@ -224,7 +235,7 @@ class PaperTrading:
                 chart_indicators.append(point)
                 chart_stops.append(dict(time=point['time'],price=float(bar.stop) if pd.notna(bar.stop) else None))
             state.update(candles=combined, lastProcessed=int(bars.index[-1].timestamp()),
-                chartIndicators=chart_indicators, chartStops=chart_stops,
+                chartIndicators=chart_indicators, chartStops=chart_stops, strategyState=strategy_state,
                 balance=result['cash'], equity=float(bars.equity.iloc[-1]), openPosition=position,
                 trades=trades, latestPrice=float(bars.close.iloc[-1]),
                 equityHistory=[dict(time=int(t.timestamp()),value=float(v)) for t,v in bars.equity.items()],
