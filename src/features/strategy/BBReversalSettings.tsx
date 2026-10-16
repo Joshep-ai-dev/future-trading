@@ -32,7 +32,7 @@ export default function BBReversalSettings({settings,onChange}:{settings:Backtes
   const setBb=(patch:Partial<typeof config>)=>onChange({...settings,bb_reversal:{...config,...patch}});
   const num=(key:BbKey,label:string,hint?:string,unit?:string)=>{
     const [min,max,step]=limits[key];
-    return <Field key={key} label={label} hint={hint} unit={unit}><input type="number" required min={min} max={max} step={step} value={config[key]} onChange={event=>setBb({[key]:Number(event.target.value)})}/></Field>;
+    return <Field key={key} label={label} hint={hint} unit={unit}><input type="number" required min={min} max={max} step={step>=1?1:"any"} value={config[key]} onChange={event=>setBb({[key]:Number(event.target.value)})}/></Field>;
   };
   async function applyHtx(){
     setCostBusy(true);setCostMessage('');
