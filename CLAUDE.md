@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Silver Terminal: local XAG/USDT perpetual research, paper trading and optional live execution. Python FastAPI backend (`server/`) + React 19/TypeScript/Vite UI (`src/`) using `lightweight-charts`. The only strategy is **BB Outer Band Reversal** (`bb_outer_reversal`); the APIs reject any other strategy id. See `AGENTS.md` for style/commit rules and `README.md`, `server/README.md`, `src/README.md` for feature and module notes.
+Silver Terminal: local XAG/USDT perpetual research, paper trading and optional live execution. Python FastAPI backend (`server/`) + React 19/TypeScript/Vite UI (`src/`) using `lightweight-charts`. Strategies: **BB Outer Band Reversal** (`bb_outer_reversal`, backtest/paper/live) and **ML Ensemble** (`ml_ensemble`, backtest/paper only). See `AGENTS.md` for style/commit rules and `README.md`, `server/README.md`, `src/README.md` for feature and module notes.
 
 ## Commands (Windows, run from repo root)
 
@@ -25,6 +25,10 @@ Note: some paths in the root `README.md` predate the package reorganization (e.g
 - `exchanges/live_exchange.py` — `LiveExchange`/`AutomaticLiveBot`, ccxt-based real execution (OKX, HTX, MEXC, Binance) and automation on completed candles. `exchange_stream.py` streams account/market updates; `htx_*` handle venue specifics.
 
 Strategy setting changes therefore usually touch `Settings`, the adapter, the UI defaults (`src/features/strategy/strategyDefaults.ts`, `BBReversalSettings.tsx`) and the tests.
+
+**Strategy registry.** `server/strategies/registry.py` maps a strategy id to a `StrategyRunner` (run, warmup bars, chart columns, readiness, report, `live_supported`). Backtests (`bb_reversal_adapter.run_strategy_backtest`), paper trading and the live-bot guard use it; add a strategy by implementing a runner. Engines must return `dict(bars, trades, open_position, cash)` with BB-compatible trade fields.
+
+**ML Ensemble.** `server/strategies/ml/`: `features.py` (registered look-ahead-free indicator groups), `labels.py` (triple-barrier labels from ATR take-profit/stop/horizon), `models.py` (registry: LightGBM, XGBoost, sklearn boosting/forests/linear/MLP; optional libs detected at runtime), `walk_forward.py` (causal folds, trained-fold LRU cache keyed by the exact training window), `strategy.py` (`MLSettings`, signals with probability/edge/reward-to-cost filters). Trades execute through the shared `strategies/execution.py` engine. `/api/strategies` serves the feature/model catalog to the UI.
 
 **Market data.** `market/data.py` (`load_bars`, `TIMEFRAMES`) merges the untouched source `data/OKX_XAG-USDT-SWAP_1m.csv` with `data/OKX_XAG-USDT-SWAP_1m_updates.csv`, which `market/market_refresh.py` (`refresh_service`) fills from public OKX candles at startup and hourly. Higher timeframes are aggregated from 1m. All market data and date boundaries are UTC; chart display time zone is a UI preference only.
 
