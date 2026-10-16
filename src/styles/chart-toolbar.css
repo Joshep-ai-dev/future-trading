@@ -288,3 +288,34 @@
     scrollbar-width: none;
   }
 }
+
+/* One-row chart header: tools share the timeframe row on wide screens */
+@media (min-width: 1200px) {
+  .price-panel {
+    position: relative;
+  }
+
+  .price-panel > .tv-header {
+    min-height: 44px;
+  }
+
+  .price-panel > .tv-header .trading-chart-heading-meta {
+    display: none;
+  }
+
+  .price-panel > .tv-toolbar {
+    position: absolute;
+    top: 0;
+    right: 0;
+    z-index: 4;
+    height: 44px;
+    min-height: 0;
+    padding: 0 10px;
+    border: 0;
+    background: transparent;
+  }
+
+  .price-panel > .tv-toolbar .tv-spacer {
+    flex: 0 0 8px;
+  }
+}
