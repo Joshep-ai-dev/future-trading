@@ -7,7 +7,7 @@ import {fmt,type BacktestResult,type Trade} from '../../shared/types/types';
 import {formatTradingTime,useTradingTimeZone,type TradingTimeZone} from '../../shared/charts/tradingTime';
 import TradingChartHeader from '../../shared/charts/TradingChartHeader';
 import SavedRuns from './SavedRuns';
-import {BalanceSparkline,DrawdownChart,WinDonut,balanceSeries,drawdownSeries} from './ResultCharts';
+import {BalanceSparkline,DrawdownChart,PayoffBars,WinDonut,balanceSeries,drawdownSeries} from './ResultCharts';
 
 const money=(value:number)=>`${value>=0?'+':'-'}$${fmt(Math.abs(value))}`;
 const utc=(t:number)=>new Date(t*1000).toISOString().replace('T',' ').slice(0,16);
@@ -65,6 +65,7 @@ export default function ResultsWorkspace({result,busy,stale,onRun,onConfigure,on
             <div className="answer-donut-copy"><span><i className="dot-good"/><b>{s.wins}</b> wins</span><span><i className="dot-bad"/><b>{s.losses}</b> losses</span>
               <p>{s.profitFactor===null?'No losing trades.':<>Won <b className={s.profitFactor>=1?'positive':'negative'}>${fmt(s.profitFactor)}</b> per $1 lost</>}</p></div>
           </div>
+          <PayoffBars avgWin={stats.avgWin} avgLoss={stats.avgLoss}/>
         </section>
         <section className="result-answer">
           <header><span>How risky was it?</span><em className={risk==='Low'?'tag-good':risk==='Moderate'?'tag-warn':'tag-bad'}>{risk} risk</em></header>

@@ -504,3 +504,183 @@
 .saved-runs td:nth-child(n+5):not(:last-child) {
   text-align: right !important;
 }
+
+/* Answer card charts: fill the card, markers and hover readout */
+.result-answers {
+  align-items: stretch;
+}
+
+.result-answer {
+  min-height: 210px;
+}
+
+.area-chart {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 78px;
+  margin: 8px 0 2px;
+  cursor: crosshair;
+  touch-action: pan-y;
+}
+
+.area-chart svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.area-baseline {
+  stroke: var(--border-strong);
+  stroke-dasharray: 3 4;
+}
+
+.area-crosshair {
+  stroke: #ffffff40;
+  stroke-dasharray: 2 3;
+}
+
+.area-marker,
+.area-dot {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.area-marker i {
+  display: block;
+  width: 8px;
+  height: 8px;
+  border: 2px solid var(--panel);
+  border-radius: 50%;
+  background: var(--muted);
+  box-shadow: 0 0 0 1px currentColor;
+}
+
+.area-marker.is-good { color: var(--green); }
+.area-marker.is-bad { color: var(--red); }
+.area-marker.is-muted { color: var(--faint); }
+.area-marker.is-good i { background: var(--green); }
+.area-marker.is-bad i { background: var(--red); }
+
+.area-marker b {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #12161ce6;
+  color: currentColor;
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+.area-marker.is-right b { right: -4px; left: auto; transform: none; }
+.area-marker.is-left b { left: -4px; transform: none; }
+
+.area-chart .area-marker.is-bad b {
+  top: 12px;
+  bottom: auto;
+}
+
+.area-dot {
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--panel);
+  border-radius: 50%;
+}
+
+.area-tip {
+  position: absolute;
+  top: -6px;
+  padding: 3px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--surface-raised);
+  color: var(--text);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  transform: translate(8px, -100%);
+  pointer-events: none;
+}
+
+.area-tip.is-right {
+  transform: translate(calc(-100% - 8px), -100%);
+}
+
+.win-donut {
+  width: 96px;
+  height: 96px;
+}
+
+.payoff-bars {
+  display: grid;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.payoff-bars > div {
+  display: grid;
+  grid-template-columns: 60px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  font-size: 11.5px;
+}
+
+.payoff-bars span {
+  color: var(--faint);
+}
+
+.payoff-bars i {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--surface-raised);
+}
+
+.payoff-bars b {
+  display: block;
+  height: 100%;
+  border-radius: 6px;
+}
+
+.payoff-bars .is-good { background: var(--green); }
+.payoff-bars .is-bad { background: var(--red); }
+
+.payoff-bars em {
+  min-width: 72px;
+  font-style: normal;
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Keep marker labels and the hover readout inside the chart area */
+.area-marker b,
+.area-chart .area-marker.is-bad b {
+  top: auto;
+  bottom: auto;
+}
+
+.area-marker.is-above b { bottom: 12px; }
+.area-marker.is-below b { top: 12px; }
+
+.area-tip {
+  top: 2px;
+  transform: translateX(8px);
+}
+
+.area-tip.is-right {
+  transform: translateX(calc(-100% - 8px));
+}
+
+.area-tip.is-low {
+  top: auto;
+  bottom: 2px;
+}
