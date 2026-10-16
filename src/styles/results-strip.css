@@ -1,0 +1,117 @@
+/* Compact TradingView-style performance strip for backtest results. */
+
+.result-run-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 0;
+  margin: -6px 0 12px;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.result-run-line span + span::before {
+  content: "";
+  display: inline-block;
+  width: 3px;
+  height: 3px;
+  margin: 0 12px 2px;
+  border-radius: 50%;
+  background: var(--faint);
+  vertical-align: middle;
+}
+
+.result-run-line .is-muted {
+  color: var(--faint);
+}
+
+.result-strip {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.result-strip > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 12px 16px;
+  border-left: 1px solid var(--border);
+}
+
+.result-strip > div:first-child {
+  border-left: 0;
+}
+
+.result-strip span {
+  color: var(--faint);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.result-strip strong {
+  font-size: 17px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.result-strip small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.result-strip .strip-bar {
+  display: block;
+  height: 4px;
+  margin-top: 6px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #f6465d66;
+}
+
+.result-strip .strip-bar i {
+  display: block;
+  height: 100%;
+  background: var(--green);
+}
+
+@media (max-width: 1300px) {
+  .result-strip {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .result-strip > div:nth-child(4n+1) {
+    border-left: 0;
+  }
+
+  .result-strip > div:nth-child(n+5) {
+    border-top: 1px solid var(--border);
+  }
+}
+
+@media (max-width: 600px) {
+  .result-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .result-strip > div:nth-child(odd) {
+    border-left: 0;
+  }
+
+  .result-strip > div:nth-child(even) {
+    border-left: 1px solid var(--border);
+  }
+
+  .result-strip > div:nth-child(n+3) {
+    border-top: 1px solid var(--border);
+  }
+}

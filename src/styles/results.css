@@ -1,130 +1,4 @@
-/* Backtest results: verdict, KPI strip, chart with inspector, tester tabs. */
-
-.result-verdict {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 16px 32px;
-  margin-bottom: 12px;
-  padding: 22px 24px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--panel);
-}
-
-.result-verdict.is-profit {
-  border-color: #0ecb8140;
-  background: linear-gradient(100deg, #0ecb8114, var(--panel) 55%);
-}
-
-.result-verdict.is-loss {
-  border-color: #f6465d40;
-  background: linear-gradient(100deg, #f6465d14, var(--panel) 55%);
-}
-
-.result-verdict-label {
-  display: inline-block;
-  margin-bottom: 8px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: .3px;
-}
-
-.is-profit .result-verdict-label {
-  background: #0ecb8126;
-  color: var(--green);
-}
-
-.is-loss .result-verdict-label {
-  background: #f6465d26;
-  color: var(--red);
-}
-
-.result-verdict h2 {
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: -.2px;
-}
-
-.is-profit .result-verdict h2 b { color: var(--green); }
-.is-loss .result-verdict h2 b { color: var(--red); }
-
-.result-verdict p {
-  margin-top: 6px;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.result-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.result-chips span {
-  padding: 5px 10px;
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  color: var(--text);
-  font-size: 11.5px;
-  font-variant-numeric: tabular-nums;
-}
-
-.result-chips .is-muted {
-  color: var(--faint);
-}
-
-.result-kpis {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 1px;
-  margin-bottom: 12px;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--border);
-}
-
-.result-kpis > div {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 16px 18px;
-  background: var(--panel);
-}
-
-.result-kpis span {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.result-kpis strong {
-  font-size: 22px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-.result-kpis small {
-  color: var(--faint);
-  font-size: 11px;
-  line-height: 1.4;
-}
-
-.kpi-bar {
-  height: 4px;
-  overflow: hidden;
-  border-radius: 4px;
-  background: #f6465d66;
-}
-
-.kpi-bar i {
-  display: block;
-  height: 100%;
-  background: var(--green);
-}
+/* Backtest results: chart with inspector, tester tabs. */
 
 .result-workspace {
   grid-template-columns: minmax(0, 1fr) 320px;
@@ -228,12 +102,6 @@
   font-weight: 600;
 }
 
-@media (max-width: 1400px) {
-  .result-kpis {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-
 @media (max-width: 1100px) {
   .result-workspace {
     grid-template-columns: minmax(0, 1fr);
@@ -241,14 +109,6 @@
 }
 
 @media (max-width: 600px) {
-  .result-kpis {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .result-verdict h2 {
-    font-size: 18px;
-  }
-
   .result-workspace .result-chart .chart-resize {
     height: 420px;
   }
