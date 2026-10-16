@@ -126,3 +126,10 @@
   padding-top: 9px;
   padding-bottom: 9px;
 }
+
+.pagination {
+  gap: 12px;
+  margin: 0;
+  padding: 14px 16px;
+  border-top: 1px solid var(--border);
+}
