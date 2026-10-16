@@ -450,3 +450,44 @@
   font-size: 12px;
   font-weight: 600;
 }
+
+/* Saved runs table: one header band, compact numeric columns */
+.saved-runs table {
+  table-layout: auto;
+}
+
+.saved-runs thead th {
+  position: static;
+  border-bottom: 1px solid var(--border);
+  background: transparent !important;
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.saved-runs tbody tr {
+  background: transparent;
+  transition: background .12s;
+}
+
+.saved-runs tbody tr:hover td {
+  background: #ffffff05;
+}
+
+.saved-runs tbody tr.selected-row td {
+  background: var(--accent-soft) !important;
+}
+
+.saved-runs td:nth-child(n+4):not(:last-child),
+.saved-runs th:nth-child(n+4):not(:last-child) {
+  text-align: right;
+}
+
+.saved-runs td:first-child,
+.saved-runs th:first-child {
+  width: 22%;
+}
+
+.saved-runs td:last-child {
+  width: 1%;
+}
