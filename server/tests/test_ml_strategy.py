@@ -283,3 +283,17 @@ class SplitPointTests(unittest.TestCase):
             split_points(index, date(2026, 3, 21), date(2026, 3, 1))
         with self.assertRaises(ValueError):
             split_points(index, date(2025, 12, 1), date(2026, 2, 1))
+
+
+class SizeFilterTests(unittest.TestCase):
+    def test_quiet_market_blocks_entries(self):
+        frame = market(2400)
+        common = dict(train_bars=800, retrain_every=300, horizon=6, models={'extra_trees': 1.}, exit_mode='fixed',
+                      feature_groups=['returns', 'volatility'], entry_threshold=.35, min_edge=0., min_reward_cost=0.,
+                      min_reward_risk=0.)
+        start = frame.index[1200]
+        loose = run_ml_backtest(frame, MLSettings(**common, min_atr=0.), initial_capital=1000, leverage=1, start=start)
+        strict = run_ml_backtest(frame, MLSettings(**common, min_atr=10.), initial_capital=1000, leverage=1, start=start)
+        self.assertGreater(len(loose['trades']), 0)
+        self.assertEqual(len(strict['trades']), 0)
+        self.assertGreater(strict['report']['blockedBySize'], 0)

@@ -1,4 +1,4 @@
-import type {BacktestSettings,MLConfig} from '../../shared/types/types';
+import {fmt,type BacktestSettings,type MLConfig} from '../../shared/types/types';
 import {Field,SettingsCard,TIMEFRAME_CHOICES} from './BBReversalSettings';
 import {useStrategyCatalog} from './useStrategyCatalog';
 import {REGIME_NAMES} from './strategyDefaults';
@@ -48,8 +48,11 @@ export default function MLStrategySettings({settings,onChange}:{settings:Backtes
         {num('entry_threshold','Entry probability',.34,.99,'any','Model probability needed to enter.')}
         {num('min_edge','Edge over opposite side',0,.99,'any','Long minus short probability.')}
         {num('min_reward_cost','Reward ÷ cost',0,50,'any','Skip trades whose target is too small for costs.','×')}
-        {num('horizon','Horizon',1,500,1,'Candles a trade may stay open.','bars')}
+        {num('horizon','Horizon',1,500,1,'Candles a trade may stay open; longer = bigger moves.','bars')}
+        {num('min_atr','Minimum ATR',0,100,'any','No new trades when the market moves less than this.','USDT')}
+        {num('min_target','Minimum take profit',0,100,'any','Skip trades whose target is smaller (0 = off).','USDT')}
       </div>
+      <p className="setup-note">Expected size: about {fmt(settings.capital*(config.amount_unit==='percent'?config.amount_per_trade/100:Math.min(1,config.amount_per_trade/settings.capital))*settings.max_leverage/58,1)} oz per trade at this amount and leverage, so every 0.10 USDT move ≈ ${fmt(settings.capital*(config.amount_unit==='percent'?config.amount_per_trade/100:Math.min(1,config.amount_per_trade/settings.capital))*settings.max_leverage/58*.1,2)}. Raise leverage or the horizon for larger P&amp;L per trade.</p>
       <div className="setup-option"><div><strong>Reverse on opposite signal</strong><p>Close and flip the position when the models confidently call the other direction.</p></div><label className="setup-toggle"><input type="checkbox" role="switch" aria-label="Reverse on opposite signal" checked={config.reverse_on_signal} onChange={event=>setMl({reverse_on_signal:event.target.checked})}/><i aria-hidden="true"/><span>{config.reverse_on_signal?'On':'Off'}</span></label></div>
     </SettingsCard>
 

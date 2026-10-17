@@ -27,7 +27,7 @@ DEFAULT_MODELS = {'lightgbm': 1., 'xgboost': 0., 'hist_gbm': 0., 'random_forest'
 class MLSettings:
     feature_groups: list[str] = field(default_factory=lambda: list(DEFAULT_GROUPS))
     models: dict[str, float] = field(default_factory=lambda: dict(DEFAULT_MODELS))
-    horizon: int = 12
+    horizon: int = 24
     take_profit_atr: float = 1.5
     stop_atr: float = 1.0
     atr_length: int = 14
@@ -43,13 +43,16 @@ class MLSettings:
     capacity: str = 'standard'
     # Learned exits: quantile models decide take-profit, stop and trailing per trade.
     exit_mode: str = 'learned'
-    tp_quantile: float = .4
+    tp_quantile: float = .5
     sl_quantile: float = .7
     min_reward_risk: float = 1.2
     trailing: bool = True
     trail_start: float = .6
     trail_noise: float = 1.
     regimes: list[str] = field(default_factory=lambda: list(REGIME_NAMES))
+    # Market size filters: skip quiet markets and trades whose target is too small to matter.
+    min_atr: float = .03
+    min_target: float = 0.
     # Recent candles matter more: training weights halve every ``recency_half_life`` candles back (0 = equal).
     recency_half_life: int = 2000
 
@@ -80,7 +83,8 @@ class MLSettings:
                   (0 <= self.min_reward_risk <= 10, 'Minimum reward/risk must be 0-10'),
                   (.1 <= self.trail_start <= 2 and .2 <= self.trail_noise <= 5, 'Trailing settings out of range'),
                   (bool(self.regimes) and all(name in REGIME_NAMES for name in self.regimes), 'Choose at least one valid market regime'),
-                  (0 <= self.recency_half_life <= 200_000, 'Recency half-life must be 0-200000 candles')]
+                  (0 <= self.recency_half_life <= 200_000, 'Recency half-life must be 0-200000 candles'),
+                  (0 <= self.min_atr <= 100 and 0 <= self.min_target <= 100, 'Minimum ATR and target must be 0-100')]
         for valid, message in checks:
             if not valid:
                 raise ValueError(message)
@@ -191,6 +195,10 @@ def execute(prepared: Prepared, settings: MLSettings, *, initial_capital: float,
     affordable = target_for_signal >= settings.min_reward_cost*round_trip
     blocked_by_cost = int(((signals != 0) & ~affordable)[start_index:].sum())
     signals = np.where(affordable, signals, 0.)
+    # Quiet market or too small a move: no new entry.
+    big_enough = (np.nan_to_num(distance) >= settings.min_atr) & (target_for_signal >= settings.min_target)
+    blocked_by_size = int(((signals != 0) & ~big_enough)[start_index:].sum())
+    signals = np.where(big_enough, signals, 0.)
     stop_distance = np.where(signals == -1, plan['short_stop'], plan['long_stop'])
     target_distance = target_for_signal
     trail_activation = np.where(signals == -1, plan['short_trail_start'], plan['long_trail_start'])
@@ -227,7 +235,7 @@ def execute(prepared: Prepared, settings: MLSettings, *, initial_capital: float,
                                  winRate=float((chosen.pnl > 0).mean()*100) if len(chosen) else None,
                                  allowed=name in settings.regimes))
     learned_window = result.probabilities.iloc[window]
-    output['report'] = dict(exitMode=settings.exit_mode, regimes=regime_stats,
+    output['report'] = dict(exitMode=settings.exit_mode, regimes=regime_stats, blockedBySize=blocked_by_size,
                             blockedByRewardRisk=blocked_by_reward_risk, blockedByRegime=blocked_by_regime,
                             learnedExits={column: float(np.nanmedian(learned_window[column])) if column in learned_window and learned_window[column].notna().any() else None
                                           for column in ('long_tp', 'long_sl', 'short_tp', 'short_sl')},
