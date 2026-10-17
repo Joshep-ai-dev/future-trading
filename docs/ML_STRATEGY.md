@@ -291,6 +291,56 @@ tables, summary cards and paper trading work unchanged.
 
 ---
 
+## 7b. What the models learn besides direction — `exits.py`
+
+Every walk-forward block trains three things on the same past-only window:
+
+```mermaid
+flowchart LR
+    W[Training window<br/>past candles only] --> D[Direction ensemble<br/>long / short / neither]
+    W --> X[Exit models<br/>4 quantile regressors]
+    W --> R[Regime model<br/>Gaussian mixture, 4 states]
+    D --> E{Entry?}
+    X --> E
+    R --> E
+    E -->|probability, edge,<br/>reward/risk, regime allowed| T[Trade with learned<br/>target, stop and trailing]
+```
+
+| Learned | Target the model learns | Used for |
+|---|---|---|
+| **Direction** | triple-barrier label | long / short / no trade |
+| **Long / short MFE** | largest favourable move within the horizon (× ATR), quantile *q_tp* (default 0.4) | take-profit distance |
+| **Long / short MAE** | largest adverse move within the horizon (× ATR), quantile *q_sl* (default 0.7) | stop distance and trailing distance |
+| **Market regime** | 4 clusters on 24-candle return, 48-candle volatility, efficiency, ADX, EMA slope | name the state; trade only in chosen states |
+
+* A **lower target quantile** gives a closer take-profit that is reached more often; a **higher stop
+  quantile** gives a stop outside normal noise.
+* Learned distances are clipped to 0.3–6 × ATR. Blocks without an exit model fall back to the fixed
+  ATR multiples.
+* **Learned reward/risk filter:** an entry needs learned target ÷ learned stop ≥ *min reward/risk*
+  (default 1.2).
+* **Trailing stop:** activates after `trail_start` × learned target (default 60%) and follows the
+  best price by `trail_noise` × learned stop; it never loosens.
+* **Regimes:** clusters are named from their centres — highest volatility = *Volatile*, strongest
+  positive trend = *Trend up*, strongest negative = *Trend down*, the rest = *Range*. The Model tab
+  shows time spent, trades, win rate and P&L per regime; Bot settings → *Market regimes* chooses
+  which states may trade.
+
+Real data check (15m, last 120 days, default settings): learned targets ≈ 1.3 × ATR and stops ≈
+2.4 × ATR — silver usually moved further against a trade than for it within 12 candles, so the
+reward/risk filter skipped about 1 100 weak signals. Per regime, only **Range** was profitable
+(7 trades, +$28); trend and volatile states lost. This is the kind of insight the grid search
+(regimes, quantiles, trailing start, minimum reward/risk) can now be pointed at.
+
+### What the grid search tunes in learned mode
+
+| Stage | Axes |
+|---|---|
+| Model (retrains) | horizon 8/12/24 × target quantile 0.3/0.4/0.5 × stop quantile 0.6/0.75, then capacity check |
+| Entry (no retraining) | entry probability × edge × minimum reward/risk 1.0/1.3/1.6 × trailing start 0.5/0.8 |
+
+---
+
 ## 8. Hyperparameter search — `tuning.py`
 
 Started from **Bot settings → Find better settings** (with ML Ensemble selected).
@@ -427,7 +477,8 @@ sequenceDiagram
 | File | Responsibility |
 |---|---|
 | `server/strategies/ml/features.py` | Indicator feature groups (registry) |
-| `server/strategies/ml/labels.py` | Triple-barrier labels |
+| `server/strategies/ml/labels.py` | Triple-barrier labels and MFE/MAE excursion targets |
+| `server/strategies/ml/exits.py` | Learned exit (quantile) models and market regime model |
 | `server/strategies/ml/models.py` | Model registry, capacity presets, unified `fit_model` |
 | `server/strategies/ml/sequence.py` | PyTorch 1D-CNN and LSTM |
 | `server/strategies/ml/walk_forward.py` | Walk-forward training and block cache |

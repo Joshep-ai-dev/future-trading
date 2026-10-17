@@ -15,7 +15,7 @@ function SideReadiness({side,value,checks,signal}:{side:'long'|'short';value:num
 
 function ProbabilityGrid({values}:{values:Record<string,number|null>}){
   const rows:[string,number|null|undefined,string][]=[['Up (long win)',values.pLong,'is-long'],['Neither',values.pNone,'is-none'],['Down (short win)',values.pShort,'is-short']];
-  return <div className="bot-probabilities">{rows.map(([label,value,tone])=><div key={label}><span>{label}</span><i><b className={tone} style={{width:`${(value??0)*100}%`}}/></i><strong>{value==null?'—':`${fmt(value*100,1)}%`}</strong></div>)}{values.atr!=null&&<small>ATR {fmt(values.atr,3)}</small>}</div>;
+  return <div className="bot-probabilities">{rows.map(([label,value,tone])=><div key={label}><span>{label}</span><i><b className={tone} style={{width:`${(value??0)*100}%`}}/></i><strong>{value==null?'—':`${fmt(value*100,1)}%`}</strong></div>)}{(values as Record<string,unknown>).regime!=null&&<div className="bot-regime"><span>Market regime</span><b>{String((values as Record<string,unknown>).regime)}</b></div>}{values.longTp!=null&&<div className="bot-exits"><span>Learned exits × ATR</span><b className="positive">L {fmt(values.longTp,2)} / {fmt(values.longSl,2)}</b><b className="negative">S {fmt(values.shortTp,2)} / {fmt(values.shortSl,2)}</b></div>}{values.atr!=null&&<small>ATR {fmt(values.atr,3)}</small>}</div>;
 }
 
 function IndicatorGrid({values,close}:{values:StrategyIndicators;close?:number|null}){

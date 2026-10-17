@@ -396,3 +396,19 @@
 .backfill-result {
   color: var(--muted) !important;
 }
+
+.bot-regime,
+.bot-exits {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 10px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.bot-regime span,
+.bot-exits span {
+  color: var(--faint);
+}

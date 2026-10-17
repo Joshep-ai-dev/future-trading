@@ -723,3 +723,44 @@
 .setup-search-panel > button {
   height: 36px;
 }
+
+.exit-mode {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.exit-mode button {
+  padding: 12px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--field);
+  color: var(--text);
+  text-align: left;
+}
+
+.exit-mode button[aria-checked=true] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.exit-mode strong {
+  display: block;
+  font-size: 13px;
+}
+
+.exit-mode small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.regime-picker {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media (max-width: 800px) {
+  .exit-mode, .regime-picker { grid-template-columns: minmax(0, 1fr); }
+}

@@ -16,6 +16,12 @@ export default function ModelReportPanel({report}:{report:ModelReport}){
       <div><span>Cost vs target</span><strong className={costShare!=null&&costShare>.33?'negative':''}>{costShare==null?'—':`${fmt(costShare*100,0)}%`}</strong><small>Round trip {fmt(report.medianRoundTripCost,3)} vs target {fmt(report.medianTarget,3)} USDT</small></div>
       <div><span>Signals skipped for cost</span><strong>{report.blockedByCost.toLocaleString()}</strong><small>Target below the reward ÷ cost ratio</small></div>
     </div>
+    {report.regimes&&<section className="regime-report"><h3>Results by market regime</h3><p className="model-note">Learned market states in the tested period. Off = excluded by your regime filter.</p>
+      <table><thead><tr><th>Regime</th><th>Time in regime</th><th>Trades</th><th>Win rate</th><th>Net P&amp;L</th><th>Traded</th></tr></thead><tbody>
+        {report.regimes.map(regime=><tr key={regime.name}><td><span className={`regime-dot is-${regime.name.replace(' ','-').toLowerCase()}`}/>{regime.name}</td><td><i className="regime-share"><b style={{width:`${regime.share*100}%`}}/></i>{pct(regime.share,0)}</td><td>{regime.trades}</td><td>{regime.winRate==null?'—':`${fmt(regime.winRate,1)}%`}</td><td className={regime.netPnl>=0?'positive':'negative'}>{regime.netPnl>=0?'+':'-'}${fmt(Math.abs(regime.netPnl))}</td><td>{regime.allowed?'On':'Off'}</td></tr>)}
+      </tbody></table>
+      {report.exitMode==='learned'&&report.learnedExits&&<div className="learned-exits"><span>Median learned exits (× ATR)</span>{([['Long target','long_tp'],['Long stop','long_sl'],['Short target','short_tp'],['Short stop','short_sl']] as const).map(([label,key])=><div key={key}><small>{label}</small><b>{report.learnedExits?.[key]==null?'—':fmt(report.learnedExits[key],2)}</b></div>)}<div><small>Skipped by reward/risk</small><b>{(report.blockedByRewardRisk??0).toLocaleString()}</b></div><div><small>Skipped by regime</small><b>{(report.blockedByRegime??0).toLocaleString()}</b></div></div>}
+    </section>}
     <div className="model-report-grid">
       <section><h3>What the market did</h3><p className="model-note">Share of candles where a long win, a short win or neither happened within the horizon.</p>
         <div className="outcome-bar" aria-label="Outcome balance">{(['long','none','short'] as const).map(key=><i key={key} className={`is-${key}`} style={{width:`${report.labelBalance[key]*100}%`}} title={`${key}: ${pct(report.labelBalance[key])}`}/>)}</div>

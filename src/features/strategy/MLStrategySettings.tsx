@@ -1,6 +1,7 @@
 import type {BacktestSettings,MLConfig} from '../../shared/types/types';
 import {Field,SettingsCard,TIMEFRAME_CHOICES} from './BBReversalSettings';
 import {useStrategyCatalog} from './useStrategyCatalog';
+import {REGIME_NAMES} from './strategyDefaults';
 
 type NumberKey={[K in keyof MLConfig]:MLConfig[K] extends number?K:never}[keyof MLConfig];
 
@@ -42,23 +43,45 @@ export default function MLStrategySettings({settings,onChange}:{settings:Backtes
       })}</div>
     </SettingsCard>
 
-    <SettingsCard step={4} id="settings-signals" title="Signals & exits" description="Each trade gets an ATR-based take profit and stop, and closes after the horizon if neither is hit. The models learn exactly this outcome.">
+    <SettingsCard step={4} id="settings-signals" title="Entries" description="The models must be confident in one direction, clearly more than the other, and the trade must be worth its cost.">
       <div className="setup-grid">
-        {num('horizon','Horizon',1,500,1,'Candles a trade may stay open.','bars')}
-        {num('take_profit_atr','Take profit',.1,20,'any','Distance in ATR.','× ATR')}
-        {num('stop_atr','Stop loss',.1,20,'any','Distance in ATR.','× ATR')}
-        {num('atr_length','ATR length',2,500,1,undefined,'bars')}
         {num('entry_threshold','Entry probability',.34,.99,'any','Model probability needed to enter.')}
         {num('min_edge','Edge over opposite side',0,.99,'any','Long minus short probability.')}
         {num('min_reward_cost','Reward ÷ cost',0,50,'any','Skip trades whose target is too small for costs.','×')}
+        {num('horizon','Horizon',1,500,1,'Candles a trade may stay open.','bars')}
       </div>
       <div className="setup-option"><div><strong>Reverse on opposite signal</strong><p>Close and flip the position when the models confidently call the other direction.</p></div><label className="setup-toggle"><input type="checkbox" role="switch" aria-label="Reverse on opposite signal" checked={config.reverse_on_signal} onChange={event=>setMl({reverse_on_signal:event.target.checked})}/><i aria-hidden="true"/><span>{config.reverse_on_signal?'On':'Off'}</span></label></div>
     </SettingsCard>
 
-    <SettingsCard step={5} id="settings-training" title="Walk-forward training" description="Models retrain on past data only and are tested on the next block they have never seen. The backtest reports only these unseen blocks.">
+    <SettingsCard step={5} id="settings-exits" title="Exits" description={config.exit_mode==='learned'?'The models learn how far price usually moves for and against each trade, and set take-profit, stop and trailing from that for every entry.':'Every trade uses the same ATR multiples for take-profit and stop.'}>
+      <div className="exit-mode" role="radiogroup" aria-label="Exit mode">{(['learned','fixed'] as const).map(mode=><button key={mode} type="button" role="radio" aria-checked={config.exit_mode===mode} onClick={()=>setMl({exit_mode:mode})}><strong>{mode==='learned'?'Learned by the models':'Fixed ATR multiples'}</strong><small>{mode==='learned'?'Quantile models predict the favourable and adverse move per trade.':'Simple and predictable; tune them with the grid search.'}</small></button>)}</div>
+      {config.exit_mode==='learned'?<div className="setup-grid">
+        {num('tp_quantile','Target quantile',.05,.95,'any','Lower = closer, more often reached.')}
+        {num('sl_quantile','Stop quantile',.05,.95,'any','Higher = wider, outside normal noise.')}
+        {num('min_reward_risk','Min reward ÷ risk',0,10,'any','Learned target ÷ learned stop needed to enter.','×')}
+      </div>:null}
+      <div className="setup-grid setup-grid--nested">
+        {num('take_profit_atr',config.exit_mode==='learned'?'Win definition: target':'Take profit',.1,20,'any',config.exit_mode==='learned'?'Defines a “win” the direction models learn.':'Distance in ATR.','× ATR')}
+        {num('stop_atr',config.exit_mode==='learned'?'Win definition: stop':'Stop loss',.1,20,'any',config.exit_mode==='learned'?'Also the fallback where no exit model exists.':'Distance in ATR.','× ATR')}
+        {num('atr_length','ATR length',2,500,1,undefined,'bars')}
+      </div>
+      <div className="setup-option"><div><strong>Trailing stop</strong><p>{config.exit_mode==='learned'?'Starts after a share of the learned target and follows price by the learned noise level.':'Starts after a share of the target and follows price by the stop distance.'}</p></div><label className="setup-toggle"><input type="checkbox" role="switch" aria-label="Trailing stop" checked={config.trailing} onChange={event=>setMl({trailing:event.target.checked})}/><i aria-hidden="true"/><span>{config.trailing?'On':'Off'}</span></label></div>
+      {config.trailing&&<div className="setup-grid setup-grid--nested">
+        {num('trail_start','Start trailing at',.1,2,'any','Share of the target reached.','× target')}
+        {num('trail_noise','Trailing distance',.2,5,'any','Multiple of the stop distance.','× stop')}
+      </div>}
+    </SettingsCard>
+
+    <SettingsCard step={6} id="settings-regimes" title="Market regimes" description="The models learn four market states from trend, volatility, efficiency and ADX. Trade only in the states you choose; the Model tab shows results per state.">
+      <div className="feature-picker regime-picker">{REGIME_NAMES.map(name=><button key={name} type="button" aria-pressed={config.regimes.includes(name)} onClick={()=>setMl({regimes:config.regimes.includes(name)?config.regimes.filter(item=>item!==name):[...config.regimes,name]})}><strong>{name}</strong><small>{{'Trend up':'Steady rise, efficient moves','Trend down':'Steady fall, efficient moves','Range':'Sideways, mean-reverting','Volatile':'Large, noisy swings'}[name]}</small></button>)}</div>
+      {config.regimes.length===0&&<p className="error">Choose at least one regime.</p>}
+    </SettingsCard>
+
+    <SettingsCard step={7} id="settings-training" title="Walk-forward training" description="Models retrain on past data only and are tested on the next block they have never seen. The backtest reports only these unseen blocks.">
       <div className="setup-grid">
         {num('train_bars','Training window',500,200000,1,'Past candles used for each model.','bars')}
         {num('retrain_every','Retrain every',50,50000,1,'Size of each unseen test block.','bars')}
+        <Field label="Model capacity" hint="How large each model may grow."><select value={config.capacity} onChange={event=>setMl({capacity:event.target.value as MLConfig['capacity']})}><option value="light">Light</option><option value="standard">Standard</option><option value="rich">Rich</option></select></Field>
       </div>
       <p className="setup-note">Trained blocks are cached, so re-running the same settings or extending the date range only trains new blocks. The first run with new settings can take up to a minute.</p>
     </SettingsCard>

@@ -11,9 +11,14 @@ export type MLConfig = {
   feature_groups: string[]; models: Record<string, number>; horizon: number; take_profit_atr: number; stop_atr: number;
   atr_length: number; entry_threshold: number; min_edge: number; min_reward_cost: number; train_bars: number;
   retrain_every: number; trade_mode: 'Both'|'Long Only'|'Short Only'; reverse_on_signal: boolean;
-  amount_per_trade: number; amount_unit: 'price'|'percent';
+  amount_per_trade: number; amount_unit: 'price'|'percent'; capacity: 'light'|'standard'|'rich';
+  exit_mode: 'learned'|'fixed'; tp_quantile: number; sl_quantile: number; min_reward_risk: number;
+  trailing: boolean; trail_start: number; trail_noise: number; regimes: string[];
 };
+export type RegimeStat = {name:string;share:number;trades:number;netPnl:number;winRate:number|null;allowed:boolean};
 export type ModelReport = {
+  exitMode?: 'learned'|'fixed'; regimes?: RegimeStat[]; blockedByRewardRisk?: number; blockedByRegime?: number;
+  learnedExits?: {long_tp:number|null;long_sl:number|null;short_tp:number|null;short_sl:number|null};
   folds: {start:number;end:number;trainRows:number;bars:number;accuracy:number|null}[];
   importance: Record<string, number>; featureCount: number; trainedBars: number; accuracy: number|null;
   labelBalance: {long:number;none:number;short:number}; blockedByCost: number;

@@ -14,6 +14,10 @@ export const mlDefaults: BacktestSettings['ml'] = {
   models:{lightgbm:1,xgboost:0,hist_gbm:0,random_forest:0,extra_trees:.5,logistic:0,neural_net:0},
   horizon:12,take_profit_atr:1.5,stop_atr:1,atr_length:14,entry_threshold:.55,min_edge:.15,min_reward_cost:3,
   train_bars:6000,retrain_every:2000,trade_mode:'Both',reverse_on_signal:true,amount_per_trade:100,amount_unit:'percent',
+  capacity:'standard',exit_mode:'learned',tp_quantile:.4,sl_quantile:.7,min_reward_risk:1.2,trailing:true,trail_start:.6,trail_noise:1,
+  regimes:['Trend up','Trend down','Range','Volatile'],
 };
+
+export const REGIME_NAMES=['Trend up','Trend down','Range','Volatile'] as const;
 
 export const STRATEGY_LABELS:Record<string,string>={bb_outer_reversal:'BB Outer Band Reversal',ml_ensemble:'ML Ensemble'};
