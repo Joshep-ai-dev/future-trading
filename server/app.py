@@ -1,4 +1,5 @@
 """Local CSV price API."""
+from datetime import date
 from typing import Literal
 from contextlib import asynccontextmanager
 from queue import Queue
@@ -133,6 +134,8 @@ class ProfileSaveRequest(BaseModel):
 class FineTuneRequest(BaseModel):
     search_method: Literal['grid','ml'] = 'grid'
     objective: Literal['profit','balanced'] = 'profit'
+    validation_start: date | None = None
+    forward_start: date | None = None
     model_config = ConfigDict(extra='forbid')
     settings: BBBacktestRequest
 
@@ -631,6 +634,7 @@ def fine_tune_backtest(parameters: FineTuneRequest):
             frame, _ = load_bars(parameters.settings.entry_timeframe)
             tuner = ml_fine_tune if parameters.settings.strategy == 'ml_ensemble' else fine_tune
             result = tuner(frame, parameters.settings, search_method=parameters.search_method, objective=parameters.objective,
+                           validation_start=parameters.validation_start, forward_start=parameters.forward_start,
                                progress=lambda percent, message: updates.put(
                                    {'type': 'progress', 'percent': percent, 'message': message}))
             updates.put({'type': 'result', 'result': result})

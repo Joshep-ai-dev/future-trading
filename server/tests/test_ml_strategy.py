@@ -255,3 +255,31 @@ class LearnedExitTests(unittest.TestCase):
         for block, name in enumerate(('Trend up', 'Trend down', 'Range', 'Volatile')):
             values, counts = np.unique(predicted[block*150:(block+1)*150], return_counts=True)
             self.assertEqual(REGIME_NAMES[values[np.argmax(counts)]], name)
+
+
+class RecencyTests(unittest.TestCase):
+    def test_weights_halve_every_half_life_and_zero_disables(self):
+        from server.strategies.ml.models import recency_weights
+        np.testing.assert_allclose(recency_weights(3, 1), [.25, .5, 1.])
+        self.assertIsNone(recency_weights(3, 0))
+
+    def test_every_model_trains_with_recency_weights(self):
+        rng = np.random.default_rng(5)
+        features = pd.DataFrame(rng.normal(size=(500, 4)), columns=list('abcd'))
+        labels = pd.Series(np.where(features.a > .4, LONG, np.where(features.a < -.4, SHORT, NONE)).astype(float))
+        for key, spec in MODELS.items():
+            if spec.available():
+                model = fit_model(key, features, labels, slice(0, 450), half_life=100)
+                self.assertEqual(model.predict_rows(features, slice(450, 500)).shape, (50, 3), key)
+
+
+class SplitPointTests(unittest.TestCase):
+    def test_default_split_and_chosen_dates(self):
+        from server.strategies.strategy import split_points
+        index = pd.date_range('2026-01-01', periods=100, freq='D', tz='UTC')
+        self.assertEqual(split_points(index), (60, 80))
+        self.assertEqual(split_points(index, date(2026, 3, 1), date(2026, 3, 21)), (59, 79))
+        with self.assertRaises(ValueError):
+            split_points(index, date(2026, 3, 21), date(2026, 3, 1))
+        with self.assertRaises(ValueError):
+            split_points(index, date(2025, 12, 1), date(2026, 2, 1))

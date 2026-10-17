@@ -50,6 +50,8 @@ class MLSettings:
     trail_start: float = .6
     trail_noise: float = 1.
     regimes: list[str] = field(default_factory=lambda: list(REGIME_NAMES))
+    # Recent candles matter more: training weights halve every ``recency_half_life`` candles back (0 = equal).
+    recency_half_life: int = 2000
 
     def __post_init__(self):
         unknown = [key for key in self.feature_groups if key not in FEATURE_GROUPS]
@@ -77,7 +79,8 @@ class MLSettings:
                   (.05 <= self.tp_quantile <= .95 and .05 <= self.sl_quantile <= .95, 'Exit quantiles must be 0.05-0.95'),
                   (0 <= self.min_reward_risk <= 10, 'Minimum reward/risk must be 0-10'),
                   (.1 <= self.trail_start <= 2 and .2 <= self.trail_noise <= 5, 'Trailing settings out of range'),
-                  (bool(self.regimes) and all(name in REGIME_NAMES for name in self.regimes), 'Choose at least one valid market regime')]
+                  (bool(self.regimes) and all(name in REGIME_NAMES for name in self.regimes), 'Choose at least one valid market regime'),
+                  (0 <= self.recency_half_life <= 200_000, 'Recency half-life must be 0-200000 candles')]
         for valid, message in checks:
             if not valid:
                 raise ValueError(message)
@@ -90,7 +93,8 @@ class MLSettings:
         """Identity of everything that changes a trained fold (not sizing or entry rules)."""
         return config_key(groups=sorted(self.feature_groups), models=self.models, horizon=self.horizon,
                           tp=self.take_profit_atr, sl=self.stop_atr, atr=self.atr_length, capacity=self.capacity,
-                          exits=self.exit_mode, quantiles=(self.tp_quantile, self.sl_quantile) if self.exit_mode == 'learned' else None)
+                          exits=self.exit_mode, quantiles=(self.tp_quantile, self.sl_quantile) if self.exit_mode == 'learned' else None,
+                          recency=self.recency_half_life)
 
 
 def _atr(frame: pd.DataFrame, length: int) -> pd.Series:
@@ -159,7 +163,8 @@ def prepare(frame: pd.DataFrame, settings: MLSettings, start=None, progress=None
     result = walk_forward(features, labels, start_index=start_index, train_bars=settings.train_bars,
                           retrain_every=settings.retrain_every, horizon=settings.horizon,
                           models=settings.models, key=settings.model_key(), capacity=settings.capacity, progress=progress,
-                          exit_targets=targets, quantiles=(settings.tp_quantile, settings.sl_quantile))
+                          exit_targets=targets, quantiles=(settings.tp_quantile, settings.sl_quantile),
+                          half_life=settings.recency_half_life)
     return Prepared(clean, atr, features.shape[1], labels, start_index, result)
 
 

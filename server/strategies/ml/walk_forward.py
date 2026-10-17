@@ -69,7 +69,8 @@ def config_key(**parts) -> str:
 
 
 def _train_fold(features: pd.DataFrame, labels: pd.Series, train_slice: slice, models: dict[str, float], key: str,
-                capacity: str = 'standard', exit_targets: pd.DataFrame | None = None, quantiles=(.4, .7)) -> Fold | None:
+                capacity: str = 'standard', exit_targets: pd.DataFrame | None = None, quantiles=(.4, .7),
+                half_life: float = 0) -> Fold | None:
     window_x, window_y = features.iloc[train_slice], labels.iloc[train_slice]
     mask = window_y.notna().to_numpy()
     if mask.sum() < MIN_TRAIN_ROWS:
@@ -82,12 +83,13 @@ def _train_fold(features: pd.DataFrame, labels: pd.Series, train_slice: slice, m
     trained, weights = [], []
     for name, weight in models.items():
         if weight > 0:
-            trained.append(fit_model(name, features, labels, train_slice, capacity=capacity))
+            trained.append(fit_model(name, features, labels, train_slice, capacity=capacity, half_life=half_life))
             weights.append(float(weight))
     fold = Fold(0, 0, int(mask.sum()), trained, weights)
     if exit_targets is not None:
         try:
-            fold.exits = ExitModel.fit(features, exit_targets, train_slice, tp_quantile=quantiles[0], sl_quantile=quantiles[1])
+            fold.exits = ExitModel.fit(features, exit_targets, train_slice, tp_quantile=quantiles[0], sl_quantile=quantiles[1],
+                                       half_life=half_life)
         except ValueError:
             fold.exits = None  # Too little data in this window; the strategy falls back to fixed exits.
     fold.regimes = RegimeModel.fit(features, train_slice)  # Market regimes are always learned.
@@ -98,7 +100,7 @@ def _train_fold(features: pd.DataFrame, labels: pd.Series, train_slice: slice, m
 def walk_forward(features: pd.DataFrame, labels: pd.Series, *, start_index: int, train_bars: int,
                  retrain_every: int, horizon: int, models: dict[str, float], key: str,
                  capacity: str = 'standard', progress=None, exit_targets: pd.DataFrame | None = None,
-                 quantiles=(.4, .7)) -> WalkForwardResult:
+                 quantiles=(.4, .7), half_life: float = 0) -> WalkForwardResult:
     """Out-of-sample probabilities (short, none, long) for every bar from ``start_index``.
 
     With ``exit_targets`` every block also learns take-profit / stop distances
@@ -123,7 +125,8 @@ def walk_forward(features: pd.DataFrame, labels: pd.Series, *, start_index: int,
         train_start = max(0, train_end-train_bars)
         if train_end <= train_start:
             continue
-        fold = _train_fold(features, labels, slice(train_start, train_end), models, key, capacity, exit_targets, quantiles)
+        fold = _train_fold(features, labels, slice(train_start, train_end), models, key, capacity, exit_targets, quantiles,
+                           half_life)
         if fold is None:
             continue
         rows = slice(block_start, block_end)

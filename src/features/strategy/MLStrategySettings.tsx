@@ -81,6 +81,7 @@ export default function MLStrategySettings({settings,onChange}:{settings:Backtes
       <div className="setup-grid">
         {num('train_bars','Training window',500,200000,1,'Past candles used for each model.','bars')}
         {num('retrain_every','Retrain every',50,50000,1,'Size of each unseen test block.','bars')}
+        {num('recency_half_life','Recent data weight',0,200000,1,'Weight halves every N candles back; 0 = all equal.','half-life')}
         <Field label="Model capacity" hint="How large each model may grow."><select value={config.capacity} onChange={event=>setMl({capacity:event.target.value as MLConfig['capacity']})}><option value="light">Light</option><option value="standard">Standard</option><option value="rich">Rich</option></select></Field>
       </div>
       <p className="setup-note">Trained blocks are cached, so re-running the same settings or extending the date range only trains new blocks. The first run with new settings can take up to a minute.</p>

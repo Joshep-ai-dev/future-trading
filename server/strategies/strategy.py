@@ -3,6 +3,8 @@
 Legacy configuration fields are accepted for saved-session compatibility.
 """
 from datetime import date, datetime, timezone
+
+import pandas as pd
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -69,6 +71,24 @@ class BacktestRequest(BaseModel):
         self.exit_condition = 'none'
         self.stop_mode = 'trailing'
         return self
+
+
+def split_points(index, validation_start=None, forward_start=None) -> tuple[int, int]:
+    """Positions where validation and forward test begin in ``index``.
+
+    Chosen dates are used when given (everything before validation is training);
+    otherwise the range splits 60% / 20% / 20%. Each period must contain candles.
+    """
+    n = len(index)
+    def position(day, fallback):
+        if day is None:
+            return fallback
+        return int(index.searchsorted(pd.Timestamp(seconds(day), unit='s', tz='UTC')))
+    validation, forward = position(validation_start, int(n*.6)), position(forward_start, int(n*.8))
+    if not 0 < validation < forward < n:
+        raise ValueError('Choose validation and forward-test start dates inside the range, with training before '
+                         'validation and validation before the forward test.')
+    return validation, forward
 
 
 def seconds(day):

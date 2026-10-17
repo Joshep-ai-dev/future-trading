@@ -99,7 +99,8 @@ class SequenceModel:
 
 
 def fit_sequence(key: str, kind: str, features: pd.DataFrame, labels: pd.Series, rows: slice, *,
-                 lookback: int = 32, hidden: int = 32, epochs: int = 12, batch: int = 256, seed: int = 7) -> SequenceModel:
+                 lookback: int = 32, hidden: int = 32, epochs: int = 12, batch: int = 256, seed: int = 7,
+                 half_life: float = 0) -> SequenceModel:
     torch = _torch()
     torch.manual_seed(seed)
     np.random.seed(seed)
@@ -112,6 +113,8 @@ def fit_sequence(key: str, kind: str, features: pd.DataFrame, labels: pd.Series,
     target_raw = labels.to_numpy()[ends]
     keep = np.isfinite(target_raw)
     ends, target_raw = ends[keep], target_raw[keep].astype(int)
+    # Newer samples count more: weight halves every ``half_life`` candles back from the window end.
+    recency = np.power(.5, (stop-1-ends)/half_life).astype(np.float32) if half_life and half_life > 0 else np.ones(len(ends), np.float32)
     encoded = np.vectorize(ENCODED.get)(target_raw)
     present = np.unique(encoded)
     if len(present) < 2:
@@ -134,7 +137,8 @@ def fit_sequence(key: str, kind: str, features: pd.DataFrame, labels: pd.Series,
         else:
             network.head[-1] = replacement
     optimiser = torch.optim.AdamW(network.parameters(), lr=2e-3, weight_decay=1e-3)
-    loss_fn = torch.nn.CrossEntropyLoss(weight=weights)
+    loss_fn = torch.nn.CrossEntropyLoss(weight=weights, reduction='none')
+    sample_weight = torch.from_numpy(recency)
     best, best_state, patience = float('inf'), None, 0
     generator = torch.Generator().manual_seed(seed)
     for _ in range(epochs):
@@ -143,13 +147,13 @@ def fit_sequence(key: str, kind: str, features: pd.DataFrame, labels: pd.Series,
         for i in range(0, split, batch):
             index = order[i:i+batch]
             optimiser.zero_grad()
-            loss = loss_fn(network(x[index]), y[index])
+            loss = (loss_fn(network(x[index]), y[index])*sample_weight[index]).sum()/sample_weight[index].sum()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(network.parameters(), 1.)
             optimiser.step()
         network.eval()
         with torch.no_grad():
-            validation = float(loss_fn(network(x[split:]), y[split:])) if split < len(x) else 0.
+            validation = float(loss_fn(network(x[split:]), y[split:]).mean()) if split < len(x) else 0.
         if validation < best-1e-4:
             best, best_state, patience = validation, {k: v.clone() for k, v in network.state_dict().items()}, 0
         else:

@@ -13,7 +13,7 @@ export type MLConfig = {
   retrain_every: number; trade_mode: 'Both'|'Long Only'|'Short Only'; reverse_on_signal: boolean;
   amount_per_trade: number; amount_unit: 'price'|'percent'; capacity: 'light'|'standard'|'rich';
   exit_mode: 'learned'|'fixed'; tp_quantile: number; sl_quantile: number; min_reward_risk: number;
-  trailing: boolean; trail_start: number; trail_noise: number; regimes: string[];
+  trailing: boolean; trail_start: number; trail_noise: number; regimes: string[]; recency_half_life: number;
 };
 export type RegimeStat = {name:string;share:number;trades:number;netPnl:number;winRate:number|null;allowed:boolean};
 export type ModelReport = {

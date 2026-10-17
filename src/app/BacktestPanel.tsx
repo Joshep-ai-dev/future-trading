@@ -89,6 +89,7 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
   const [busy,setBusy]=useState(false),[error,setError]=useState('');
   const [searchObjective,setSearchObjective]=useState<'profit'|'balanced'>('profit');
   const [searchMethod,setSearchMethod]=useState<'grid'|'ml'>('grid');
+  const [validationStart,setValidationStart]=useState(''),[forwardStart,setForwardStart]=useState('');
   const [tuning,setTuning]=useState(false),[tuneError,setTuneError]=useState('');
   const [tuneResult,setTuneResult]=useState<FineTuneResult|null>(null);
   const [selectedTuneCaseId,setSelectedTuneCaseId]=useState('');
@@ -107,7 +108,7 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
   async function runFineTune(){
     setTuning(true);setTuneError('');setTuneResult(null);setTuneProgress({percent:0,message:'Connecting to the tuning worker'});
     try{
-      const response=await fetch('/api/backtest/fine-tune',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({settings,search_method:searchMethod,objective:searchObjective})});
+      const response=await fetch('/api/backtest/fine-tune',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({settings,search_method:searchMethod,objective:searchObjective,validation_start:validationStart||null,forward_start:forwardStart||null})});
       if(!response.ok)throw new Error(`Fine tuning request failed (${response.status})`);
       if(!response.body)throw new Error('Fine tuning progress stream is unavailable.');
       const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='',finalResult:FineTuneResult|null=null;
@@ -191,6 +192,11 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
                 <select aria-label="Search method" value={searchMethod} disabled={busy||tuning} onChange={e=>setSearchMethod(e.target.value as 'grid'|'ml')}><option value="grid">Grid search</option><option value="ml">{settings.strategy==='ml_ensemble'?'Random search':'ML-guided search'}</option></select>
                 <select aria-label="Search ranking goal" value={searchObjective} disabled={busy||tuning} onChange={e=>setSearchObjective(e.target.value as 'profit'|'balanced')}><option value="profit">Goal: profit</option><option value="balanced">Goal: balanced</option></select>
               </div>
+              <div className="setup-periods">
+                <Field label="Validation from"><input type="date" value={validationStart} min={settings.start_date} max={settings.end_date} disabled={busy||tuning} onChange={e=>setValidationStart(e.target.value)}/></Field>
+                <Field label="Forward test from"><input type="date" value={forwardStart} min={validationStart||settings.start_date} max={settings.end_date} disabled={busy||tuning} onChange={e=>setForwardStart(e.target.value)}/></Field>
+              </div>
+              <small className="setup-note">{validationStart||forwardStart?`Training ${settings.start_date} → ${validationStart||'60%'} · validation → ${forwardStart||'80%'} · forward test → ${settings.end_date}.`:'Empty = automatic 60% training · 20% validation · 20% forward test.'}{(validationStart||forwardStart)&&<button type="button" className="text-button" onClick={()=>{setValidationStart('');setForwardStart('');}}>Reset</button>}</small>
               <button type="button" className="secondary" disabled={busy||tuning} onClick={()=>void runFineTune()}>{tuning?'Searching…':'Start search'}</button>
               <small className="setup-note">{settings.strategy==='ml_ensemble'?(searchMethod==='grid'?'Retrains the models for 18 exit settings plus capacity checks, then tests 40 entry rules each. Takes several minutes.':'Retrains 24 random model settings and tests 40 entry rules each. Takes several minutes.'):'Ranks on validation data; the last 20% of the range is a forward test.'}</small>
             </div>

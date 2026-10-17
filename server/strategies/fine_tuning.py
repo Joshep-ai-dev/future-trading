@@ -11,7 +11,7 @@ from sklearn.model_selection import KFold, ParameterSampler, cross_val_score
 
 from server.strategies.bb_outer_reversal import Settings, calculate, run_backtest
 from server.market.data import TIMEFRAMES
-from server.strategies.strategy import seconds
+from server.strategies.strategy import split_points, seconds
 
 
 TRIALS = 64
@@ -223,7 +223,7 @@ def _ranking_key(metrics, objective):
             metrics['netPnl'], metrics['maxDrawdownPct'])
 
 
-def fine_tune(frame, request, progress=None, search_method='grid', objective='profit'):
+def fine_tune(frame, request, progress=None, search_method='grid', objective='profit', validation_start=None, forward_start=None):
     """Search strategy and allocation settings; validate before reporting holdout."""
     if objective not in ('profit', 'balanced'):
         raise ValueError('Objective must be profit or balanced')
@@ -242,12 +242,9 @@ def fine_tune(frame, request, progress=None, search_method='grid', objective='pr
                    leverage=request.max_leverage)
     reference = calculate(clean, base, bar_seconds=duration)
     reference = reference.loc[reference.index >= start]
-    train_end = int(len(reference) * .6)
-    validation_end = int(len(reference) * .8)
+    train_end, validation_end = split_points(reference.index, validation_start, forward_start)
     boundaries = (reference.index[0], reference.index[train_end],
                   reference.index[validation_end], reference.index[-1])
-    if train_end == 0 or validation_end <= train_end or validation_end >= len(reference):
-        raise ValueError('Selected range is too short to make train, validation and forward-test periods.')
 
     def candidate_segments(config, training_only=False):
         source = clean.loc[clean.index < boundaries[1]] if training_only else clean

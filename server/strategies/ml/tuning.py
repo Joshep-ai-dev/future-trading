@@ -25,7 +25,7 @@ import pandas as pd
 from server.market.data import TIMEFRAMES
 from server.strategies.fine_tuning import _ranking_key, _score
 from server.strategies.ml.strategy import MLSettings, execute, prepare
-from server.strategies.strategy import seconds
+from server.strategies.strategy import seconds, split_points
 
 MODEL_GRID = dict(horizon=(8, 12, 24), take_profit_atr=(1., 1.5, 2.), stop_atr=(.75, 1.))
 CAPACITIES = ('light', 'standard', 'rich')
@@ -61,7 +61,8 @@ def _random_models(base: MLSettings, count: int, seed: int = 1729) -> list[dict]
     return output
 
 
-def ml_fine_tune(frame: pd.DataFrame, request, progress=None, search_method='grid', objective='profit'):
+def ml_fine_tune(frame: pd.DataFrame, request, progress=None, search_method='grid', objective='profit',
+                 validation_start=None, forward_start=None):
     if objective not in ('profit', 'balanced'):
         raise ValueError('Objective must be profit or balanced')
     if search_method not in ('grid', 'ml'):
@@ -78,8 +79,8 @@ def ml_fine_tune(frame: pd.DataFrame, request, progress=None, search_method='gri
         raise ValueError('ML tuning needs at least 600 complete candles in the selected date range.')
     if (clean.index < start).sum() < base.train_bars // 2:
         report(1, 'Little history before the start date: the first blocks train on less data')
-    cuts = (evaluated_index[0], evaluated_index[int(len(evaluated_index)*.6)],
-            evaluated_index[int(len(evaluated_index)*.8)], evaluated_index[-1])
+    validation_at, forward_at = split_points(evaluated_index, validation_start, forward_start)
+    cuts = (evaluated_index[0], evaluated_index[validation_at], evaluated_index[forward_at], evaluated_index[-1])
     segments = dict(train=(cuts[0], cuts[1]), validation=(cuts[1], cuts[2]), forwardTest=(cuts[2], cuts[3]))
     costs = dict(fee_bps=request.fee_bps, slippage=request.slippage, spread=request.spread, funding_bps=request.funding_bps)
 

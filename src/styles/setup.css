@@ -764,3 +764,18 @@
 @media (max-width: 800px) {
   .exit-mode, .regime-picker { grid-template-columns: minmax(0, 1fr); }
 }
+
+.setup-periods {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.setup-periods input {
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.setup-search-panel .text-button {
+  margin-left: 6px;
+}

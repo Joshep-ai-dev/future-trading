@@ -153,8 +153,16 @@ class TrainedModel:
         return {name: float(value/total) for name, value in zip(self.feature_names, values)}
 
 
+def recency_weights(count: int, half_life: float) -> np.ndarray | None:
+    """Weight 1 for the newest row, halving every ``half_life`` rows back; None disables weighting."""
+    if not half_life or half_life <= 0 or count == 0:
+        return None
+    age = np.arange(count-1, -1, -1, dtype=float)
+    return np.power(.5, age/half_life)
+
+
 def train_model(key: str, features: np.ndarray, labels: np.ndarray, feature_names: list[str], seed: int = 7,
-                capacity: str = 'standard') -> TrainedModel:
+                capacity: str = 'standard', recency: np.ndarray | None = None) -> TrainedModel:
     spec = MODELS.get(key)
     if spec is None:
         raise ValueError(f'Unknown model: {key}')
@@ -167,14 +175,19 @@ def train_model(key: str, features: np.ndarray, labels: np.ndarray, feature_name
     remap = {cls: index for index, cls in enumerate(present)}
     target = np.vectorize(remap.get)(encoded)
     estimator = spec.build(seed, CAPACITY[capacity])
+    weights = None if spec.balanced else _sample_weights(target)
+    if recency is not None and spec.key != 'neural_net':  # MLPClassifier cannot take sample weights.
+        weights = recency if weights is None else weights*recency
     fit_args = {}
-    if not spec.balanced:
-        fit_args['sample_weight'] = _sample_weights(target)
+    if weights is not None:
+        # Pipelines route the weights to their final estimator step.
+        name = f'{estimator.steps[-1][0]}__sample_weight' if hasattr(estimator, 'steps') else 'sample_weight'
+        fit_args[name] = weights
     estimator.fit(features, target, **fit_args)
     return TrainedModel(key, estimator, present, feature_names)
 
 
-def fit_model(key: str, features, labels, rows: slice, seed: int = 7, capacity: str = 'standard'):
+def fit_model(key: str, features, labels, rows: slice, seed: int = 7, capacity: str = 'standard', half_life: float = 0):
     """Train ``key`` on the labelled rows in ``rows`` of the full feature table.
 
     Sequence models may read lookback context before ``rows.start``; tabular
@@ -188,7 +201,9 @@ def fit_model(key: str, features, labels, rows: slice, seed: int = 7, capacity: 
     if spec.sequence:
         from server.strategies.ml.sequence import fit_sequence
         return fit_sequence(key, spec.sequence, features, labels, rows, seed=seed,
-                            hidden=CAPACITY[capacity]['sequence_hidden'])
+                            hidden=CAPACITY[capacity]['sequence_hidden'], half_life=half_life)
     window_x, window_y = features.iloc[rows], labels.iloc[rows]
     mask = window_y.notna().to_numpy()
-    return train_model(key, window_x.to_numpy()[mask], window_y.to_numpy()[mask], list(features.columns), seed, capacity)
+    recency = recency_weights(len(mask), half_life)
+    return train_model(key, window_x.to_numpy()[mask], window_y.to_numpy()[mask], list(features.columns), seed, capacity,
+                       None if recency is None else recency[mask])

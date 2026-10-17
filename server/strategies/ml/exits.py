@@ -40,16 +40,18 @@ class ExitModel:
 
     @classmethod
     def fit(cls, features: pd.DataFrame, targets: pd.DataFrame, rows: slice, *, tp_quantile: float,
-            sl_quantile: float, floor: float = .3, ceiling: float = 6., seed: int = 7) -> 'ExitModel':
+            sl_quantile: float, floor: float = .3, ceiling: float = 6., seed: int = 7, half_life: float = 0) -> 'ExitModel':
         x, y = features.iloc[rows], targets.iloc[rows]
         mask = y.notna().all(axis=1).to_numpy()
+        age = np.arange(len(mask)-1, -1, -1, dtype=float)
+        weights = np.power(.5, age/half_life)[mask] if half_life and half_life > 0 else None
         if mask.sum() < 200:
             raise ValueError('Too few labelled candles to learn exits')
         models = {}
         for target in TARGETS:
             quantile = tp_quantile if target.endswith('mfe') else sl_quantile
             model = _regressor(quantile, seed)
-            model.fit(x.to_numpy()[mask], y[target].to_numpy()[mask])
+            model.fit(x.to_numpy()[mask], y[target].to_numpy()[mask], sample_weight=weights)
             models[target] = model
         return cls(models, floor, ceiling)
 
