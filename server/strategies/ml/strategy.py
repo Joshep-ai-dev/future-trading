@@ -52,7 +52,10 @@ class MLSettings:
     regimes: list[str] = field(default_factory=lambda: list(REGIME_NAMES))
     # Market size filters: skip quiet markets and trades whose target is too small to matter.
     min_atr: float = .03
-    min_target: float = 0.
+    min_target: float = .5
+    # Let profits run: no fixed take-profit and no time exit; only the stop and the trailing stop close
+    # a trade. Trailing starts once profit reaches max(min_target, trail_start × learned target).
+    let_profit_run: bool = True
     # Recent candles matter more: training weights halve every ``recency_half_life`` candles back (0 = equal).
     recency_half_life: int = 2000
 
@@ -203,9 +206,14 @@ def execute(prepared: Prepared, settings: MLSettings, *, initial_capital: float,
     target_distance = target_for_signal
     trail_activation = np.where(signals == -1, plan['short_trail_start'], plan['long_trail_start'])
     trail_distance = np.where(signals == -1, plan['short_trail'], plan['long_trail'])
+    if settings.let_profit_run:
+        target_distance = np.full(len(target_distance), np.inf)
+        trail_activation = np.maximum(np.nan_to_num(trail_activation, nan=0.), settings.min_target)
+        trail_distance = np.where(np.isfinite(trail_distance), trail_distance, stop_distance)
     execution = ExecutionSettings(initial_capital=initial_capital, leverage=leverage,
                                   amount_per_trade=settings.amount_per_trade, amount_unit=settings.amount_unit,
-                                  max_hold_bars=settings.horizon, reverse_on_signal=settings.reverse_on_signal,
+                                  max_hold_bars=10**9 if settings.let_profit_run else settings.horizon,
+                                  reverse_on_signal=settings.reverse_on_signal,
                                   min_tick=min_tick)
     bars = clean.join(result.probabilities).assign(atr=atr)
     if end is not None:

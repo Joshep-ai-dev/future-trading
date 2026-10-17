@@ -85,9 +85,10 @@ def run_signal_backtest(bars: pd.DataFrame, signals: np.ndarray, stop_distance: 
         entry_fee = abs(entry*quantity)*fee_bps/10000
         cash -= entry_fee
         stop_price = float(entry-direction*max(settings.min_tick, stop))
+        target_price = float(entry+direction*max(settings.min_tick, target)) if np.isfinite(target) else direction*np.inf
         position = dict(reference_entry=float(close), entry_fee=entry_fee, funding=0., funding_time=_seconds(time),
                         direction=direction, entry_time=time, entry_price=entry, quantity=float(quantity),
-                        stop=stop_price, initial_stop=stop_price, target=float(entry+direction*max(settings.min_tick, target)),
+                        stop=stop_price, initial_stop=stop_price, target=target_price,
                         trailing_active=False, entry_index=index, extreme=float(close),
                         trail_trigger=float(activation) if np.isfinite(activation) else 0.,
                         trail_distance=float(distance) if np.isfinite(distance) and np.isfinite(activation) else np.nan,
@@ -124,7 +125,7 @@ def run_signal_backtest(bars: pd.DataFrame, signals: np.ndarray, stop_distance: 
                     if direction*(bar.close-p['stop']) <= 0:
                         close_position(time, bar.close, 'trailing_stop_at_close')
         signal = int(signals[i]) if np.isfinite(signals[i]) else 0
-        valid = signal and np.isfinite(stop_distance[i]) and np.isfinite(target_distance[i])
+        valid = signal and np.isfinite(stop_distance[i]) and not np.isnan(target_distance[i])
         if valid and position is not None and position['direction'] != signal and settings.reverse_on_signal:
             close_position(time, bar.close, 'reversal')
         if valid and position is None and cash > 0:
@@ -136,7 +137,7 @@ def run_signal_backtest(bars: pd.DataFrame, signals: np.ndarray, stop_distance: 
         records.append(dict(long_signal=signal == 1, short_signal=signal == -1,
                             position=0 if position is None else position['direction'],
                             stop=np.nan if position is None else position['stop'],
-                            target=np.nan if position is None else position['target'],
+                            target=np.nan if position is None or not np.isfinite(position['target']) else position['target'],
                             trailing_active=False if position is None else position['trailing_active'],
                             equity=float(cash+unrealized)))
     if close_at_end and position is not None and len(bars):

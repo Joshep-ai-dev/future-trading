@@ -290,10 +290,21 @@ class SizeFilterTests(unittest.TestCase):
         frame = market(2400)
         common = dict(train_bars=800, retrain_every=300, horizon=6, models={'extra_trees': 1.}, exit_mode='fixed',
                       feature_groups=['returns', 'volatility'], entry_threshold=.35, min_edge=0., min_reward_cost=0.,
-                      min_reward_risk=0.)
+                      min_reward_risk=0., min_target=0.)
         start = frame.index[1200]
         loose = run_ml_backtest(frame, MLSettings(**common, min_atr=0.), initial_capital=1000, leverage=1, start=start)
         strict = run_ml_backtest(frame, MLSettings(**common, min_atr=10.), initial_capital=1000, leverage=1, start=start)
         self.assertGreater(len(loose['trades']), 0)
         self.assertEqual(len(strict['trades']), 0)
         self.assertGreater(strict['report']['blockedBySize'], 0)
+
+
+    def test_let_profit_run_exits_only_by_stop_or_trailing(self):
+        frame = market(2400)
+        settings = MLSettings(train_bars=800, retrain_every=300, horizon=6, models={'extra_trees': 1.}, exit_mode='fixed',
+                              feature_groups=['returns', 'volatility'], entry_threshold=.35, min_edge=0., min_reward_cost=0.,
+                              min_reward_risk=0., min_target=.05, let_profit_run=True, reverse_on_signal=False)
+        result = run_ml_backtest(frame, settings, initial_capital=1000, leverage=1, start=frame.index[1200], close_at_end=True)
+        reasons = set(result['trades'].exit_reason)
+        self.assertTrue(reasons)
+        self.assertTrue(reasons <= {'stop', 'trailing_stop_at_close', 'period_end', 'data_gap'}, reasons)
