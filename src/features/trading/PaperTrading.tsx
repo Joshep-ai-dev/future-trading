@@ -16,6 +16,7 @@ import TradingChartHeader from '../../shared/charts/TradingChartHeader';
 import TerminalSplitter from '../../shared/ui/TerminalSplitter';
 import BotStatusPanel,{BotChartBadge} from './BotStatusPanel';
 import {PaperSessionHistory} from './TradingHistory';
+import PatternPanel from './PatternPanel';
 import type {StrategyState} from '../../shared/api/exchangeTypes';
 
 export type Position={direction:number;entry_time:number;entry_price:number;quantity:number;stop:number;initial_stop?:number;trailing_active:boolean;stop_history?:StopPoint[]};
@@ -30,7 +31,7 @@ export default function PaperTrading({settings,onChange,onConfigure,visible}:{se
   const [data,setData]=useState<Response>({session:null,error:null});
   const [error,setError]=useState(''),[busy,setBusy]=useState(false);
   const revision=useRef(0);
-  const [bottomTab,setBottomTab]=useState<'position'|'history'|'equity'|'sessions'>('position');
+  const [bottomTab,setBottomTab]=useState<'position'|'history'|'equity'|'sessions'|'patterns'>('position');
   const [preview,setPreview]=useState<Analysis['candles']>([]),[previewError,setPreviewError]=useState('');
   useEffect(()=>{
     if(!visible||data.session)return;
@@ -105,6 +106,7 @@ export default function PaperTrading({settings,onChange,onConfigure,visible}:{se
           {value:'history',label:'Trade history',count:chartTrades.length,controls:'activity-history'},
           {value:'equity',label:'Equity',controls:'activity-equity'},
           {value:'sessions',label:'Past sessions',controls:'activity-sessions'},
+          {value:'patterns',label:'Patterns',controls:'activity-patterns'},
         ] as const} value={bottomTab} onChange={setBottomTab} label="Paper account activity" idPrefix="activity-tab" trailing={<StatusBadge>Paper account</StatusBadge>}/>
         <div id="activity-position" role="tabpanel" aria-labelledby="activity-tab-position" hidden={bottomTab!=='position'}>{p?<TableFrame label="Open XAG paper position" columns={['Contract','Mark price','Entry price','Margin (USDT)','Unrealized PnL','PnL (%)','Stop price','Size (XAG)','Opened']}><tr>
           <td><strong>XAGUSDT <small>Perpetual</small></strong><div className="exchange-position-tags"><StatusBadge tone={p.direction===1?'positive':'negative'}>{p.direction===1?'LONG':'SHORT'}</StatusBadge><StatusBadge>{fmt(leverage,1)}x</StatusBadge><StatusBadge>{p.trailing_active?'Trailing':'Initial stop'}</StatusBadge></div></td>
@@ -115,6 +117,7 @@ export default function PaperTrading({settings,onChange,onConfigure,visible}:{se
         </tr></TableFrame>:<div className="empty-position"><span className="empty-state-symbol">◇</span><h3>{s?.running?'Watching for your next setup':'No open position'}</h3><p>{s?.running?'The bot is scanning for a qualified Bollinger band rebound.':'Start a virtual session to see entries, stops and position P&L here.'}</p></div>}</div>
         <div id="activity-history" role="tabpanel" aria-labelledby="activity-tab-history" hidden={bottomTab!=='history'}><TradeView key={s?.startedAt??0} scope="Session" capital={s?.settings.capital??settings.capital} timeZone={tradingTimeZone} unrealized={equity-balance} trades={chartTrades.map(t=>({id:t.id,direction:t.direction,pnl:t.pnl,entry:t.entry_price,exit:t.exit_price,quantity:t.quantity,exitTime:t.exit_time+duration}))}>{chartTrades.length?<div className="table-scroll"><table><thead><tr>{['ID','Side','Leverage',`Entry time (${tradingTimeZone})`,'Entry','Exit','Quantity','P&L','Exit reason'].map(label=><th key={label}>{label}</th>)}</tr></thead><tbody>{chartTrades.slice(-100).reverse().map(t=><tr key={t.id}><td>#{t.id}</td><td><span className={`side-badge ${t.direction===1?'long':'short'}`}>{t.direction===1?'LONG':'SHORT'}</span></td><td>{fmt(leverage,1)}x</td><td>{date(t.entry_time+duration,tradingTimeZone)}</td><td>{fmt(t.entry_price,3)}</td><td>{fmt(t.exit_price,3)}</td><td>{fmt(t.quantity,4)}</td><td className={t.pnl>=0?'positive':'negative'}>{t.pnl>=0?'+':''}{fmt(t.pnl)}</td><td>{t.exit_reason==='rsi_price_exit'?'RSI + price exit':t.exit_reason.replaceAll('_',' ')}</td></tr>)}</tbody></table></div>:<div className="empty-position"><h3>Your trade history starts here</h3><p>Closed virtual trades appear automatically as the bot runs.</p></div>}</TradeView></div>
         <div id="activity-equity" role="tabpanel" aria-labelledby="activity-tab-equity" hidden={bottomTab!=='equity'}>{chartTrades.length?<EquityChart key={s?.startedAt??0} period={{name:'Paper trading'}} initialValue={s?.settings.capital??settings.capital} trades={chartTrades.map(t=>({pnl:t.pnl}))}/>:<div className="empty-position"><h3>No closed trades yet</h3><p>The balance curve adds one point after each trade closes.</p></div>}</div>
+        <div id="activity-patterns" role="tabpanel" aria-labelledby="activity-tab-patterns" hidden={bottomTab!=='patterns'}>{bottomTab==='patterns'&&<PatternPanel defaultTimeframe={(s?.settings??settings).entry_timeframe}/>}</div>
         <div id="activity-sessions" role="tabpanel" aria-labelledby="activity-tab-sessions" hidden={bottomTab!=='sessions'}>{bottomTab==='sessions'&&<PaperSessionHistory refreshKey={s?.startedAt}/>}</div>
       </section>
     </div>

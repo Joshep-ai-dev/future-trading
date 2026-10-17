@@ -6,14 +6,15 @@ import {EmptyState,Panel,TabBar} from '../../shared/ui/ui';
 import {useExchangeStream} from '../../shared/api/useExchangeStream';
 import LiveTradeHistory from './LiveTradeHistory';
 import {BotEventLog} from './TradingHistory';
+import PatternPanel from './PatternPanel';
 
-type AccountTab='positions'|'orders'|'history'|'assets'|'botlog';
+type AccountTab='positions'|'orders'|'history'|'assets'|'botlog'|'patterns';
 export default function ExchangeOverview({venue}:{venue:ExchangeVenue}){
   const {data,connected,error}=useExchangeStream(venue);
   const [tab,setTab]=useState<AccountTab>('positions');
   const [busy,setBusy]=useState(false);
   const [message,setMessage]=useState('');
-  const section=tab==='assets'?'balance':tab==='history'||tab==='botlog'?'orders':tab;
+  const section=tab==='assets'?'balance':tab==='history'||tab==='botlog'||tab==='patterns'?'orders':tab;
   const sectionError=data?.errors[section];
   const positions=data?.positions;
   const orders=data?.orders;
@@ -39,6 +40,7 @@ export default function ExchangeOverview({venue}:{venue:ExchangeVenue}){
       {value:'history',label:'P&L',controls:`exchange-${venue}-history`},
       {value:'assets',label:'Assets',controls:`exchange-${venue}-assets`},
       {value:'botlog',label:'Bot log',controls:`exchange-${venue}-botlog`},
+      {value:'patterns',label:'Patterns',controls:`exchange-${venue}-patterns`},
     ]} value={tab} onChange={setTab} label="Exchange activity" idPrefix={idPrefix} trailing={<span>{venue.toUpperCase()} · XAGUSDT</span>}/>
     {(error||data?.errors.connection)&&<p className="exchange-inline-error" role="status">{error||data?.errors.connection} Displayed values may be stale.</p>}
     {data?.executionError&&<p className="exchange-inline-error">{data.executionError}</p>}
@@ -54,6 +56,7 @@ export default function ExchangeOverview({venue}:{venue:ExchangeVenue}){
       {tab==='assets'&&<AssetTable balance={data?.balance}/>}
       {tab==='history'&&<LiveTradeHistory venue={venue}/>}
       {tab==='botlog'&&<BotEventLog/>}
+      {tab==='patterns'&&<PatternPanel/>}
     </div>
     {message&&<p className="exchange-inline-error" role="status">{message}</p>}
     <div className="exchange-activity-footer"><span>Exchange account · USDT</span><span>{lastUpdate?`Account snapshot ${new Date(lastUpdate).toLocaleTimeString()}`:'Waiting for account data'}</span></div>

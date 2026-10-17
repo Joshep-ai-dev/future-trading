@@ -692,6 +692,27 @@ def history(parameters: CandleRequest):
         raise HTTPException(status_code=400, detail=str(error)) from error
 
 
+class PatternRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    timeframe: Literal['1m', '3m', '5m', '10m', '15m', '30m', '1h', '4h', '1d'] = '15m'
+    window: int = Field(default=48, ge=8, le=500)
+    horizon: int = Field(default=24, ge=1, le=500)
+    top_k: int = Field(default=20, ge=1, le=200)
+    end: int | None = Field(default=None, ge=0, le=4102444800)
+
+
+@app.post('/api/patterns')
+def similar_patterns(parameters: PatternRequest):
+    """Past windows most similar to the latest (or ``end``) window and their future high/low bands."""
+    from server.market.patterns import find_similar
+    try:
+        bars, _ = load_bars(parameters.timeframe)
+        end = pd.Timestamp(parameters.end, unit='s', tz='UTC') if parameters.end else None
+        return find_similar(bars, window=parameters.window, horizon=parameters.horizon, top_k=parameters.top_k, end=end)
+    except (ValueError, OSError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
 @app.get('/api/strategies')
 def strategies():
     from server.strategies.ml.features import FEATURE_GROUPS

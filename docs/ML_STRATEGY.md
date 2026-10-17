@@ -451,6 +451,36 @@ sequenceDiagram
 
 ---
 
+## 9b. Similar patterns and future high / low — `server/market/patterns.py`
+
+A separate analysis tool on the Trading page (**Patterns** tab, paper and live).
+
+```mermaid
+flowchart LR
+    Q[Latest N candles] --> S[Shape: log-close path<br/>÷ its return volatility]
+    H[Every past window<br/>whose future is complete] --> S2[Same shape]
+    S --> D[Distance + correlation]
+    S2 --> D
+    D --> K[Top K matches<br/>one per stretch]
+    K --> F[What happened next<br/>close, highest high, lowest low]
+    F --> P[Bands 10/50/90%<br/>expected high / low / close,<br/>chance of closing higher]
+```
+
+* **Shape, not price:** each window is the log-close path relative to its last close, divided by
+  its own return volatility, so a calm and a wild period with the same shape still match.
+* **No overlap with now:** a past window counts only if its whole look-ahead period finished
+  before the current candle. Near-duplicate windows (half a window apart) count once.
+* **Projection:** each match's future is turned into returns from its last close and applied to
+  today's price. Per future candle the tool reports close 10/50/90%, highest-high 50/90% and
+  lowest-low 50/10%. Matches are weighted by similarity for the close and up-probability.
+* **Chart:** current pattern (bold), matches (green = rose afterwards, red = fell), the 10–90%
+  high/low cone, the median close, and price tags H90 / H50 / L50 / L10. Hover a row to highlight
+  a match.
+* Settings: timeframe, pattern length (default 48), look ahead (24), number of matches (20).
+  The search scans ~25 000 windows in about 0.03 s.
+
+---
+
 ## 10. Settings reference
 
 | Setting | Default | Where |
@@ -479,6 +509,7 @@ sequenceDiagram
 | `server/strategies/ml/features.py` | Indicator feature groups (registry) |
 | `server/strategies/ml/labels.py` | Triple-barrier labels and MFE/MAE excursion targets |
 | `server/strategies/ml/exits.py` | Learned exit (quantile) models and market regime model |
+| `server/market/patterns.py` | Similar-pattern search and future high/low projection |
 | `server/strategies/ml/models.py` | Model registry, capacity presets, unified `fit_model` |
 | `server/strategies/ml/sequence.py` | PyTorch 1D-CNN and LSTM |
 | `server/strategies/ml/walk_forward.py` | Walk-forward training and block cache |
