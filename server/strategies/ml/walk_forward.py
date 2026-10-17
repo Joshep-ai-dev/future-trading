@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
+from server.strategies.ml.exits import ExitModel, RegimeModel
 from server.strategies.ml.models import fit_model
 
 MIN_TRAIN_ROWS = 300
@@ -30,6 +31,8 @@ class Fold:
     train_rows: int
     models: list
     weights: list[float]
+    exits: object = None
+    regimes: object = None
 
 
 @dataclass
@@ -66,7 +69,7 @@ def config_key(**parts) -> str:
 
 
 def _train_fold(features: pd.DataFrame, labels: pd.Series, train_slice: slice, models: dict[str, float], key: str,
-                capacity: str = 'standard') -> Fold | None:
+                capacity: str = 'standard', exit_targets: pd.DataFrame | None = None, quantiles=(.4, .7)) -> Fold | None:
     window_x, window_y = features.iloc[train_slice], labels.iloc[train_slice]
     mask = window_y.notna().to_numpy()
     if mask.sum() < MIN_TRAIN_ROWS:
@@ -82,18 +85,32 @@ def _train_fold(features: pd.DataFrame, labels: pd.Series, train_slice: slice, m
             trained.append(fit_model(name, features, labels, train_slice, capacity=capacity))
             weights.append(float(weight))
     fold = Fold(0, 0, int(mask.sum()), trained, weights)
+    if exit_targets is not None:
+        try:
+            fold.exits = ExitModel.fit(features, exit_targets, train_slice, tp_quantile=quantiles[0], sl_quantile=quantiles[1])
+        except ValueError:
+            fold.exits = None  # Too little data in this window; the strategy falls back to fixed exits.
+    fold.regimes = RegimeModel.fit(features, train_slice)  # Market regimes are always learned.
     fold_cache.put(cache_key, fold)
     return fold
 
 
 def walk_forward(features: pd.DataFrame, labels: pd.Series, *, start_index: int, train_bars: int,
                  retrain_every: int, horizon: int, models: dict[str, float], key: str,
-                 capacity: str = 'standard', progress=None) -> WalkForwardResult:
-    """Out-of-sample probabilities (short, none, long) for every bar from ``start_index``."""
+                 capacity: str = 'standard', progress=None, exit_targets: pd.DataFrame | None = None,
+                 quantiles=(.4, .7)) -> WalkForwardResult:
+    """Out-of-sample probabilities (short, none, long) for every bar from ``start_index``.
+
+    With ``exit_targets`` every block also learns take-profit / stop distances
+    (``long_tp``, ``long_sl``, ``short_tp``, ``short_sl`` in ATR) and a market
+    regime per candle (``regime``: index into ``REGIME_NAMES``, -1 unknown).
+    """
     if not any(weight > 0 for weight in models.values()):
         raise ValueError('Enable at least one model with a positive weight')
     n = len(features)
     probabilities = np.full((n, 3), np.nan)
+    exits = np.full((n, 4), np.nan)
+    regimes = np.full(n, -1)
     folds, importance = [], {}
     # Block boundaries are anchored at the evaluation start so they stay identical
     # when more candles arrive, which keeps cached folds valid for paper trading.
@@ -106,7 +123,7 @@ def walk_forward(features: pd.DataFrame, labels: pd.Series, *, start_index: int,
         train_start = max(0, train_end-train_bars)
         if train_end <= train_start:
             continue
-        fold = _train_fold(features, labels, slice(train_start, train_end), models, key, capacity)
+        fold = _train_fold(features, labels, slice(train_start, train_end), models, key, capacity, exit_targets, quantiles)
         if fold is None:
             continue
         rows = slice(block_start, block_end)
@@ -114,6 +131,10 @@ def walk_forward(features: pd.DataFrame, labels: pd.Series, *, start_index: int,
         blended = sum(weight*np.nan_to_num(model.predict_rows(features, rows), nan=1/3)
                       for model, weight in zip(fold.models, fold.weights))/total
         probabilities[block_start:block_end] = blended
+        if fold.exits is not None:
+            exits[block_start:block_end] = fold.exits.predict(features, rows).to_numpy()
+        if fold.regimes is not None:
+            regimes[block_start:block_end] = fold.regimes.predict(features, rows)
         truth = labels.iloc[block_start:block_end].to_numpy()
         known = np.isfinite(truth)
         predicted = np.array([-1, 0, 1])[np.argmax(blended, axis=1)]
@@ -127,4 +148,6 @@ def walk_forward(features: pd.DataFrame, labels: pd.Series, *, start_index: int,
         total = sum(importance.values()) or 1.
         importance = dict(sorted(((k, v/total) for k, v in importance.items()), key=lambda item: -item[1]))
     frame = pd.DataFrame(probabilities, index=features.index, columns=['p_short', 'p_none', 'p_long'])
+    frame[['long_tp', 'long_sl', 'short_tp', 'short_sl']] = exits
+    frame['regime'] = regimes
     return WalkForwardResult(frame, folds, importance)

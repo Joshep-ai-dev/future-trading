@@ -30,6 +30,10 @@ from server.strategies.strategy import seconds
 MODEL_GRID = dict(horizon=(8, 12, 24), take_profit_atr=(1., 1.5, 2.), stop_atr=(.75, 1.))
 CAPACITIES = ('light', 'standard', 'rich')
 ENTRY_GRID = dict(entry_threshold=(.45, .5, .55, .6, .65), min_edge=(.05, .1, .2, .3), reverse_on_signal=(True, False))
+# Learned exits: the models set targets and stops; the search tunes how cautious they are.
+LEARNED_MODEL_GRID = dict(horizon=(8, 12, 24), tp_quantile=(.3, .4, .5), sl_quantile=(.6, .75))
+LEARNED_ENTRY_GRID = dict(entry_threshold=(.45, .5, .55, .6), min_edge=(.05, .1, .2), min_reward_risk=(1., 1.3, 1.6),
+                          trail_start=(.5, .8))
 RANDOM_MODELS = 24
 FINALISTS = 5
 
@@ -43,10 +47,13 @@ def _random_models(base: MLSettings, count: int, seed: int = 1729) -> list[dict]
     rng = random.Random(seed)
     seen, output = set(), []
     while len(output) < count:
-        candidate = dict(horizon=rng.choice((6, 8, 12, 16, 24, 36, 48)),
-                         take_profit_atr=rng.choice((.75, 1., 1.25, 1.5, 2., 2.5, 3.)),
-                         stop_atr=rng.choice((.5, .75, 1., 1.25, 1.5, 2.)),
-                         capacity=rng.choice(CAPACITIES))
+        candidate = dict(horizon=rng.choice((6, 8, 12, 16, 24, 36, 48)), capacity=rng.choice(CAPACITIES))
+        if base.exit_mode == 'learned':
+            candidate.update(tp_quantile=rng.choice((.25, .3, .35, .4, .45, .5, .6)),
+                             sl_quantile=rng.choice((.55, .6, .65, .7, .75, .8, .9)))
+        else:
+            candidate.update(take_profit_atr=rng.choice((.75, 1., 1.25, 1.5, 2., 2.5, 3.)),
+                             stop_atr=rng.choice((.5, .75, 1., 1.25, 1.5, 2.)))
         key = tuple(candidate.values())
         if key not in seen:
             seen.add(key)
@@ -76,14 +83,17 @@ def ml_fine_tune(frame: pd.DataFrame, request, progress=None, search_method='gri
     segments = dict(train=(cuts[0], cuts[1]), validation=(cuts[1], cuts[2]), forwardTest=(cuts[2], cuts[3]))
     costs = dict(fee_bps=request.fee_bps, slippage=request.slippage, spread=request.spread, funding_bps=request.funding_bps)
 
+    learned = base.exit_mode == 'learned'
+    model_grid = LEARNED_MODEL_GRID if learned else MODEL_GRID
+    entry_grid = LEARNED_ENTRY_GRID if learned else ENTRY_GRID
     if search_method == 'grid':
-        model_candidates = [{**combo, 'capacity': base.capacity} for combo in _combinations(MODEL_GRID)]
-        grid_axes = {**{key: list(values) for key, values in MODEL_GRID.items()}, 'capacity': list(CAPACITIES),
-                     **{key: [float(v) if not isinstance(v, bool) else v for v in values] for key, values in ENTRY_GRID.items()}}
+        model_candidates = [{**combo, 'capacity': base.capacity} for combo in _combinations(model_grid)]
+        grid_axes = {**{key: list(values) for key, values in model_grid.items()}, 'capacity': list(CAPACITIES),
+                     **{key: [float(v) if not isinstance(v, bool) else v for v in values] for key, values in entry_grid.items()}}
     else:
         model_candidates = _random_models(base, RANDOM_MODELS)
         grid_axes = None
-    entry_candidates = _combinations(ENTRY_GRID)
+    entry_candidates = _combinations(entry_grid)
 
     def run_segment(prepared, settings, name):
         left, right = segments[name]
@@ -114,7 +124,7 @@ def ml_fine_tune(frame: pd.DataFrame, request, progress=None, search_method='gri
     if search_method == 'grid':
         best_models = []
         for metrics, params, _ in sorted(scored, key=lambda item: _ranking_key(item[0], objective), reverse=True):
-            model_part = {k: params[k] for k in MODEL_GRID}
+            model_part = {k: params[k] for k in model_grid}
             if model_part not in best_models:
                 best_models.append(model_part)
             if len(best_models) == 2:

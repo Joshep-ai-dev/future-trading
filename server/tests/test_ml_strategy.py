@@ -139,7 +139,7 @@ class WalkForwardTests(unittest.TestCase):
         altered.iloc[1300:] = SHORT
         second = walk_forward(features, altered, **options).probabilities
         pd.testing.assert_frame_equal(first.iloc[:1200], second.iloc[:1200])
-        self.assertTrue(first.iloc[:1000].isna().all().all())
+        self.assertTrue(first[['p_short', 'p_none', 'p_long']].iloc[:1000].isna().all().all())
 
     def test_signals_respect_threshold_edge_and_trade_mode(self):
         probabilities = pd.DataFrame(dict(p_short=[.1, .6, .4], p_none=[.2, .1, .2], p_long=[.7, .3, .4]))
@@ -194,7 +194,7 @@ class TuningTests(unittest.TestCase):
         frame = market(3200)
         request = BacktestRequest(start_date=date(2026, 1, 5), end_date=date(2026, 1, 12), strategy='ml_ensemble',
                                   entry_timeframe='5m', capital=1000, fee_bps=0, slippage=0, spread=0, funding_bps=0,
-                                  ml=dict(train_bars=700, retrain_every=300, models={'extra_trees': 1.},
+                                  ml=dict(train_bars=700, retrain_every=300, models={'extra_trees': 1.}, exit_mode='fixed',
                                           feature_groups=['returns', 'volatility'], min_reward_cost=0.))
         with patch.object(tuning, 'MODEL_GRID', dict(horizon=(6,), take_profit_atr=(1., 1.5), stop_atr=(1.,))), \
              patch.object(tuning, 'CAPACITIES', ('light', 'standard')), \
@@ -209,3 +209,49 @@ class TuningTests(unittest.TestCase):
         for key, value in best['bestParameters'].items():
             self.assertEqual(best['bestSettings']['ml'][key], value)
         self.assertLess(result['periods']['validation']['end'], result['periods']['forwardTest']['end'])
+
+
+class LearnedExitTests(unittest.TestCase):
+    def test_excursions_measure_favourable_and_adverse_moves_in_atr(self):
+        from server.strategies.ml.labels import excursions
+        frame = bars([[10, 10, 10, 10], [10, 12, 9.5, 11], [11, 11.5, 8, 9], [9, 9, 9, 9]])
+        table = excursions(frame, pd.Series(1., index=frame.index), horizon=2)
+        self.assertAlmostEqual(table.long_mfe.iloc[0], 2.)
+        self.assertAlmostEqual(table.long_mae.iloc[0], 2.)
+        self.assertAlmostEqual(table.short_mfe.iloc[0], 2.)
+        self.assertTrue(table.iloc[-2:].isna().all().all())
+
+    def test_trailing_stop_activates_follows_and_never_loosens(self):
+        frame = bars([[10, 10, 10, 10], [10, 11.2, 10, 11], [11, 12.2, 11, 12], [12, 12, 11.4, 11.6], [11.6, 11.7, 10.5, 10.6]])
+        n = len(frame)
+        settings = ExecutionSettings(initial_capital=1000, max_hold_bars=20)
+        result = run_signal_backtest(frame, np.array([1, 0, 0, 0, 0], float), np.full(n, 2.), np.full(n, 9.), settings,
+                                     trail_activation=np.full(n, 1.), trail_distance=np.full(n, .5))
+        trade = result['trades'].iloc[0]
+        self.assertEqual(trade.exit_reason, 'stop')
+        self.assertAlmostEqual(trade.exit_price, 11.7)
+        stops = [point['price'] for point in trade.stop_history]
+        self.assertEqual(stops, sorted(stops))
+
+    def test_exit_plan_uses_learned_distances_and_falls_back_to_fixed(self):
+        from server.strategies.ml.strategy import exit_plan
+        probabilities = pd.DataFrame(dict(p_short=[.1, .1], p_none=[.2, .2], p_long=[.7, .7],
+                                          long_tp=[2., np.nan], long_sl=[.5, np.nan], short_tp=[1., 1.], short_sl=[1., 1.]))
+        plan = exit_plan(probabilities, pd.Series([2., 2.]), MLSettings(take_profit_atr=1.5, stop_atr=1.))
+        np.testing.assert_allclose(plan['long_target'], [4., 3.])
+        np.testing.assert_allclose(plan['long_stop'], [1., 2.])
+        np.testing.assert_allclose(plan['reward_risk'], [4., 1.5])
+
+    def test_regimes_name_trend_and_volatility_clusters(self):
+        from server.strategies.ml.exits import REGIME_NAMES, RegimeModel
+        rng = np.random.default_rng(4)
+        parts = [dict(ret_24=.02, realized_vol_48=.001), dict(ret_24=-.02, realized_vol_48=.001),
+                 dict(ret_24=0., realized_vol_48=.001), dict(ret_24=0., realized_vol_48=.01)]
+        rows = [{**{k: v+rng.normal(0, .0005) for k, v in part.items()}, 'efficiency_24': .5, 'adx_14': 20., 'ema_slope_50': 0.}
+                for part in parts for _ in range(150)]
+        features = pd.DataFrame(rows)
+        model = RegimeModel.fit(features, slice(0, len(features)))
+        predicted = model.predict(features, slice(0, len(features)))
+        for block, name in enumerate(('Trend up', 'Trend down', 'Range', 'Volatile')):
+            values, counts = np.unique(predicted[block*150:(block+1)*150], return_counts=True)
+            self.assertEqual(REGIME_NAMES[values[np.argmax(counts)]], name)
