@@ -307,4 +307,5 @@ class SizeFilterTests(unittest.TestCase):
         result = run_ml_backtest(frame, settings, initial_capital=1000, leverage=1, start=frame.index[1200], close_at_end=True)
         reasons = set(result['trades'].exit_reason)
         self.assertTrue(reasons)
+        self.assertTrue(result['trades'].target.isna().all())  # No take-profit is published as empty, not infinity.
         self.assertTrue(reasons <= {'stop', 'trailing_stop_at_close', 'period_end', 'data_gap'}, reasons)

@@ -143,8 +143,13 @@ def run_signal_backtest(bars: pd.DataFrame, signals: np.ndarray, stop_distance: 
     if close_at_end and position is not None and len(bars):
         close_position(index[-1], bars.close.iloc[-1], 'period_end')
         records[-1].update(position=0, stop=np.nan, target=np.nan, equity=float(cash))
+    # "No take-profit" is infinite internally; publish it as None so JSON (API, MySQL) stays valid.
     for trade in trades:
         trade.pop('entry_index', None)
+        if not np.isfinite(trade['target']):
+            trade['target'] = None
     open_copy = None if position is None else {k: v for k, v in position.items() if k != 'entry_index'}
+    if open_copy is not None and not np.isfinite(open_copy['target']):
+        open_copy['target'] = None
     diagnostics = pd.DataFrame(records, index=bars.index)
     return dict(bars=bars.join(diagnostics), trades=pd.DataFrame(trades), open_position=open_copy, cash=float(cash))
