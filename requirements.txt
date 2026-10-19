@@ -9,4 +9,4 @@ mysql-connector-python>=9.1,<10
 python-dotenv>=1.0,<2
 lightgbm>=4.5,<5
 xgboost>=2.1,<4
-torch>=2.4  # CPU build: pip install torch --index-url https://download.pytorch.org/whl/cpu
+torch>=2.4  # For NVIDIA GPU wheels, use the command from https://pytorch.org/get-started/locally/

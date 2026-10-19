@@ -22,6 +22,30 @@ def _installed(module: str) -> bool:
     return importlib.util.find_spec(module) is not None
 
 
+def _cuda_available() -> bool:
+    """Share PyTorch's reliable CUDA/driver detection with GPU-capable models."""
+    try:
+        import torch
+        return torch.cuda.is_available()
+    except (ImportError, RuntimeError):
+        return False
+
+
+def compute_status() -> dict:
+    """Describe the accelerator that ML models can use on this server."""
+    try:
+        import torch
+        available = torch.cuda.is_available()
+        return {
+            'gpuAvailable': available,
+            'device': torch.cuda.get_device_name(0) if available else None,
+            'torchVersion': torch.__version__,
+            'cudaVersion': torch.version.cuda,
+        }
+    except (ImportError, RuntimeError):
+        return {'gpuAvailable': False, 'device': None, 'torchVersion': None, 'cudaVersion': None}
+
+
 def _imputed(estimator, scale: bool = False):
     from sklearn.impute import SimpleImputer
     from sklearn.pipeline import make_pipeline
@@ -51,7 +75,8 @@ def _xgboost(seed: int, c: dict):
     from xgboost import XGBClassifier
     return XGBClassifier(n_estimators=c['trees'], learning_rate=.06, max_depth=c['depth'], max_bin=64,
                          min_child_weight=max(1, c['leaf']//12), subsample=.8, colsample_bytree=.8, reg_lambda=1.,
-                         tree_method='hist', objective='multi:softprob', eval_metric='mlogloss', random_state=seed, n_jobs=4)
+                         tree_method='hist', device='cuda' if _cuda_available() else 'cpu',
+                         objective='multi:softprob', eval_metric='mlogloss', random_state=seed, n_jobs=4)
 
 
 def _hist_gbm(seed: int, c: dict):
@@ -116,8 +141,11 @@ MODELS: dict[str, ModelSpec] = {spec.key: spec for spec in (
 
 
 def available_models() -> list[dict]:
+    cuda = _cuda_available()
+    gpu_models = {'xgboost', 'cnn_1d', 'lstm'}
     return [dict(key=spec.key, label=spec.label, family=spec.family, description=spec.description,
-                 available=spec.available(), requires=spec.requires) for spec in MODELS.values()]
+                 available=spec.available(), requires=spec.requires,
+                 device='cuda' if cuda and spec.key in gpu_models else 'cpu') for spec in MODELS.values()]
 
 
 def _sample_weights(y: np.ndarray) -> np.ndarray:

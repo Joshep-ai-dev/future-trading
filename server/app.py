@@ -716,11 +716,11 @@ def similar_patterns(parameters: PatternRequest):
 @app.get('/api/strategies')
 def strategies():
     from server.strategies.ml.features import FEATURE_GROUPS
-    from server.strategies.ml.models import available_models
+    from server.strategies.ml.models import available_models, compute_status
     from server.strategies.registry import STRATEGIES
     return dict(strategies=[dict(key=r.key, label=r.label, liveSupported=r.live_supported) for r in STRATEGIES.values()],
                 featureGroups=[dict(key=g.key, label=g.label, description=g.description) for g in FEATURE_GROUPS.values()],
-                models=available_models())
+                models=available_models(), compute=compute_status())
 
 
 @app.get('/api/costs/htx')

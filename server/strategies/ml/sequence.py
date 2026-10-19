@@ -24,6 +24,11 @@ def _torch():
     return torch
 
 
+def _device(torch):
+    """Use the first CUDA GPU when the installed PyTorch build supports it."""
+    return torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+
 def _windows(values: np.ndarray, ends: np.ndarray, lookback: int) -> np.ndarray:
     """Array (samples, lookback, features) of windows ending at each index in ``ends``."""
     offsets = np.arange(-lookback+1, 1)
@@ -77,6 +82,7 @@ class SequenceModel:
 
     def predict_rows(self, features: pd.DataFrame, rows: slice) -> np.ndarray:
         torch = _torch()
+        device = next(self.network.parameters()).device
         start, stop = rows.start or 0, rows.stop if rows.stop is not None else len(features)
         output = np.full((stop-start, len(CLASSES)), np.nan)
         ends = np.arange(start, stop)
@@ -87,8 +93,9 @@ class SequenceModel:
             with torch.no_grad():
                 probabilities = []
                 for chunk in np.array_split(ends[usable], max(1, usable.sum()//2048)):
-                    logits = self.network(torch.from_numpy(_windows(values, chunk, self.lookback)))
-                    probabilities.append(torch.softmax(logits, dim=1).numpy())
+                    batch = torch.from_numpy(_windows(values, chunk, self.lookback)).to(device)
+                    logits = self.network(batch)
+                    probabilities.append(torch.softmax(logits, dim=1).cpu().numpy())
             full = np.zeros((usable.sum(), len(CLASSES)))
             full[:, self.classes] = np.concatenate(probabilities)[:, :len(self.classes)]
             output[usable] = full
@@ -102,7 +109,10 @@ def fit_sequence(key: str, kind: str, features: pd.DataFrame, labels: pd.Series,
                  lookback: int = 32, hidden: int = 32, epochs: int = 12, batch: int = 256, seed: int = 7,
                  half_life: float = 0) -> SequenceModel:
     torch = _torch()
+    device = _device(torch)
     torch.manual_seed(seed)
+    if device.type == 'cuda':
+        torch.cuda.manual_seed_all(seed)
     np.random.seed(seed)
     start, stop = rows.start or 0, rows.stop
     train = features.iloc[start:stop]
@@ -123,11 +133,11 @@ def fit_sequence(key: str, kind: str, features: pd.DataFrame, labels: pd.Series,
     target = np.vectorize(remap.get)(encoded)
     model = SequenceModel(key, kind, None, mean.astype(np.float32), std, lookback, present, list(features.columns))
     values = model._prepared(features)
-    x = torch.from_numpy(_windows(values, ends, lookback))
-    y = torch.from_numpy(target.astype(np.int64))
+    x = torch.from_numpy(_windows(values, ends, lookback)).to(device)
+    y = torch.from_numpy(target.astype(np.int64)).to(device)
     split = int(len(x)*.85)
     counts = np.bincount(target[:split], minlength=len(present)).astype(np.float32)
-    weights = torch.from_numpy(np.where(counts > 0, len(target[:split])/(len(present)*np.maximum(counts, 1)), 0.).astype(np.float32))
+    weights = torch.from_numpy(np.where(counts > 0, len(target[:split])/(len(present)*np.maximum(counts, 1)), 0.).astype(np.float32)).to(device)
     network = _network(kind, features.shape[1], hidden)
     if len(present) != len(CLASSES):
         last = network.head if kind == 'cnn' else network.head[-1]
@@ -136,16 +146,17 @@ def fit_sequence(key: str, kind: str, features: pd.DataFrame, labels: pd.Series,
             network.head = replacement
         else:
             network.head[-1] = replacement
+    network = network.to(device)
     optimiser = torch.optim.AdamW(network.parameters(), lr=2e-3, weight_decay=1e-3)
     loss_fn = torch.nn.CrossEntropyLoss(weight=weights, reduction='none')
-    sample_weight = torch.from_numpy(recency)
+    sample_weight = torch.from_numpy(recency).to(device)
     best, best_state, patience = float('inf'), None, 0
     generator = torch.Generator().manual_seed(seed)
     for _ in range(epochs):
         network.train()
         order = torch.randperm(split, generator=generator)
         for i in range(0, split, batch):
-            index = order[i:i+batch]
+            index = order[i:i+batch].to(device)
             optimiser.zero_grad()
             loss = (loss_fn(network(x[index]), y[index])*sample_weight[index]).sum()/sample_weight[index].sum()
             loss.backward()

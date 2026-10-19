@@ -13,6 +13,7 @@ export default function MLStrategySettings({settings,onChange}:{settings:Backtes
     <Field key={key} label={label} hint={hint} unit={unit}><input type="number" required min={min} max={max} step={step} value={config[key]} onChange={event=>setMl({[key]:Number(event.target.value)} as Partial<MLConfig>)}/></Field>;
   const toggleGroup=(key:string)=>setMl({feature_groups:config.feature_groups.includes(key)?config.feature_groups.filter(item=>item!==key):[...config.feature_groups,key]});
   const activeModels=Object.values(config.models).filter(weight=>weight>0).length;
+  const activeGpuModels=(catalog?.models??[]).filter(model=>model.device==='cuda'&&(config.models[model.key]??0)>0).length;
 
   return <>
     <SettingsCard step={1} id="settings-execution" title="Position size" description="How much the bot puts into each trade and which candles the models learn from.">
@@ -33,11 +34,15 @@ export default function MLStrategySettings({settings,onChange}:{settings:Backtes
     </SettingsCard>
 
     <SettingsCard step={3} id="settings-models" title="Models" description={`${activeModels} model${activeModels===1?'':'s'} in the ensemble. Each model votes with its weight; probabilities are averaged.`}>
+      {catalog&&<div className={`compute-status ${catalog.compute.gpuAvailable?'is-gpu':'is-cpu'}`} role="status">
+        <i aria-hidden="true"/>
+        <div><strong>{catalog.compute.gpuAvailable?`GPU ready · ${catalog.compute.device}`:'CPU mode'}</strong><small>{catalog.compute.gpuAvailable?`${activeGpuModels?`${activeGpuModels} selected model${activeGpuModels===1?'':'s'} will use CUDA`:'No selected model currently uses CUDA'} · CUDA ${catalog.compute.cudaVersion} · PyTorch ${catalog.compute.torchVersion}`:'Install a CUDA-enabled PyTorch build to accelerate XGBoost, 1D-CNN and LSTM.'}</small></div>
+      </div>}
       <div className="model-picker">{(catalog?.models??[]).map(model=>{
         const weight=config.models[model.key]??0,enabled=weight>0;
         return <div key={model.key} className={`model-row ${enabled?'is-on':''} ${model.available?'':'is-unavailable'}`}>
           <label className="setup-toggle"><input type="checkbox" role="switch" aria-label={`Use ${model.label}`} checked={enabled} disabled={!model.available} onChange={event=>setMl({models:{...config.models,[model.key]:event.target.checked?1:0}})}/><i aria-hidden="true"/></label>
-          <div className="model-copy"><strong>{model.label}<em>{model.family}</em></strong><small>{model.available?model.description:`Install "${model.requires}" to enable.`}</small></div>
+          <div className="model-copy"><strong>{model.label}<em>{model.family}</em><em className={`model-device is-${model.device}`}>{model.device==='cuda'?'GPU':'CPU'}</em></strong><small>{model.available?model.description:`Install "${model.requires}" to enable.`}</small></div>
           <label className="model-weight"><span>Weight</span><input type="range" min={0} max={1} step={.05} value={weight} disabled={!model.available} aria-label={`${model.label} weight`} onChange={event=>setMl({models:{...config.models,[model.key]:Number(event.target.value)}})}/><b>{weight.toFixed(2)}</b></label>
         </div>;
       })}</div>

@@ -165,7 +165,10 @@ Details shared by all models:
   never forward. Features are standardised with training statistics only.
   Training uses AdamW, class-weighted cross-entropy, gradient clipping and early
   stopping on the last 15% of the training window (in time order). A test checks
-  that changing later candles does not change a CNN prediction.
+  that changing later candles does not change a CNN prediction. CNN and LSTM
+  training and inference automatically use CUDA when a CUDA-enabled PyTorch
+  build and compatible NVIDIA GPU are available, otherwise they use the CPU.
+  XGBoost uses the same automatic CUDA/CPU selection.
 * **Model capacity** — `light`, `standard`, `rich` — sets each model's size
   (number of trees, tree depth / leaves, minimum leaf size, network width). It
   is a setting and a search axis.

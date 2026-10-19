@@ -620,6 +620,46 @@
   gap: 6px;
 }
 
+.compute-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--field);
+}
+
+.compute-status > i {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--muted);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--muted) 15%, transparent);
+}
+
+.compute-status.is-gpu > i {
+  background: #35c986;
+  box-shadow: 0 0 0 4px color-mix(in srgb, #35c986 18%, transparent);
+}
+
+.compute-status strong,
+.compute-status small {
+  display: block;
+}
+
+.compute-status strong {
+  font-size: 12px;
+}
+
+.compute-status small {
+  margin-top: 2px;
+  color: var(--faint);
+  font-size: 11px;
+}
+
 .model-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) 240px;
@@ -654,6 +694,11 @@
   font-size: 10.5px;
   font-style: normal;
   font-weight: 500;
+}
+
+.model-copy .model-device.is-cuda {
+  background: color-mix(in srgb, #35c986 15%, var(--surface-raised));
+  color: #35c986;
 }
 
 .model-copy small {
