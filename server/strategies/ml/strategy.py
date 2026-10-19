@@ -143,6 +143,26 @@ def exit_plan(probabilities: pd.DataFrame, atr: pd.Series, settings: MLSettings)
     return plan
 
 
+def _funnel(probabilities: pd.DataFrame, plan: dict, settings: MLSettings, start_index: int) -> list[dict]:
+    """How many evaluated candles survive each entry filter in turn (shows which filter limits trades)."""
+    p = probabilities.iloc[start_index:]
+    p_long, p_short = p.p_long.to_numpy(), p.p_short.to_numpy()
+    best, other = np.fmax(p_long, p_short), np.fmin(p_long, p_short)
+    known = np.isfinite(best)
+    quality = p['p_win'].to_numpy() if 'p_win' in p else np.full(len(p), np.nan)
+    window = slice(start_index, None)
+    steps = [('Candles with a prediction', known),
+             (f'Probability ≥ {settings.entry_threshold:g}', best >= settings.entry_threshold),
+             (f'Edge ≥ {settings.min_edge:g}', best-other >= settings.min_edge),
+             (f'Reward/risk ≥ {settings.min_reward_risk:g}', plan['reward_risk'][window] >= settings.min_reward_risk),
+             (f'Win chance ≥ {settings.quality_threshold:g}', ~settings.quality_filter | ~np.isfinite(quality) | (quality >= settings.quality_threshold))]
+    alive, rows = np.ones(len(p), bool), []
+    for step, passed in steps:
+        alive &= np.asarray(passed, bool)
+        rows.append(dict(step=step, remaining=int(alive.sum())))
+    return rows
+
+
 def signals_from(probabilities: pd.DataFrame, settings: MLSettings) -> np.ndarray:
     p_long, p_short = probabilities.p_long.to_numpy(), probabilities.p_short.to_numpy()
     long = (p_long >= settings.entry_threshold) & (p_long-p_short >= settings.min_edge)
@@ -193,6 +213,7 @@ def execute(prepared: Prepared, settings: MLSettings, *, initial_capital: float,
     clean, atr, result = prepared.clean, prepared.atr, prepared.walk
     start_index = prepared.start_index
     plan = exit_plan(result.probabilities, atr, settings)
+    funnel = _funnel(result.probabilities, plan, settings, start_index)
     signals = signals_from(result.probabilities, settings)
     raw_signals = signals.copy()
     distance = atr.to_numpy()
@@ -256,6 +277,8 @@ def execute(prepared: Prepared, settings: MLSettings, *, initial_capital: float,
                                  allowed=name in settings.regimes))
     learned_window = result.probabilities.iloc[window]
     output['report'] = dict(exitMode=settings.exit_mode, regimes=regime_stats, blockedBySize=blocked_by_size,
+                            funnel=funnel+[dict(step='Trades taken', remaining=int(len(trades)),
+                                                note='One position at a time; signals during an open trade are skipped')],
                             blockedByRewardRisk=blocked_by_reward_risk, blockedByRegime=blocked_by_regime,
                             learnedExits={column: float(np.nanmedian(learned_window[column])) if column in learned_window and learned_window[column].notna().any() else None
                                           for column in ('long_tp', 'long_sl', 'short_tp', 'short_sl')},

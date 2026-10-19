@@ -942,3 +942,42 @@
 .learned-exits b {
   font-variant-numeric: tabular-nums;
 }
+
+.signal-funnel ol {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.signal-funnel li {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr) 70px 50px;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.signal-funnel span { color: var(--muted); }
+
+.signal-funnel i {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: var(--surface-raised);
+}
+
+.signal-funnel b {
+  display: block;
+  height: 100%;
+  border-radius: 5px;
+  background: var(--accent);
+}
+
+.signal-funnel strong,
+.signal-funnel em {
+  text-align: right;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}

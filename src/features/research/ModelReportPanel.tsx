@@ -16,6 +16,10 @@ export default function ModelReportPanel({report}:{report:ModelReport}){
       <div><span>Cost vs target</span><strong className={costShare!=null&&costShare>.33?'negative':''}>{costShare==null?'—':`${fmt(costShare*100,0)}%`}</strong><small>Round trip {fmt(report.medianRoundTripCost,3)} vs target {fmt(report.medianTarget,3)} USDT</small></div>
       <div><span>Signals skipped for cost</span><strong>{report.blockedByCost.toLocaleString()}</strong><small>Target below the reward ÷ cost ratio</small></div>
     </div>
+    {report.funnel&&<section className="signal-funnel"><h3>Signal funnel</h3><p className="model-note">How many candles survive each entry filter. The biggest drop shows which setting limits your trades.</p>
+      <ol>{report.funnel.map((row,index)=>{const first=report.funnel![0].remaining||1,previous=index?report.funnel![index-1].remaining:row.remaining,drop=previous?1-row.remaining/previous:0;
+        return <li key={row.step} title={row.note}><span>{row.step}</span><i><b style={{width:`${Math.max(.5,row.remaining/first*100)}%`}}/></i><strong>{row.remaining.toLocaleString()}</strong><em className={drop>.5?'negative':''}>{index?`−${Math.round(drop*100)}%`:''}</em></li>;})}</ol>
+    </section>}
     {report.regimes&&<section className="regime-report"><h3>Results by market regime</h3><p className="model-note">Learned market states in the tested period. Off = excluded by your regime filter.</p>
       <table><thead><tr><th>Regime</th><th>Time in regime</th><th>Trades</th><th>Win rate</th><th>Net P&amp;L</th><th>Traded</th></tr></thead><tbody>
         {report.regimes.map(regime=><tr key={regime.name}><td><span className={`regime-dot is-${regime.name.replace(' ','-').toLowerCase()}`}/>{regime.name}</td><td><i className="regime-share"><b style={{width:`${regime.share*100}%`}}/></i>{pct(regime.share,0)}</td><td>{regime.trades}</td><td>{regime.winRate==null?'—':`${fmt(regime.winRate,1)}%`}</td><td className={regime.netPnl>=0?'positive':'negative'}>{regime.netPnl>=0?'+':'-'}${fmt(Math.abs(regime.netPnl))}</td><td>{regime.allowed?'On':'Off'}</td></tr>)}

@@ -17,7 +17,7 @@ export type MLConfig = {
 };
 export type RegimeStat = {name:string;share:number;trades:number;netPnl:number;winRate:number|null;allowed:boolean};
 export type ModelReport = {
-  exitMode?: 'learned'|'fixed'; regimes?: RegimeStat[]; blockedBySize?: number; blockedByRewardRisk?: number; blockedByRegime?: number;
+  exitMode?: 'learned'|'fixed'; regimes?: RegimeStat[]; blockedBySize?: number; funnel?: {step:string;remaining:number;note?:string}[]; blockedByRewardRisk?: number; blockedByRegime?: number;
   learnedExits?: {long_tp:number|null;long_sl:number|null;short_tp:number|null;short_sl:number|null};
   folds: {start:number;end:number;trainRows:number;bars:number;accuracy:number|null}[];
   importance: Record<string, number>; featureCount: number; trainedBars: number; accuracy: number|null;
