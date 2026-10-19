@@ -17,7 +17,7 @@ export default function ManualOrderTicket({venue,connected,busy,blocked,botRunni
   const [useStop,setUseStop]=useState(true),[useTakeProfit,setUseTakeProfit]=useState(false);
   const [confirmed,setConfirmed]=useState(false);
   const price=data?.market?.last;
-  const {quantity,margin}=estimateOrderSize(size,unit,price,Number(leverage));
+  const {quantity,notional,margin}=estimateOrderSize(size,unit,price,Number(leverage));
   const position=data?.positions?.length===1?data.positions[0]:null;
   const positionOpen=(data?.positions?.length??0)>0;
   const accountVerified=streamConnected&&data?.positions!=null&&!data.errors.positions&&!data.errors.connection;
@@ -46,7 +46,7 @@ export default function ManualOrderTicket({venue,connected,busy,blocked,botRunni
       <div className="ticket-order-type"><strong>Market</strong><span>Immediate execution</span></div>
       <div className="ticket-available"><span>Available margin</span><strong>{number(data?.balance?.free,4)} <small>USDT</small></strong></div>
       <div className="ticket-market-price"><span>Market price</span><strong>{number(price,3)} <small>USDT</small></strong></div>
-      <label className="ticket-size"><span>Position size</span><div><input aria-label="Position size" type="number" min="0" step="any" placeholder="Enter amount" value={size} disabled={disabled||positionOpen} onChange={event=>setSize(event.target.value)}/><select aria-label="Position size unit" value={unit} onChange={event=>{setUnit(event.target.value as 'XAG'|'USDT');setSize('');setConfirmed(false);}}><option value="USDT">USDT</option><option value="XAG">XAG</option></select></div></label>
+      <label className="ticket-size"><span>{unit==='USDT'?'Margin':'Position size'}</span><div><input aria-label="Position size" type="number" min="0" step="any" placeholder="Enter amount" value={size} disabled={disabled||positionOpen} onChange={event=>setSize(event.target.value)}/><select aria-label="Position size unit" value={unit} onChange={event=>{setUnit(event.target.value as 'XAG'|'USDT');setSize('');setConfirmed(false);}}><option value="USDT">USDT</option><option value="XAG">XAG</option></select></div></label>
       <fieldset className="ticket-tpsl"><legend>TP / SL</legend>
         <label className="ticket-option"><input type="checkbox" checked={useStop} disabled={disabled||positionOpen} onChange={event=>{setUseStop(event.target.checked);setConfirmed(false);}}/><span>Stop loss</span><small>Reduce-only trigger at the exchange</small></label>
         {useStop&&<label className="ui-field ticket-stop"><span>Stop loss price <small>USDT</small></span><input type="number" aria-label="Stop loss price" min="0" step="any" placeholder={price?`Long: below ${price} · Short: above`:'Stop loss price'} value={stop} disabled={disabled||positionOpen} onChange={event=>setStop(event.target.value)}/></label>}
@@ -54,7 +54,7 @@ export default function ManualOrderTicket({venue,connected,busy,blocked,botRunni
         {useTakeProfit&&<label className="ui-field ticket-stop"><span>Take profit price <small>USDT</small></span><input type="number" aria-label="Take profit price" min="0" step="any" placeholder="Take profit price" value={takeProfit} disabled={disabled||positionOpen} onChange={event=>setTakeProfit(event.target.value)}/></label>}
         {!useStop&&<p className="ticket-warning">No stop loss: losses are not limited. Leveraged positions can be liquidated.</p>}
       </fieldset>
-      <div className="ticket-estimates"><div><span>Estimated size</span><b>{number(quantity)} XAG</b></div><div><span>Estimated margin</span><b>{number(margin,4)} USDT</b></div></div>
+      <div className="ticket-estimates"><div><span>Estimated size</span><b>{number(quantity)} XAG</b></div><div><span>Position value</span><b>{number(notional,2)} USDT</b></div><div><span>Estimated margin</span><b>{number(margin,4)} USDT</b></div></div>
       <label className="ticket-confirm"><input type="checkbox" checked={confirmed} disabled={disabled||positionOpen} onChange={event=>setConfirmed(event.target.checked)}/><span>I confirm this places a real market order.</span></label>
       <div className="ticket-submit-row"><Button className="ticket-buy" disabled={openDisabled||stopWrongSide('long')||takeProfitWrongSide('long')} onClick={()=>void open('long')}>{busy?'Submitting...':'Open Long'}</Button><Button className="ticket-sell" disabled={openDisabled||stopWrongSide('short')||takeProfitWrongSide('short')} onClick={()=>void open('short')}>{busy?'Submitting...':'Open Short'}</Button></div>
       {positionOpen&&<p className="ticket-help">An XAG position is already open. Select Close to manage it.</p>}
