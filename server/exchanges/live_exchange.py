@@ -46,6 +46,11 @@ def margin_params(venue: str) -> dict:
     return {'marginMode': 'isolated'} if venue in PER_ORDER_MARGIN else {}
 
 
+def _position_side_error(error: Exception) -> bool:
+    text = str(error).lower()
+    return 'position_side' in text or '"code":1066' in text or '"code":1067' in text
+
+
 class OrderStepError(RuntimeError):
     """A live order step failed; the message names the step and the (sanitised) exchange reason."""
 
@@ -250,7 +255,7 @@ class LiveExchange:
             try:
                 exchange.set_leverage(int(leverage), market['symbol'], {**params, 'position_side': 'both'})
             except Exception as error:
-                if 'position_side' not in str(error).lower() and '1066' not in str(error):
+                if not _position_side_error(error):
                     raise
                 for side in ('long', 'short'):
                     exchange.set_leverage(int(leverage), market['symbol'], {**params, 'position_side': side})
@@ -368,8 +373,19 @@ class LiveExchange:
         contracts = float(quantity) / float(market.get('contractSize') or 1)
         amount = float(exchange.amount_to_precision(market['symbol'], contracts))
         price = float(exchange.price_to_precision(market['symbol'], trigger))
-        order = exchange.create_order(market['symbol'], 'market', side, amount, None,
-                                      {**margin_params(venue), 'triggerPrice': price, 'reduceOnly': True})
+        params = {**margin_params(venue), 'triggerPrice': price, 'reduceOnly': True}
+        if venue != 'htx':
+            order = exchange.create_order(market['symbol'], 'market', side, amount, None, params)
+        else:
+            # HTX trigger orders need position_side: 'both' in one-way mode, the position's side in hedge mode.
+            for attempt, position_side in enumerate(('both', direction)):
+                try:
+                    order = exchange.create_order(market['symbol'], 'market', side, amount, None,
+                                                  {**params, 'position_side': position_side})
+                    break
+                except Exception as error:
+                    if attempt or not _position_side_error(error):
+                        raise
         if not order.get('id'):
             raise RuntimeError('Exchange did not confirm the protective stop order id')
         return dict(id=order.get('id'), amount=order.get('amount'), triggerPrice=price)

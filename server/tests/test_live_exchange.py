@@ -199,6 +199,14 @@ class LiveOrderSafetyTests(unittest.TestCase):
         sides = [call.args[2]['position_side'] for call in self.exchange.set_leverage.call_args_list]
         self.assertEqual(sides, ['both', 'long', 'short'])
 
+    def test_htx_stop_retries_with_hedge_position_side(self) -> None:
+        self.exchange.amount_to_precision.side_effect = lambda symbol, amount: amount
+        self.exchange.price_to_precision.side_effect = lambda symbol, price: price
+        self.exchange.create_order.side_effect = [Exception('{"code":1067,"message":"The position_side field is invalid."}'), {'id': '9', 'amount': 2}]
+        self.assertEqual(self.service.set_stop('htx', 'long', 2, 56.)['id'], '9')
+        sides = [call.args[5]['position_side'] for call in self.exchange.create_order.call_args_list]
+        self.assertEqual(sides, ['both', 'long'])
+
     def test_htx_sends_isolated_margin_with_leverage_and_orders(self) -> None:
         import ccxt
         self.exchange.set_margin_mode.side_effect = ccxt.NotSupported('htx setMarginMode() is not supported yet')
