@@ -48,7 +48,7 @@ def margin_params(venue: str) -> dict:
 
 def _position_side_error(error: Exception) -> bool:
     text = str(error).lower()
-    return 'position_side' in text or '"code":1066' in text or '"code":1067' in text
+    return 'position_side' in text or any(f'"code":{code}' in text for code in (1048, 1066, 1067))
 
 
 class OrderStepError(RuntimeError):
@@ -381,18 +381,40 @@ class LiveExchange:
             # ccxt turns a plain HTX trigger order into type 'market', which HTX rejects; send it as the
             # position's stop-loss / take-profit order instead (these always close, so no reduceOnly).
             params = {**margin_params(venue), 'takeProfitPrice' if take_profit else 'stopLossPrice': price}
-            # HTX trigger orders need position_side: 'both' in one-way mode, the position's side in hedge mode.
-            for attempt, position_side in enumerate(('both', direction)):
+            # The entry fills asynchronously: wait until HTX reports the position, then close exactly it.
+            # HTX wants position_side 'both' in one-way mode and the position's own side in hedge mode.
+            held = self._htx_open_position(venue, direction)
+            sides: tuple = ('both', direction)
+            if held:
+                sides = (held[0],)
+                amount = min(amount, held[1])
+            for attempt, position_side in enumerate(sides):
                 try:
                     order = exchange.create_order(market['symbol'], 'market', side, amount, None,
                                                   {**params, 'position_side': position_side})
                     break
                 except Exception as error:
-                    if attempt or not _position_side_error(error):
+                    if attempt == len(sides)-1 or not _position_side_error(error):
                         raise
         if not order.get('id'):
             raise RuntimeError('Exchange did not confirm the protective stop order id')
         return dict(id=order.get('id'), amount=order.get('amount'), triggerPrice=price)
+
+    def _htx_open_position(self, venue: str, direction: str, attempts: int = 6) -> tuple[str, float] | None:
+        """(position_side, contracts) of the open position on this side, polling briefly after an entry."""
+        for attempt in range(attempts):
+            try:
+                positions = self.positions(venue)
+            except Exception:
+                positions = []
+            for position in positions if isinstance(positions, list) else []:
+                contracts = abs(float(position.get('contracts') or 0))
+                if contracts and position.get('side') == direction:
+                    info = position.get('info') or {}
+                    return str(info.get('position_side') or 'both'), contracts
+            if attempt < attempts-1:
+                time.sleep(.5)
+        return None
 
     def cancel_stop(self, venue: str, order_id: str):
         exchange, market = self._get(venue)

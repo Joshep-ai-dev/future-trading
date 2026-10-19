@@ -214,6 +214,15 @@ class LiveOrderSafetyTests(unittest.TestCase):
         self.service.set_stop('htx', 'long', 2, 70., take_profit=True)
         self.assertEqual(self.exchange.create_order.call_args.args[5]['takeProfitPrice'], 70.)
 
+    def test_htx_stop_uses_reported_position_side_and_size(self) -> None:
+        self.exchange.amount_to_precision.side_effect = lambda symbol, amount: amount
+        self.exchange.price_to_precision.side_effect = lambda symbol, price: price
+        self.exchange.fetch_positions.return_value = [{'contracts': 1.5, 'side': 'long', 'info': {'position_side': 'long'}}]
+        self.exchange.create_order.return_value = {'id': '11', 'amount': 1.5}
+        self.service.set_stop('htx', 'long', 2, 56.)
+        call = self.exchange.create_order.call_args
+        self.assertEqual((call.args[3], call.args[5]['position_side']), (1.5, 'long'))
+
     def test_htx_sends_isolated_margin_with_leverage_and_orders(self) -> None:
         import ccxt
         self.exchange.set_margin_mode.side_effect = ccxt.NotSupported('htx setMarginMode() is not supported yet')
