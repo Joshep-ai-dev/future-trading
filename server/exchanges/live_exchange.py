@@ -238,6 +238,8 @@ class LiveExchange:
             raise ValueError('Quantity is below this contract’s minimum order size')
         params = {**margin_params(venue), **({'reduceOnly': True} if reduce_only else {})}
         order = exchange.create_order(market['symbol'], 'market', side, amount, None, params)
+        if not reduce_only:
+            self.last_entry_id = order.get('id')
         return dict(id=order.get('id'), status=order.get('status'), side=side,
                     amount=order.get('amount'), filled=order.get('filled'), average=order.get('average'),
                     symbol=market['symbol'], reduceOnly=reduce_only)
@@ -395,7 +397,9 @@ class LiveExchange:
                     break
                 except Exception as error:
                     if attempt == len(sides)-1 or not _position_side_error(error):
-                        seen = f'{held[1]:g} contracts, side {held[0]}' if held else 'not found'
+                        seen = (f'{held[1]:g} contracts, side {held[0]}' if held else
+                                f'lookup failed: {self.position_lookup_error}' if getattr(self, 'position_lookup_error', None)
+                                else 'none open: ' + self._htx_entry_state(venue))
                         raise RuntimeError(f'{safe_exchange_error(error)} [sent {amount:g} contracts, position_side '
                                            f'{position_side}; HTX position: {seen}]') from error
         if not order.get('id'):
@@ -407,8 +411,10 @@ class LiveExchange:
         for attempt in range(attempts):
             try:
                 positions = self.positions(venue)
-            except Exception:
+                self.position_lookup_error = None
+            except Exception as error:
                 positions = []
+                self.position_lookup_error = safe_exchange_error(error, 160)
             for position in positions if isinstance(positions, list) else []:
                 contracts = abs(float(position.get('contracts') or 0))
                 if contracts and position.get('side') == direction:
@@ -417,6 +423,18 @@ class LiveExchange:
             if attempt < attempts-1:
                 time.sleep(.5)
         return None
+
+    def _htx_entry_state(self, venue: str) -> str:
+        """Status of the latest entry order, to explain why no position exists."""
+        order_id = getattr(self, 'last_entry_id', None)
+        if not order_id:
+            return 'no entry id'
+        exchange, market = self._get(venue)
+        try:
+            order = exchange.fetch_order(order_id, market['symbol'])
+            return f"entry {order.get('status')}, filled {order.get('filled')}/{order.get('amount')}, type {order.get('type')}"
+        except Exception as error:
+            return f'entry lookup failed: {safe_exchange_error(error, 120)}'
 
     def cancel_stop(self, venue: str, order_id: str):
         exchange, market = self._get(venue)
