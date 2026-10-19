@@ -32,13 +32,21 @@ def _cuda() -> bool:
 class _QuantilePair:
     """Predicts the (target, stop) quantiles of one excursion."""
 
-    def __init__(self, quantiles: tuple[float, float], seed: int):
-        self.quantiles, self.seed, self.models = quantiles, seed, []
+    def __init__(self, quantiles: tuple[float, float], seed: int, device: str = 'auto'):
+        self.quantiles, self.seed, self.models, self.device = quantiles, seed, [], device
 
     def fit(self, x: np.ndarray, y: np.ndarray, weights: np.ndarray | None):
         # Small tabular data trains fastest on the CPU: GPU boosting pays a launch cost per tree that
         # outweighs the work at a few thousand rows (measured: ~9 s per backtest vs <1 s here).
-        if importlib.util.find_spec('lightgbm'):
+        from server.strategies.ml.models import use_gpu
+        if importlib.util.find_spec('xgboost') and use_gpu(self.device, len(y)):
+            from xgboost import XGBRegressor
+            model = XGBRegressor(objective='reg:quantileerror', quantile_alpha=np.asarray(self.quantiles),
+                                 n_estimators=150, learning_rate=.06, max_depth=4, max_bin=64, min_child_weight=5,
+                                 subsample=.8, colsample_bytree=.8, tree_method='hist', device='cuda',
+                                 random_state=self.seed, n_jobs=2)
+            self.models = [model.fit(x, y, sample_weight=weights)]
+        elif importlib.util.find_spec('lightgbm'):
             from lightgbm import LGBMRegressor
             self.models = [LGBMRegressor(objective='quantile', alpha=q, n_estimators=150, learning_rate=.05,
                                          num_leaves=15, min_child_samples=60, max_bin=63, subsample=.8, subsample_freq=1,
@@ -79,7 +87,8 @@ class ExitModel:
 
     @classmethod
     def fit(cls, features: pd.DataFrame, targets: pd.DataFrame, rows: slice, *, tp_quantile: float,
-            sl_quantile: float, floor: float = .3, ceiling: float = 6., seed: int = 7, half_life: float = 0) -> 'ExitModel':
+            sl_quantile: float, floor: float = .3, ceiling: float = 6., seed: int = 7, half_life: float = 0,
+            device: str = 'auto') -> 'ExitModel':
         x, y = features.iloc[rows], targets.iloc[rows]
         mask = y.notna().all(axis=1).to_numpy()
         age = np.arange(len(mask)-1, -1, -1, dtype=float)
@@ -88,8 +97,8 @@ class ExitModel:
             raise ValueError('Too few labelled candles to learn exits')
         matrix = x.to_numpy()[mask]
         quantiles = (tp_quantile, sl_quantile)
-        up = _QuantilePair(quantiles, seed).fit(matrix, y['long_mfe'].to_numpy()[mask], weights)
-        down = _QuantilePair(quantiles, seed).fit(matrix, y['long_mae'].to_numpy()[mask], weights)
+        up = _QuantilePair(quantiles, seed, device).fit(matrix, y['long_mfe'].to_numpy()[mask], weights)
+        down = _QuantilePair(quantiles, seed, device).fit(matrix, y['long_mae'].to_numpy()[mask], weights)
         return cls(up, down, floor, ceiling)
 
     def predict(self, features: pd.DataFrame, rows: slice) -> pd.DataFrame:

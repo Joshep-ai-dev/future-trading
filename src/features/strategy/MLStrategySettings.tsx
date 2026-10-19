@@ -37,7 +37,9 @@ export default function MLStrategySettings({settings,onChange}:{settings:Backtes
       {catalog&&<div className={`compute-status ${catalog.compute.gpuAvailable?'is-gpu':'is-cpu'}`} role="status">
         <i aria-hidden="true"/>
         <div><strong>{catalog.compute.gpuAvailable?`GPU ready · ${catalog.compute.device}`:'CPU mode'}</strong><small>{catalog.compute.gpuAvailable?`${activeGpuModels?`${activeGpuModels} selected model${activeGpuModels===1?'':'s'} will use CUDA`:'No selected model currently uses CUDA'} · CUDA ${catalog.compute.cudaVersion} · PyTorch ${catalog.compute.torchVersion}`:'Install a CUDA-enabled PyTorch build to accelerate XGBoost, 1D-CNN and LSTM.'}</small></div>
+        {catalog.compute.gpuAvailable&&<div className="device-picker" role="radiogroup" aria-label="Compute device">{([['auto','Auto','Fastest per model'],['gpu','GPU','CUDA wherever supported'],['cpu','CPU','No GPU']] as const).map(([key,label,hint])=><button key={key} type="button" role="radio" aria-checked={config.device===key} title={hint} onClick={()=>setMl({device:key})}>{label}</button>)}</div>}
       </div>}
+      {catalog?.compute.gpuAvailable&&<p className="setup-note">{config.device==='auto'?'Auto: neural networks (CNN, LSTM) train on the GPU; small tree models stay on the CPU because they are faster there. Measured fastest on this machine.':config.device==='gpu'?'GPU: XGBoost, learned exits, the quality filter, CNN and LSTM use CUDA. LightGBM and scikit-learn models have no GPU support and stay on the CPU. On windows of a few thousand candles this is slower than Auto.':'CPU: every model trains on the processor.'}</p>}
       <div className="model-picker">{(catalog?.models??[]).map(model=>{
         const weight=config.models[model.key]??0,enabled=weight>0;
         return <div key={model.key} className={`model-row ${enabled?'is-on':''} ${model.available?'':'is-unavailable'}`}>

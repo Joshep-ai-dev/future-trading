@@ -95,9 +95,9 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
   const [selectedTuneCaseId,setSelectedTuneCaseId]=useState('');
   const [tuneProgress,setTuneProgress]=useState({percent:0,message:''});
   const [runId,setRunId]=useState(0);
-  async function run(e?:FormEvent){
+  async function run(e?:FormEvent,override?:BacktestSettings){
     e?.preventDefault();setBusy(true);setError('');onViewChange('results');
-    try{setResult(await api<BacktestResult>('/api/backtest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(settings)}));setRunId(value=>value+1);}
+    try{setResult(await api<BacktestResult>('/api/backtest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(override??settings)}));setRunId(value=>value+1);}
     catch(e){setError(String(e));}finally{setBusy(false);}
   }
   async function openRun(id:number){
@@ -143,7 +143,7 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
   const stale=!!result&&Object.keys(settings).some(k=>JSON.stringify(settings[k as keyof BacktestSettings])!==JSON.stringify(result.settings[k as keyof BacktestSettings]));
   function download(){if(!result)return;const url=URL.createObjectURL(new Blob([JSON.stringify(result,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download='bb-reversal-backtest.json';link.click();URL.revokeObjectURL(url);}
   return <section className="backtest"><Suspense fallback={<div className="workspace-loading" role="status">Loading workspace...</div>}>
-    {accountMode==='live'?(view==='paper'&&<LiveTrading settings={settings} controls={<LiveExecution view="terminal" settings={settings} onSettingsChange={setSettings} onConfigure={()=>onViewChange('strategy')} onManageAccount={()=>onViewChange('account')}/>}/>):<PaperTrading settings={settings} onChange={setSettings} onConfigure={()=>onViewChange('strategy')} visible={view==='paper'}/>}
+    {accountMode==='live'?(view==='paper'&&<LiveTrading settings={settings} controls={<LiveExecution view="terminal" settings={settings} onSettingsChange={setSettings} onConfigure={()=>onViewChange('strategy')} onManageAccount={()=>onViewChange('account')}/>}/>):<PaperTrading profiles={profiles} onApplySetup={setup=>setSettings(restoreSettings(setup.settings,range))} settings={settings} onChange={setSettings} onConfigure={()=>onViewChange('strategy')} visible={view==='paper'}/>}
 
     {view==='account'&&<AccountPage settings={settings} onBack={()=>onViewChange('paper')} accountMode={accountMode} onAccountModeChange={onAccountModeChange}/>}
     {view==='strategy'&&<div id="page-strategy" className="setup-page" role="tabpanel" aria-labelledby="tab-strategy">
@@ -226,6 +226,6 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
 
     </div>}
     {error&&view!=='paper'&&<p className="error" role="alert">{error}</p>}
-    {view==='results'&&<div id="page-results" role="tabpanel" aria-labelledby="tab-results" hidden={view!=='results'}><ResultsWorkspace key={runId} result={result} busy={busy} stale={stale} onRun={()=>void run()} onConfigure={()=>onViewChange('strategy')} onExport={download} onOpenRun={id=>void openRun(id)} onApplySettings={()=>{if(result)setSettings(restoreSettings(result.settings,range));}} summary={[['Period (UTC)',`${settings.start_date} → ${settings.end_date}`],['Timeframe',settings.entry_timeframe],['Starting balance',`$${fmt(settings.capital)}`],['Leverage',`${settings.max_leverage}×`],['Strategy',STRATEGY_LABELS[settings.strategy]??settings.strategy],['Per trade',(settings.strategy==='ml_ensemble'?settings.ml:settings.bb_reversal).amount_unit==='percent'?`${(settings.strategy==='ml_ensemble'?settings.ml:settings.bb_reversal).amount_per_trade}% of balance`:`$${fmt((settings.strategy==='ml_ensemble'?settings.ml:settings.bb_reversal).amount_per_trade)}`]]}/></div>}
+    {view==='results'&&<div id="page-results" role="tabpanel" aria-labelledby="tab-results" hidden={view!=='results'}><ResultsWorkspace key={runId} result={result} busy={busy} stale={stale} profiles={profiles} onRunSetup={setup=>{const next=restoreSettings(setup.settings,range);setSettings(next);void run(undefined,next);}} onRun={()=>void run()} onConfigure={()=>onViewChange('strategy')} onExport={download} onOpenRun={id=>void openRun(id)} onApplySettings={()=>{if(result)setSettings(restoreSettings(result.settings,range));}} summary={[['Period (UTC)',`${settings.start_date} → ${settings.end_date}`],['Timeframe',settings.entry_timeframe],['Starting balance',`$${fmt(settings.capital)}`],['Leverage',`${settings.max_leverage}×`],['Strategy',STRATEGY_LABELS[settings.strategy]??settings.strategy],['Per trade',(settings.strategy==='ml_ensemble'?settings.ml:settings.bb_reversal).amount_unit==='percent'?`${(settings.strategy==='ml_ensemble'?settings.ml:settings.bb_reversal).amount_per_trade}% of balance`:`$${fmt((settings.strategy==='ml_ensemble'?settings.ml:settings.bb_reversal).amount_per_trade)}`]]}/></div>}
   </Suspense></section>;
 }

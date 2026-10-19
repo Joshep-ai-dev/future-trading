@@ -7,6 +7,7 @@ import {fmt,type BacktestResult,type Trade} from '../../shared/types/types';
 import {formatTradingTime,useTradingTimeZone,type TradingTimeZone} from '../../shared/charts/tradingTime';
 import TradingChartHeader from '../../shared/charts/TradingChartHeader';
 import SavedRuns from './SavedRuns';
+import SetupPicker,{type SavedSetup} from '../strategy/SetupPicker';
 import ModelReportPanel from './ModelReportPanel';
 import {BalanceSparkline,DrawdownChart,PayoffBars,WinDonut,balanceSeries,drawdownSeries} from './ResultCharts';
 
@@ -15,7 +16,7 @@ const utc=(t:number)=>new Date(t*1000).toISOString().replace('T',' ').slice(0,16
 const tradeTime=(t:number,zone:TradingTimeZone)=>formatTradingTime(t,zone);
 const reason=(value:string)=>({rsi_price_exit:'RSI + price exit',stop:'Stop loss',reversal:'Direction reversal',period_end:'End of backtest',data_gap:'Data gap',trailing_stop_at_close:'Trailing stop'}[value]??value.replaceAll('_',' '));
 
-export default function ResultsWorkspace({result,busy,stale,onRun,onConfigure,onExport,summary,onOpenRun,onApplySettings}:{onApplySettings:()=>void;result:BacktestResult|null;busy:boolean;stale:boolean;onRun:()=>void;onConfigure:()=>void;onExport:()=>void;summary?:[string,string][];onOpenRun:(id:number)=>void}){
+export default function ResultsWorkspace({profiles,onRunSetup,result,busy,stale,onRun,onConfigure,onExport,summary,onOpenRun,onApplySettings}:{profiles:SavedSetup[];onRunSetup:(setup:SavedSetup)=>void;onApplySettings:()=>void;result:BacktestResult|null;busy:boolean;stale:boolean;onRun:()=>void;onConfigure:()=>void;onExport:()=>void;summary?:[string,string][];onOpenRun:(id:number)=>void}){
   const [selectedId,setSelectedId]=useState<number|null>(null),[page,setPage]=useState(0);
   const tradingTimeZone=useTradingTimeZone();
   const p=result?.backtest,s=p?.summary;
@@ -51,6 +52,7 @@ export default function ResultsWorkspace({result,busy,stale,onRun,onConfigure,on
   const exits=useMemo(()=>Object.entries((p?.trades??[]).reduce<Record<string,number>>((counts,t)=>{counts[t.exitReason]=(counts[t.exitReason]??0)+1;return counts;},{})),[p]);
   return <>
     <PageHeader eyebrow={(result?.strategyName??"BB Outer Band Reversal").toUpperCase()} title="Backtest results" actions={<><Button variant="secondary" onClick={onConfigure}>Edit settings</Button>{result&&<Button variant="secondary" onClick={showHistory}>History</Button>}{result?.runId&&<Button variant="secondary" onClick={()=>void saveAs()}>{savedName?`Saved: ${savedName}`:'Save as…'}</Button>}{result&&<Button variant="secondary" onClick={onExport}>Export results</Button>}<Button disabled={busy} onClick={onRun}>{busy?'Running…':'Run backtest'}</Button></>}/>
+    <SetupPicker profiles={profiles} onApply={onRunSetup} disabled={busy} label="Backtest a saved setup" actionLabel={busy?"Running…":"Run this setup"}/>
     {stale&&<p className="notice result-stale">Your current bot settings differ from this run.<button type="button" className="secondary" onClick={onApplySettings}>Use these settings</button></p>}
     {result&&p&&s?<>
       <div className="result-run-line"><span>{result.executionTimeframe} candles</span><span>{result.settings.max_leverage}× leverage</span><span>${fmt(result.settings.capital)} start</span><span>{utc(p.start)} → {utc(p.end)} UTC · {days} days</span><span className="is-muted">Simulated</span></div>

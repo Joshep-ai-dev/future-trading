@@ -382,6 +382,15 @@ It removes losing trades (profit factor up) more than it raises the win rate. Th
   Tree models on smaller windows run on the CPU because GPU launch overhead per tree outweighs the
   work (measured: GPU exit models added ~9 s per backtest; LightGBM CPU needs < 1 s).
 * Default 15m backtest: 23.4 s → 11.2 s; four-model ensemble with CNN: ~17 s.
+* **Compute device** (Bot settings → Models): *Auto* (default) runs each model where it is fastest;
+  *GPU* forces CUDA for XGBoost, learned exits, the quality filter, CNN and LSTM (LightGBM and
+  scikit-learn models have no GPU support); *CPU* uses no GPU. Measured on the GTX 1660
+  (XGBoost + CNN, 5m data):
+
+  | Training window | CPU | Auto | GPU forced |
+  |---|---|---|---|
+  | 6 000 candles | 9.3 s | **7.0 s** | 21.1 s |
+  | 30 000 candles | 26.6 s | **19.4 s** | 27.3 s |
 
 ---
 

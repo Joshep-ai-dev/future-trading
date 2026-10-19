@@ -17,6 +17,7 @@ import TerminalSplitter from '../../shared/ui/TerminalSplitter';
 import BotStatusPanel,{BotChartBadge} from './BotStatusPanel';
 import {PaperSessionHistory} from './TradingHistory';
 import PatternPanel from './PatternPanel';
+import SetupPicker,{type SavedSetup} from '../strategy/SetupPicker';
 import type {StrategyState} from '../../shared/api/exchangeTypes';
 
 export type Position={direction:number;entry_time:number;entry_price:number;quantity:number;stop:number;initial_stop?:number;trailing_active:boolean;stop_history?:StopPoint[]};
@@ -25,7 +26,7 @@ type Session={animationMinutes?:Candle[];formingCandle?:Candle|null;displayPrice
 type Response={session:Session|null;error:string|null};
 const date=(t:number|null,timeZone:TradingTimeZone)=>t===null?'Waiting':formatTradingTime(t,timeZone);
 
-export default function PaperTrading({settings,onChange,onConfigure,visible}:{settings:BacktestSettings;onChange:(s:BacktestSettings)=>void;onConfigure:()=>void;visible:boolean}) {
+export default function PaperTrading({settings,onChange,onConfigure,visible,profiles,onApplySetup}:{settings:BacktestSettings;onChange:(s:BacktestSettings)=>void;onConfigure:()=>void;visible:boolean;profiles:SavedSetup[];onApplySetup:(setup:SavedSetup)=>void}) {
   const tradingTimeZone=useTradingTimeZone();
   const [chartTimeframe,setChartTimeframe]=useState<BacktestSettings['entry_timeframe']>(settings.entry_timeframe);
   const [data,setData]=useState<Response>({session:null,error:null});
@@ -123,6 +124,7 @@ export default function PaperTrading({settings,onChange,onConfigure,visible}:{se
     </div>
     <aside className="terminal-sidebar"><section className="terminal-panel bot-control"><div className="panel-heading"><h2>Paper bot</h2><span className={`bot-state ${s?.running?'is-running':''}`}><i className="status-dot"/>{status}</span></div>
       <form className="bot-form" onSubmit={e=>{e.preventDefault();void action('start');}}><fieldset disabled={busy||s?.running}>
+        <SetupPicker profiles={profiles} onApply={onApplySetup} label="Load a saved setup"/>
         <div className="bot-picker" role="radiogroup" aria-label="Bot strategy">{([['bb_outer_reversal','BB Reversal','Rules'],['ml_ensemble','ML Ensemble','Learned']] as const).map(([key,label,kind])=><button key={key} type="button" role="radio" aria-checked={config.strategy===key} onClick={()=>onChange({...settings,strategy:key})}><strong>{label}</strong><small>{kind}</small></button>)}</div>
         <label>Timeframe<select value={config.entry_timeframe} onChange={e=>onChange({...settings,entry_timeframe:e.target.value as BacktestSettings['entry_timeframe']})}>{['1m','3m','5m','10m','15m','30m','1h','4h','1d'].map(tf=><option key={tf} value={tf}>{tf}</option>)}</select></label>
         <div className="control-row"><label>Starting balance ($)<input type="number" required min={1} max={1e9} step="any" value={config.capital} onChange={e=>onChange({...settings,capital:Number(e.target.value)})}/></label><label>Leverage<input type="number" required min={1} max={100} step={.5} value={config.max_leverage} onChange={e=>onChange({...settings,max_leverage:Number(e.target.value)})}/></label></div>

@@ -29,7 +29,12 @@ def _inputs(features: np.ndarray, probabilities: np.ndarray) -> np.ndarray:
     return np.column_stack([features, probabilities, side, chosen, edge])
 
 
-def _classifier(seed: int):
+def _classifier(seed: int, gpu: bool = False):
+    if gpu:
+        from xgboost import XGBClassifier
+        return XGBClassifier(n_estimators=150, learning_rate=.05, max_depth=3, max_bin=64, min_child_weight=3,
+                             subsample=.8, colsample_bytree=.7, reg_lambda=2., tree_method='hist', device='cuda',
+                             random_state=seed, n_jobs=2)
     from lightgbm import LGBMClassifier
     return LGBMClassifier(n_estimators=150, learning_rate=.05, num_leaves=7, min_child_samples=30, max_bin=63,
                           subsample=.8, subsample_freq=1, colsample_bytree=.7, reg_lambda=2., class_weight='balanced',
@@ -43,13 +48,14 @@ class MetaModel:
 
     @classmethod
     def fit(cls, features: pd.DataFrame, labels: pd.Series, rows: slice, *, primary: str, capacity: str,
-            half_life: float, seed: int = 7) -> 'MetaModel | None':
+            half_life: float, seed: int = 7, device: str = 'auto') -> 'MetaModel | None':
         start, stop = rows.start or 0, rows.stop
         cut = start+int((stop-start)*INNER_SPLIT)
         if not MODELS['lightgbm'].available() or stop-cut < 200:
             return None
         try:
-            inner = fit_model(primary, features, labels, slice(start, cut), capacity=capacity, half_life=half_life, seed=seed)
+            inner = fit_model(primary, features, labels, slice(start, cut), capacity=capacity, half_life=half_life,
+                              seed=seed, device=device)
         except ValueError:
             return None
         held_out = slice(cut, stop)
@@ -63,7 +69,13 @@ class MetaModel:
         if won.min() == won.max():
             return None
         x = _inputs(features.iloc[held_out].to_numpy()[candidate], probabilities[candidate])
-        model = _classifier(seed).fit(x, won)
+        from server.strategies.ml.models import use_gpu
+        gpu = use_gpu(device, len(won)) and MODELS['xgboost'].available()
+        weights = None
+        if gpu:  # XGBoost has no class_weight; balance the classes with sample weights instead.
+            share = won.mean()
+            weights = np.where(won == 1, .5/share, .5/(1-share))
+        model = _classifier(seed, gpu).fit(x, won, sample_weight=weights)
         return cls(model, float(won.mean()))
 
     def predict(self, features: pd.DataFrame, rows: slice, probabilities: np.ndarray) -> np.ndarray:

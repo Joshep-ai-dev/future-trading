@@ -59,6 +59,8 @@ class MLSettings:
     # Trade-quality filter: a second model learns when direction calls win; enter only above the threshold.
     quality_filter: bool = True
     quality_threshold: float = .5
+    # Where models train: 'auto' (fastest per model), 'gpu' (CUDA wherever a model supports it) or 'cpu'.
+    device: str = 'auto'
     # Recent candles matter more: training weights halve every ``recency_half_life`` candles back (0 = equal).
     recency_half_life: int = 2000
 
@@ -91,7 +93,8 @@ class MLSettings:
                   (bool(self.regimes) and all(name in REGIME_NAMES for name in self.regimes), 'Choose at least one valid market regime'),
                   (0 <= self.recency_half_life <= 200_000, 'Recency half-life must be 0-200000 candles'),
                   (0 <= self.min_atr <= 100 and 0 <= self.min_target <= 100, 'Minimum ATR and target must be 0-100'),
-                  (0 <= self.quality_threshold < 1, 'Trade quality threshold must be 0-1')]
+                  (0 <= self.quality_threshold < 1, 'Trade quality threshold must be 0-1'),
+                  (self.device in ('auto', 'gpu', 'cpu'), 'Device must be auto, gpu or cpu')]
         for valid, message in checks:
             if not valid:
                 raise ValueError(message)
@@ -105,7 +108,7 @@ class MLSettings:
         return config_key(groups=sorted(self.feature_groups), models=self.models, horizon=self.horizon,
                           tp=self.take_profit_atr, sl=self.stop_atr, atr=self.atr_length, capacity=self.capacity,
                           exits=self.exit_mode, quantiles=(self.tp_quantile, self.sl_quantile) if self.exit_mode == 'learned' else None,
-                          recency=self.recency_half_life, quality=self.quality_filter)
+                          recency=self.recency_half_life, quality=self.quality_filter, device=self.device)
 
 
 def _atr(frame: pd.DataFrame, length: int) -> pd.Series:
@@ -180,7 +183,7 @@ def prepare(frame: pd.DataFrame, settings: MLSettings, start=None, progress=None
                           retrain_every=settings.retrain_every, horizon=settings.horizon,
                           models=settings.models, key=settings.model_key(), capacity=settings.capacity, progress=progress,
                           exit_targets=targets, quantiles=(settings.tp_quantile, settings.sl_quantile),
-                          half_life=settings.recency_half_life, meta=settings.quality_filter)
+                          half_life=settings.recency_half_life, meta=settings.quality_filter, device=settings.device)
     return Prepared(clean, atr, features.shape[1], labels, start_index, result)
 
 

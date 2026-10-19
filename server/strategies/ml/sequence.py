@@ -24,9 +24,9 @@ def _torch():
     return torch
 
 
-def _device(torch):
-    """Use the first CUDA GPU when the installed PyTorch build supports it."""
-    return torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+def _device(torch, preference: str = 'auto'):
+    """CUDA unless the user chose CPU; neural networks are faster on the GPU at any size here."""
+    return torch.device('cuda' if preference != 'cpu' and torch.cuda.is_available() else 'cpu')
 
 
 def _windows(values: np.ndarray, ends: np.ndarray, lookback: int) -> np.ndarray:
@@ -107,9 +107,9 @@ class SequenceModel:
 
 def fit_sequence(key: str, kind: str, features: pd.DataFrame, labels: pd.Series, rows: slice, *,
                  lookback: int = 32, hidden: int = 32, epochs: int = 12, batch: int = 256, seed: int = 7,
-                 half_life: float = 0) -> SequenceModel:
+                 half_life: float = 0, device: str = 'auto') -> SequenceModel:
     torch = _torch()
-    device = _device(torch)
+    device = _device(torch, device)
     torch.manual_seed(seed)
     if device.type == 'cuda':
         torch.cuda.manual_seed_all(seed)
