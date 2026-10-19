@@ -24,6 +24,27 @@ VENUES = {
 }
 
 
+_UNCHANGED = ('no need', 'not modified', 'same', 'already', 'no change', 'unchanged', 'not changed')
+
+
+def safe_exchange_error(error: Exception, limit: int = 240) -> str:
+    """Exchange error text without request URLs, query strings or long tokens (keys, signatures)."""
+    import re
+    text = f'{type(error).__name__}: {error}'
+    text = re.sub(r'https?://\S+', '[url]', text)
+    text = re.sub(r'\?[^\s"\']*', '', text)
+    text = re.sub(r'[A-Za-z0-9+/=_-]{24,}', '[hidden]', text)
+    return ' '.join(text.split())[:limit]
+
+
+class OrderStepError(RuntimeError):
+    """A live order step failed; the message names the step and the (sanitised) exchange reason."""
+
+    def __init__(self, step: str, error: Exception):
+        super().__init__(f'{step} failed: {safe_exchange_error(error)}')
+        self.step = step
+
+
 class LiveExchange:
     def __init__(self):
         self.lock = threading.RLock()
@@ -207,8 +228,20 @@ class LiveExchange:
                     amount=order.get('amount'), filled=order.get('filled'), average=order.get('average'),
                     symbol=market['symbol'], reduceOnly=reduce_only)
 
+    def prepare_account(self, venue: str, leverage: int) -> None:
+        """Isolated margin and leverage, tolerating 'already set' answers. Call only when flat."""
+        exchange, market = self.execution_client(venue)
+        for step, call in (('Setting isolated margin', lambda: exchange.set_margin_mode('isolated', market['symbol'])),
+                           (f'Setting {leverage}x leverage', lambda: exchange.set_leverage(int(leverage), market['symbol']))):
+            try:
+                call()
+            except Exception as error:
+                if any(word in str(error).lower() for word in _UNCHANGED):
+                    continue  # The account already uses this setting.
+                raise OrderStepError(step, error) from error
+
     def open_with_stop(self, venue: str, direction: Literal['long', 'short'],
-                       quantity: float, stop_price: float, take_profit_price: float | None = None):
+                       quantity: float, stop_price: float | None, take_profit_price: float | None = None):
         with self.trade_lock:
             return self._open_with_stop_locked(venue,direction,quantity,stop_price,take_profit_price)
 
@@ -220,27 +253,39 @@ class LiveExchange:
             raise ValueError('Close the existing XAG/USDT position before opening another from this terminal')
         ticker = exchange.fetch_ticker(market['symbol'])
         last = float(ticker.get('last') or 0)
-        if not last or (direction == 'long' and stop_price >= last) or (direction == 'short' and stop_price <= last):
+        if not last:
+            raise ValueError('No current price from the exchange; try again')
+        if stop_price is not None and ((direction == 'long' and stop_price >= last) or (direction == 'short' and stop_price <= last)):
             raise ValueError('Stop must be below the current price for a long, or above it for a short')
         if take_profit_price is not None and (direction == 'long' and take_profit_price <= last
                                               or direction == 'short' and take_profit_price >= last):
             raise ValueError('Take profit must be above the current price for a long, or below it for a short')
         side = 'buy' if direction == 'long' else 'sell'
-        result = self.market_order(venue, side, quantity)
+        try:
+            result = self.market_order(venue, side, quantity)
+        except ValueError:
+            raise
+        except Exception as error:
+            raise OrderStepError('Market entry order', error) from error
         contract_size = float(market.get('contractSize') or 1)
         stop_quantity = float(result.get('filled') or result.get('amount') or 0) * contract_size
         if stop_quantity <= 0:
             stop_quantity = quantity
+        stop = None
         try:
-            stop = self.set_stop(venue, direction, stop_quantity, stop_price)
+            if stop_price is not None:
+                stop = self.set_stop(venue, direction, stop_quantity, stop_price)
         except Exception as error:
             try:
                 self.market_order(venue, 'sell' if direction == 'long' else 'buy', quantity, reduce_only=True)
             except Exception as close_error:
-                raise RuntimeError(f'Entry was sent, protective stop was rejected, and emergency close also failed: {close_error}') from error
-            raise RuntimeError(f'Entry was sent but the protective stop was rejected; an emergency reduce-only close was sent: {error}') from error
-        with self.lock:
-            self.protective_orders[venue] = stop.get('id')
+                raise RuntimeError('Entry was sent, the stop loss was rejected, and the emergency close also failed '
+                                   f'({safe_exchange_error(close_error)}). Check the position at the exchange now.') from error
+            raise RuntimeError('Entry was sent but the stop loss was rejected, so it was closed again with a reduce-only order '
+                               f'({safe_exchange_error(error)}).') from error
+        if stop is not None:
+            with self.lock:
+                self.protective_orders[venue] = stop.get('id')
         take_profit = None
         take_profit_error = None
         if take_profit_price is not None:
@@ -424,14 +469,13 @@ class AutomaticLiveBot:
         request = request.model_copy(update={'capital': available})
         timeframe = request.entry_timeframe
         duration = TIMEFRAMES[timeframe]
+        leverage=float(request.max_leverage)
+        if leverage != int(leverage):
+            raise ValueError('Live exchange leverage must be a whole number')
         try:
-            exchange.set_margin_mode('isolated',market['symbol'])
-            leverage=float(request.max_leverage)
-            if leverage != int(leverage):
-                raise ValueError('Live exchange leverage must be a whole number')
-            exchange.set_leverage(int(leverage),market['symbol'])
-        except Exception as error:
-            raise ValueError('Could not set isolated margin and the requested leverage. Check account position mode, venue limits and API permissions.') from error
+            self.service.prepare_account(venue,int(leverage))
+        except OrderStepError as error:
+            raise ValueError(f'{error}. Check account position mode, venue limits and API permissions.') from error
         frame = self._fetch_frame(exchange,market,timeframe,duration)
         if len(frame) < 100:
             raise ValueError('The exchange returned too few completed candles to warm up the strategy')

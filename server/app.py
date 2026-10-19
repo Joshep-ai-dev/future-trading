@@ -20,6 +20,7 @@ from server.strategies.registry import get_strategy
 from server.market.market_refresh import refresh_service
 from server.market.history_backfill import history_backfill
 from server.storage.user_data_store import user_data_store
+from server.exchanges.live_exchange import OrderStepError, safe_exchange_error
 from server.core.workspaces import WorkspaceRegistry
 from server.storage.credential_store import credential_store
 from server.core.serialization import optional_volume
@@ -295,7 +296,7 @@ class ExchangeOrderRequest(BaseModel):
     venue: Literal['okx','htx','mexc','binance']
     direction: Literal['long','short']
     quantity: float = Field(gt=0,le=1e9)
-    stop_price: float = Field(gt=0,le=1e9)
+    stop_price: float | None = Field(default=None,gt=0,le=1e9)
     take_profit_price: float | None = Field(default=None,gt=0,le=1e9)
     leverage: int = Field(ge=1,le=100)
     confirmation: Literal['PLACE LIVE ORDER']
@@ -427,15 +428,20 @@ def exchange_forget(parameters: ExchangeDisconnectRequest, request: Request):
 def exchange_order(parameters: ExchangeOrderRequest, request: Request):
     ws = workspace(request)
     try:
-        exchange,market=ws.exchange.execution_client(parameters.venue)
-        exchange.set_margin_mode('isolated',market['symbol'])
-        exchange.set_leverage(parameters.leverage,market['symbol'])
+        # Margin mode and leverage cannot change while a position is open: check that first.
+        if any(float(position.get('contracts') or 0) != 0 for position in ws.exchange.positions(parameters.venue)):
+            raise ValueError('An XAG/USDT position is already open. Close it (Close tab) before opening another.')
+        ws.exchange.prepare_account(parameters.venue, parameters.leverage)
         return ws.exchange.open_with_stop(parameters.venue,parameters.direction,parameters.quantity,
                                             parameters.stop_price,parameters.take_profit_price)
     except ValueError as error:
         raise HTTPException(status_code=400,detail=str(error)) from error
+    except (OrderStepError, RuntimeError) as error:
+        logger.warning('Live order failed for user %s: %s', request.state.user['id'], error)
+        raise HTTPException(status_code=502,detail=f'{error} Check the exchange order and position status before retrying.') from error
     except Exception as error:
-        raise HTTPException(status_code=502,detail='Live order failed. Check the exchange order and position status before retrying.') from error
+        logger.exception('Live order failed')
+        raise HTTPException(status_code=502,detail=f'Live order failed ({safe_exchange_error(error)}). Check the exchange order and position status before retrying.') from error
 
 
 @app.post('/api/exchange/close')

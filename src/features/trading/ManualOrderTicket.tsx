@@ -14,6 +14,7 @@ export default function ManualOrderTicket({venue,connected,busy,blocked,botRunni
   const [unit,setUnit]=useState<'XAG'|'USDT'>('USDT');
   const [stop,setStop]=useState('');
   const [takeProfit,setTakeProfit]=useState('');
+  const [useStop,setUseStop]=useState(true),[useTakeProfit,setUseTakeProfit]=useState(false);
   const [confirmed,setConfirmed]=useState(false);
   const price=data?.market?.last;
   const {quantity,margin}=estimateOrderSize(size,unit,price,Number(leverage));
@@ -22,11 +23,15 @@ export default function ManualOrderTicket({venue,connected,busy,blocked,botRunni
   const accountVerified=streamConnected&&data?.positions!=null&&!data.errors.positions&&!data.errors.connection;
   const disabled=!connected||busy||blocked||botRunning||!accountVerified;
   const validPrice=price!=null&&Number.isFinite(price)&&price>0;
-  const openDisabled=disabled||positionOpen||!confirmed||quantity==null||!Number.isFinite(Number(stop))||Number(stop)<=0||!validPrice||data?.streams.market!=='live';
+  const stopValid=!useStop||(Number.isFinite(Number(stop))&&Number(stop)>0);
+  const takeProfitValid=!useTakeProfit||(Number.isFinite(Number(takeProfit))&&Number(takeProfit)>0);
+  const openDisabled=disabled||positionOpen||!confirmed||quantity==null||!stopValid||!takeProfitValid||!validPrice||data?.streams.market!=='live';
+  const stopWrongSide=(direction:'long'|'short')=>useStop&&(direction==='long'?Number(stop)>=price!:Number(stop)<=price!);
+  const takeProfitWrongSide=(direction:'long'|'short')=>useTakeProfit&&(direction==='long'?Number(takeProfit)<=price!:Number(takeProfit)>=price!);
 
   async function open(direction:'long'|'short'){
-    if(openDisabled||(direction==='long'?Number(stop)>=price!:Number(stop)<=price!))return;
-    const ok=await onRun('/api/exchange/order',{venue,direction,quantity,stop_price:Number(stop),take_profit_price:takeProfit?Number(takeProfit):null,leverage:Number(leverage),confirmation:'PLACE LIVE ORDER'});
+    if(openDisabled||stopWrongSide(direction)||takeProfitWrongSide(direction))return;
+    const ok=await onRun('/api/exchange/order',{venue,direction,quantity,stop_price:useStop?Number(stop):null,take_profit_price:useTakeProfit?Number(takeProfit):null,leverage:Number(leverage),confirmation:'PLACE LIVE ORDER'});
     if(ok){setConfirmed(false);setSize('');}
   }
   async function close(){
@@ -42,10 +47,16 @@ export default function ManualOrderTicket({venue,connected,busy,blocked,botRunni
       <div className="ticket-available"><span>Available margin</span><strong>{number(data?.balance?.free,4)} <small>USDT</small></strong></div>
       <div className="ticket-market-price"><span>Market price</span><strong>{number(price,3)} <small>USDT</small></strong></div>
       <label className="ticket-size"><span>Position size</span><div><input aria-label="Position size" type="number" min="0" step="any" placeholder="Enter amount" value={size} disabled={disabled||positionOpen} onChange={event=>setSize(event.target.value)}/><select aria-label="Position size unit" value={unit} onChange={event=>{setUnit(event.target.value as 'XAG'|'USDT');setSize('');setConfirmed(false);}}><option value="USDT">USDT</option><option value="XAG">XAG</option></select></div></label>
-      <fieldset className="ticket-tpsl"><legend>TP / SL</legend><label className="ui-field ticket-stop"><span>Stop loss <small>Required · USDT</small></span><input type="number" aria-label="Stop loss price" min="0" step="any" placeholder="Stop loss price" value={stop} disabled={disabled||positionOpen} onChange={event=>setStop(event.target.value)}/></label><label className="ui-field ticket-stop"><span>Take profit <small>Optional · USDT</small></span><input type="number" aria-label="Take profit price" min="0" step="any" placeholder="Take profit price" value={takeProfit} disabled={disabled||positionOpen} onChange={event=>setTakeProfit(event.target.value)}/></label></fieldset>
+      <fieldset className="ticket-tpsl"><legend>TP / SL</legend>
+        <label className="ticket-option"><input type="checkbox" checked={useStop} disabled={disabled||positionOpen} onChange={event=>{setUseStop(event.target.checked);setConfirmed(false);}}/><span>Stop loss</span><small>Reduce-only trigger at the exchange</small></label>
+        {useStop&&<label className="ui-field ticket-stop"><span>Stop loss price <small>USDT</small></span><input type="number" aria-label="Stop loss price" min="0" step="any" placeholder={price?`Long: below ${price} · Short: above`:'Stop loss price'} value={stop} disabled={disabled||positionOpen} onChange={event=>setStop(event.target.value)}/></label>}
+        <label className="ticket-option"><input type="checkbox" checked={useTakeProfit} disabled={disabled||positionOpen} onChange={event=>{setUseTakeProfit(event.target.checked);setConfirmed(false);}}/><span>Take profit</span><small>Closes the whole position at the target</small></label>
+        {useTakeProfit&&<label className="ui-field ticket-stop"><span>Take profit price <small>USDT</small></span><input type="number" aria-label="Take profit price" min="0" step="any" placeholder="Take profit price" value={takeProfit} disabled={disabled||positionOpen} onChange={event=>setTakeProfit(event.target.value)}/></label>}
+        {!useStop&&<p className="ticket-warning">No stop loss: losses are not limited. Leveraged positions can be liquidated.</p>}
+      </fieldset>
       <div className="ticket-estimates"><div><span>Estimated size</span><b>{number(quantity)} XAG</b></div><div><span>Estimated margin</span><b>{number(margin,4)} USDT</b></div></div>
       <label className="ticket-confirm"><input type="checkbox" checked={confirmed} disabled={disabled||positionOpen} onChange={event=>setConfirmed(event.target.checked)}/><span>I confirm this places a real market order.</span></label>
-      <div className="ticket-submit-row"><Button className="ticket-buy" disabled={openDisabled||Number(stop)>=price!} onClick={()=>void open('long')}>{busy?'Submitting...':'Open Long'}</Button><Button className="ticket-sell" disabled={openDisabled||Number(stop)<=price!} onClick={()=>void open('short')}>{busy?'Submitting...':'Open Short'}</Button></div>
+      <div className="ticket-submit-row"><Button className="ticket-buy" disabled={openDisabled||stopWrongSide('long')||takeProfitWrongSide('long')} onClick={()=>void open('long')}>{busy?'Submitting...':'Open Long'}</Button><Button className="ticket-sell" disabled={openDisabled||stopWrongSide('short')||takeProfitWrongSide('short')} onClick={()=>void open('short')}>{busy?'Submitting...':'Open Short'}</Button></div>
       {positionOpen&&<p className="ticket-help">An XAG position is already open. Select Close to manage it.</p>}
     </>:<div className="ticket-close-panel">
       <div className="ticket-order-type"><strong>Market close</strong><StatusBadge>Reduce only</StatusBadge></div>

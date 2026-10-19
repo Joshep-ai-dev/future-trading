@@ -163,3 +163,41 @@ class ExchangeConnectionTests(unittest.TestCase):
             self.market['symbol'], '5m', since=1_699_850_000_000,
             params={'until': 1_699_999_999_999})
         self.assertTrue(result['hasMore'])
+
+
+class LiveOrderSafetyTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.service = LiveExchange()
+        self.exchange = MagicMock()
+        self.exchange.has = {'fetchPositions': True}
+        self.market = {'symbol': 'XAG/USDT:USDT', 'contractSize': 1}
+        self.service.clients['htx'] = self.exchange
+        self.service.markets['htx'] = self.market
+
+    def test_error_text_hides_urls_queries_and_tokens(self) -> None:
+        from server.exchanges.live_exchange import safe_exchange_error
+        error = RuntimeError('htx POST https://api.hbdm.com/linear-swap-api/v1/order?AccessKeyId=abcdef1234567890abcdef12&Signature=XYZ '
+                             '{"err_msg":"insufficient margin"} key=ZmFrZXNlY3JldGtleXZhbHVlMTIzNDU2Nzg5')
+        text = safe_exchange_error(error)
+        self.assertIn('insufficient margin', text)
+        for secret in ('AccessKeyId', 'abcdef1234567890abcdef12', 'Signature', 'ZmFrZXNlY3JldGtleXZhbHVlMTIzNDU2Nzg5'):
+            self.assertNotIn(secret, text)
+
+    def test_prepare_account_accepts_already_set_and_names_real_failures(self) -> None:
+        from server.exchanges.live_exchange import OrderStepError
+        self.exchange.set_margin_mode.side_effect = Exception('margin mode already isolated, no need to change')
+        self.service.prepare_account('htx', 12)
+        self.exchange.set_leverage.assert_called_once_with(12, 'XAG/USDT:USDT')
+        self.exchange.set_leverage.side_effect = Exception('leverage exceeds the maximum allowed')
+        with self.assertRaisesRegex(OrderStepError, 'Setting 12x leverage failed.*maximum'):
+            self.service.prepare_account('htx', 12)
+
+    def test_order_without_stop_places_no_stop_order(self) -> None:
+        self.exchange.fetch_positions.return_value = []
+        self.exchange.fetch_ticker.return_value = {'last': 57.}
+        with patch.object(self.service, 'market_order', return_value={'filled': 2, 'average': 57.}) as entry, \
+             patch.object(self.service, 'set_stop') as stop:
+            result = self.service.open_with_stop('htx', 'long', 2, None, None)
+        entry.assert_called_once()
+        stop.assert_not_called()
+        self.assertIsNone(result['protectiveStop'])
