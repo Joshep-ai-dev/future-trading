@@ -206,6 +206,13 @@ class LiveOrderSafetyTests(unittest.TestCase):
         self.assertEqual(self.service.set_stop('htx', 'long', 2, 56.)['id'], '9')
         sides = [call.args[5]['position_side'] for call in self.exchange.create_order.call_args_list]
         self.assertEqual(sides, ['both', 'long'])
+        params = self.exchange.create_order.call_args.args[5]
+        self.assertEqual(params['stopLossPrice'], 56.)
+        self.assertNotIn('triggerPrice', params)
+        self.exchange.create_order.side_effect = None
+        self.exchange.create_order.return_value = {'id': '10', 'amount': 2}
+        self.service.set_stop('htx', 'long', 2, 70., take_profit=True)
+        self.assertEqual(self.exchange.create_order.call_args.args[5]['takeProfitPrice'], 70.)
 
     def test_htx_sends_isolated_margin_with_leverage_and_orders(self) -> None:
         import ccxt

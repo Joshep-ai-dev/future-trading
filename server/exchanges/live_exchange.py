@@ -323,7 +323,7 @@ class LiveExchange:
         take_profit_error = None
         if take_profit_price is not None:
             try:
-                take_profit = self.set_stop(venue, direction, stop_quantity, take_profit_price)
+                take_profit = self.set_stop(venue, direction, stop_quantity, take_profit_price, take_profit=True)
                 with self.lock:
                     self.take_profit_orders[venue] = take_profit.get('id')
             except Exception:
@@ -365,7 +365,8 @@ class LiveExchange:
                     pass
         return dict(venue=venue, closed=True, order=result)
 
-    def set_stop(self, venue: str, direction: Literal['long', 'short'], quantity: float, trigger: float):
+    def set_stop(self, venue: str, direction: Literal['long', 'short'], quantity: float, trigger: float,
+                 *, take_profit: bool = False):
         if not isinstance(trigger, (int, float)) or trigger <= 0:
             raise ValueError('Protective stop price must be positive')
         exchange, market = self._get(venue)
@@ -377,6 +378,9 @@ class LiveExchange:
         if venue != 'htx':
             order = exchange.create_order(market['symbol'], 'market', side, amount, None, params)
         else:
+            # ccxt turns a plain HTX trigger order into type 'market', which HTX rejects; send it as the
+            # position's stop-loss / take-profit order instead (these always close, so no reduceOnly).
+            params = {**margin_params(venue), 'takeProfitPrice' if take_profit else 'stopLossPrice': price}
             # HTX trigger orders need position_side: 'both' in one-way mode, the position's side in hedge mode.
             for attempt, position_side in enumerate(('both', direction)):
                 try:
