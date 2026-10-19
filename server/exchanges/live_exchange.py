@@ -354,19 +354,42 @@ class LiveExchange:
                     takeProfitError=take_profit_error, direction=direction,
                     quantity=stop_quantity, entryPrice=result.get('average'))
 
+    def _htx_algo_opens(self, venue: str) -> list[dict]:
+        """Raw open HTX algo orders (stop loss, take profit, triggers) for this contract."""
+        exchange, market = self._get(venue)
+        response = exchange.contractPrivateGetV5AlgoOrderOpens({'contract_code': market['id']})
+        if str(response.get('code')) not in ('200', 'None') and response.get('code') is not None:
+            raise RuntimeError(f"HTX could not list TP/SL orders: {json.dumps(response, default=str)[:200]}")
+        data = response.get('data')
+        rows = data if isinstance(data, list) else (data or {}).get('orders') or []
+        return [row for row in rows if row.get('contract_code') in (None, market['id'])]
+
     def _exchange_tpsl(self, venue: str) -> dict[str, list[tuple[str, float | None]]] | None:
         """Open stop-loss / take-profit orders as the exchange reports them (HTX), or None if unknown."""
         if venue != 'htx':
             return None
-        exchange, market = self._get(venue)
         found: dict[str, list[tuple[str, float | None]]] = {'stop': [], 'takeProfit': []}
-        for key, flag, field in (('stop', 'stopLoss', 'sl_trigger_price'), ('takeProfit', 'takeProfit', 'tp_trigger_price')):
-            for order in exchange.fetch_open_orders(market['symbol'], None, None, {flag: True}) or []:
-                info = order.get('info') or {}
-                price = order.get('triggerPrice') or order.get('stopLossPrice' if key == 'stop' else 'takeProfitPrice')                     or info.get(field) or info.get('trigger_price')
-                if order.get('id'):
-                    found[key].append((str(order['id']), float(price) if price not in (None, '') else None))
+        for row in self._htx_algo_opens(venue):
+            order_id = str(row.get('algo_id') or row.get('id') or '')
+            if not order_id:
+                continue
+            for key, field in (('stop', 'sl_trigger_price'), ('takeProfit', 'tp_trigger_price')):
+                price = row.get(field)
+                if price not in (None, '', '0') or row.get('type') == ('sl' if key == 'stop' else 'tp'):
+                    found[key].append((order_id, float(price) if price not in (None, '', '0') else None))
         return found
+
+    def _htx_cancel_algo(self, venue: str, order_ids: set[str]) -> None:
+        """Cancel HTX algo orders and fail loudly if HTX rejects any (it reports this per order)."""
+        if not order_ids:
+            return
+        exchange, market = self._get(venue)
+        response = exchange.contractPrivatePostV5AlgoCancelOrders(
+            [{'contract_code': market['id'], 'algo_id': order_id} for order_id in order_ids])
+        items = response.get('data') if isinstance(response.get('data'), list) else []
+        failed = [item for item in items if str(item.get('code')) != '200']
+        if (response.get('code') is not None and str(response.get('code')) != '200') or failed:
+            raise RuntimeError(f"HTX did not cancel: {json.dumps(failed or response, default=str)[:300]}")
 
     def protection(self, venue: str) -> dict:
         """Stop loss and take profit of the open position (None when absent)."""
@@ -411,22 +434,31 @@ class LiveExchange:
                 raise ValueError(f'Take profit must be {"above" if direction == "long" else "below"} the current price {last:g} for this {direction}')
             # Cancel first: the exchange limits closing orders to the position size. Include TP/SL set
             # elsewhere (exchange app, before a restart) when the exchange can list them.
-            try:
-                found = self._exchange_tpsl(venue)
-            except Exception as error:
-                raise OrderStepError('Reading the current TP/SL orders', error) from error
-            for book, key, label in ((self.protective_orders, 'stop', 'Cancelling the stop loss'),
-                                     (self.take_profit_orders, 'takeProfit', 'Cancelling the take profit')):
+            if venue == 'htx':
+                try:
+                    found = self._exchange_tpsl(venue)
+                    ids = {order_id for key in ('stop', 'takeProfit') for order_id, _ in found[key]}
+                    with self.lock:
+                        ids |= {book[venue] for book in (self.protective_orders, self.take_profit_orders) if book.get(venue)}
+                    self._htx_cancel_algo(venue, ids)
+                    left = self._exchange_tpsl(venue)
+                except Exception as error:
+                    raise OrderStepError('Cancelling the old TP/SL', error) from error
+                if left['stop'] or left['takeProfit']:
+                    raise ValueError('The old TP/SL orders are still open at HTX; nothing new was placed. Cancel them in the HTX app and retry.')
                 with self.lock:
-                    ids = {book[venue]} if book.get(venue) else set()
-                if found is not None:
-                    ids |= {order_id for order_id, _ in found[key]}
-                for order_id in ids:
+                    self.protective_orders.pop(venue, None)
+                    self.take_profit_orders.pop(venue, None)
+            for book, label in (() if venue == 'htx' else
+                                ((self.protective_orders, 'Cancelling the stop loss'), (self.take_profit_orders, 'Cancelling the take profit'))):
+                with self.lock:
+                    order_id = book.get(venue)
+                if order_id:
                     try:
                         self.cancel_stop(venue, order_id)
                     except Exception as error:
                         text = str(error).lower()
-                        if not any(word in text for word in ('not exist', 'not found', 'filled', 'cancel', 'finished')):
+                        if not any(word in text for word in ('not exist', 'not found', 'filled', 'finished')):
                             raise OrderStepError(label, error) from error
                 with self.lock:
                     book.pop(venue, None)
@@ -469,6 +501,15 @@ class LiveExchange:
             stop_id = self.protective_orders.pop(venue, None)
             take_profit_id = self.take_profit_orders.pop(venue, None)
             self.protection_prices.pop(venue, None)
+        if venue == 'htx':
+            try:  # Also clear TP/SL set in the HTX app; they would otherwise linger after the close.
+                found = self._exchange_tpsl(venue) or {}
+                for key in ('stop', 'takeProfit'):
+                    for order_id, _ in found.get(key, []):
+                        if order_id not in (stop_id, take_profit_id):
+                            self._htx_cancel_algo(venue, {order_id})
+            except Exception:
+                pass  # Reduce-only TP/SL left behind cannot increase exposure.
         for stop_id in (stop_id, take_profit_id):
             if stop_id:
                 try:
@@ -571,6 +612,8 @@ class LiveExchange:
             return f'entry lookup failed: {safe_exchange_error(error, 120)}'
 
     def cancel_stop(self, venue: str, order_id: str):
+        if venue == 'htx':
+            return self._htx_cancel_algo(venue, {str(order_id)})
         exchange, market = self._get(venue)
         return exchange.cancel_order(order_id, market['symbol'], {'trigger': True})
 

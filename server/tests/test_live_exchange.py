@@ -175,23 +175,36 @@ class LiveOrderSafetyTests(unittest.TestCase):
         self.service.markets['htx'] = self.market
 
     def test_update_protection_replaces_and_removes_orders(self) -> None:
+        self.market['id'] = 'XAG-USDT'
         self.exchange.amount_to_precision.side_effect = lambda symbol, amount: amount
         self.exchange.price_to_precision.side_effect = lambda symbol, price: price
         self.exchange.fetch_positions.return_value = [{'contracts': 2, 'side': 'long', 'info': {'position_side': 'both'}}]
         self.exchange.fetch_ticker.return_value = {'last': 60.}
         self.exchange.create_order.return_value = {'id': 'new', 'amount': 2}
-        self.service.protective_orders['htx'], self.service.take_profit_orders['htx'] = 'old-sl', 'old-tp'
-        self.exchange.fetch_open_orders.side_effect = lambda symbol, since, limit, params: (
-            [{'id': 'app-sl', 'triggerPrice': 55.}] if params.get('stopLoss') else [])
-        result = self.service.update_protection('htx', 58., None)
-        cancelled = [call.args[0] for call in self.exchange.cancel_order.call_args_list]
-        self.assertEqual(sorted(cancelled), ['app-sl', 'old-sl', 'old-tp'])
-        self.exchange.fetch_open_orders.side_effect = lambda symbol, since, limit, params: (
-            [{'id': 'new', 'triggerPrice': 58.}] if params.get('stopLoss') else [])
-        self.assertEqual(self.service.protection('htx'), {'venue': 'htx', 'stop': 58., 'takeProfit': None})
-        self.assertNotIn('htx', self.service.take_profit_orders)
+        open_orders = [{'algo_id': 'app-sl', 'type': 'sl', 'sl_trigger_price': '55'},
+                       {'algo_id': 'app-tp', 'type': 'tp', 'tp_trigger_price': '65'}]
+        self.exchange.contractPrivateGetV5AlgoOrderOpens.side_effect = lambda params: {'code': 200, 'data': list(open_orders)}
+        def cancel(items):
+            open_orders[:] = [row for row in open_orders if row['algo_id'] not in {item['algo_id'] for item in items}]
+            return {'code': 200, 'data': [{'code': 200, 'algo_id': item['algo_id']} for item in items]}
+        self.exchange.contractPrivatePostV5AlgoCancelOrders.side_effect = cancel
+        self.service.update_protection('htx', 58., None)
+        cancelled = {item['algo_id'] for item in self.exchange.contractPrivatePostV5AlgoCancelOrders.call_args.args[0]}
+        self.assertEqual(cancelled, {'app-sl', 'app-tp'})
+        self.assertEqual(self.exchange.create_order.call_count, 1)
         with self.assertRaisesRegex(ValueError, 'below the current price'):
             self.service.update_protection('htx', 61., None)
+
+    def test_update_protection_places_nothing_when_htx_rejects_the_cancel(self) -> None:
+        from server.exchanges.live_exchange import OrderStepError
+        self.market['id'] = 'XAG-USDT'
+        self.exchange.fetch_positions.return_value = [{'contracts': 2, 'side': 'long', 'info': {}}]
+        self.exchange.fetch_ticker.return_value = {'last': 60.}
+        self.exchange.contractPrivateGetV5AlgoOrderOpens.return_value = {'code': 200, 'data': [{'algo_id': 'a', 'type': 'sl', 'sl_trigger_price': '55'}]}
+        self.exchange.contractPrivatePostV5AlgoCancelOrders.return_value = {'code': 200, 'data': [{'code': 1071, 'algo_id': 'a'}]}
+        with self.assertRaisesRegex(OrderStepError, 'did not cancel'):
+            self.service.update_protection('htx', 58., None)
+        self.exchange.create_order.assert_not_called()
 
     def test_error_text_hides_urls_queries_and_tokens(self) -> None:
         from server.exchanges.live_exchange import safe_exchange_error
