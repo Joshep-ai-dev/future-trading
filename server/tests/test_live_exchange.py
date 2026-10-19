@@ -223,6 +223,20 @@ class LiveOrderSafetyTests(unittest.TestCase):
         call = self.exchange.create_order.call_args
         self.assertEqual((call.args[3], call.args[5]['position_side']), (1.5, 'long'))
 
+    def test_htx_entry_learns_hedge_mode_from_1497_reply(self) -> None:
+        self.exchange.amount_to_precision.side_effect = lambda symbol, amount: amount
+        self.exchange.create_order.side_effect = [
+            {'id': None, 'info': {}},
+            {'id': '5', 'amount': 25}]
+        self.exchange.last_json_response = {'code': 1497, 'message': 'Position mode parameter passing error!'}
+        self.assertEqual(self.service.market_order('htx', 'buy', .25)['id'], '5')
+        sides = [call.args[5]['position_side'] for call in self.exchange.create_order.call_args_list]
+        self.assertEqual(sides, ['both', 'long'])
+        self.exchange.create_order.side_effect = None
+        self.exchange.create_order.return_value = {'id': '6', 'amount': 25}
+        self.service.market_order('htx', 'sell', .25, reduce_only=True)
+        self.assertEqual(self.exchange.create_order.call_args.args[5]['position_side'], 'long')
+
     def test_htx_sends_isolated_margin_with_leverage_and_orders(self) -> None:
         import ccxt
         self.exchange.set_margin_mode.side_effect = ccxt.NotSupported('htx setMarginMode() is not supported yet')

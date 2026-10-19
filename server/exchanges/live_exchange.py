@@ -47,8 +47,14 @@ def margin_params(venue: str) -> dict:
 
 
 def _position_side_error(error: Exception) -> bool:
-    text = str(error).lower()
-    return 'position_side' in text or any(f'"code":{code}' in text for code in (1048, 1066, 1067))
+    text = str(error).lower().replace(' ', '')
+    return 'position_side' in text or 'positionmode' in text or any(
+        f'"code":{code}' in text for code in (1048, 1066, 1067, 1497))
+
+
+def _reply(exchange, order: dict) -> str:
+    reply = order.get('info') or getattr(exchange, 'last_json_response', None) or getattr(exchange, 'last_http_response', None)
+    return (reply if isinstance(reply, str) else json.dumps(reply, default=str))[:300]
 
 
 class OrderStepError(RuntimeError):
@@ -237,11 +243,16 @@ class LiveExchange:
         if amount <= 0 or amount < float(market.get('limits', {}).get('amount', {}).get('min') or 0):
             raise ValueError('Quantity is below this contract’s minimum order size')
         params = {**margin_params(venue), **({'reduceOnly': True} if reduce_only else {})}
-        order = exchange.create_order(market['symbol'], 'market', side, amount, None, params)
+        if venue == 'htx':
+            # The position being opened or closed: buy opens long / closes short.
+            hedge_side = ('long' if side == 'buy' else 'short') if not reduce_only else ('short' if side == 'buy' else 'long')
+            order = self._htx_with_position_side(
+                exchange, hedge_side, lambda position_side: exchange.create_order(
+                    market['symbol'], 'market', side, amount, None, {**params, 'position_side': position_side}))
+        else:
+            order = exchange.create_order(market['symbol'], 'market', side, amount, None, params)
         if not order.get('id'):
-            reply = order.get('info') or getattr(exchange, 'last_json_response', None) or getattr(exchange, 'last_http_response', None)
-            raw = (reply if isinstance(reply, str) else json.dumps(reply, default=str))[:300]
-            raise RuntimeError(f'The exchange returned no order id, so the order was not placed. Exchange reply: {raw}')
+            raise RuntimeError(f'The exchange returned no order id, so the order was not placed. Exchange reply: {_reply(exchange, order)}')
         if not reduce_only:
             self.last_entry_id = order.get('id')
         return dict(id=order.get('id'), status=order.get('status'), side=side,
@@ -390,22 +401,19 @@ class LiveExchange:
             # The entry fills asynchronously: wait until HTX reports the position, then close exactly it.
             # HTX wants position_side 'both' in one-way mode and the position's own side in hedge mode.
             held = self._htx_open_position(venue, direction)
-            sides: tuple = ('both', direction)
             if held:
-                sides = (held[0],)
                 amount = min(amount, held[1])
-            for attempt, position_side in enumerate(sides):
-                try:
-                    order = exchange.create_order(market['symbol'], 'market', side, amount, None,
-                                                  {**params, 'position_side': position_side})
-                    break
-                except Exception as error:
-                    if attempt == len(sides)-1 or not _position_side_error(error):
-                        seen = (f'{held[1]:g} contracts, side {held[0]}' if held else
-                                f'lookup failed: {self.position_lookup_error}' if getattr(self, 'position_lookup_error', None)
-                                else 'none open: ' + self._htx_entry_state(venue))
-                        raise RuntimeError(f'{safe_exchange_error(error)} [sent {amount:g} contracts, position_side '
-                                           f'{position_side}; HTX position: {seen}]') from error
+                self.htx_hedged = held[0] != 'both'
+            try:
+                order = self._htx_with_position_side(exchange, direction, lambda position_side: exchange.create_order(
+                    market['symbol'], 'market', side, amount, None, {**params, 'position_side': position_side}))
+            except Exception as error:
+                seen = (f'{held[1]:g} contracts, side {held[0]}' if held else
+                        f'lookup failed: {self.position_lookup_error}' if getattr(self, 'position_lookup_error', None)
+                        else 'none open: ' + self._htx_entry_state(venue))
+                raise RuntimeError(f'{safe_exchange_error(error)} [sent {amount:g} contracts; HTX position: {seen}]') from error
+            if not order.get('id'):
+                raise RuntimeError(f'The exchange did not accept the stop order. Exchange reply: {_reply(exchange, order)}')
         if not order.get('id'):
             raise RuntimeError('Exchange did not confirm the protective stop order id')
         return dict(id=order.get('id'), amount=order.get('amount'), triggerPrice=price)
@@ -427,6 +435,32 @@ class LiveExchange:
             if attempt < attempts-1:
                 time.sleep(.5)
         return None
+
+    def _htx_with_position_side(self, exchange, hedge_side: str, place):
+        """Place an HTX order with position_side 'both' (one-way mode) or the position's side (hedge mode).
+
+        The account mode is learnt from HTX's answer and remembered. HTX can report a mode mismatch
+        inside a reply ccxt treats as success (code 1497, no data), so that reply is checked too.
+        """
+        hedged = getattr(self, 'htx_hedged', None)
+        modes = [False, True] if hedged is None else [hedged, not hedged]
+        problem = 'HTX rejected the position mode'
+        for hedge in modes:
+            try:
+                order = place(hedge_side if hedge else 'both')
+            except Exception as error:
+                if not _position_side_error(error):
+                    raise
+                problem = safe_exchange_error(error)
+                continue
+            if order.get('id'):
+                self.htx_hedged = hedge
+                return order
+            reply = _reply(exchange, order)
+            if not _position_side_error(Exception(reply)):
+                return order  # Caller reports the missing id with this reply.
+            problem = reply
+        raise RuntimeError(problem)
 
     def _htx_entry_state(self, venue: str) -> str:
         """Status of the latest entry order, to explain why no position exists."""
