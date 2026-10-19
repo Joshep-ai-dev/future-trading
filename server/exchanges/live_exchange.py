@@ -238,6 +238,9 @@ class LiveExchange:
             raise ValueError('Quantity is below this contract’s minimum order size')
         params = {**margin_params(venue), **({'reduceOnly': True} if reduce_only else {})}
         order = exchange.create_order(market['symbol'], 'market', side, amount, None, params)
+        if not order.get('id'):
+            raw = json.dumps(order.get('info'), default=str)[:300]
+            raise RuntimeError(f'The exchange returned no order id, so the order was not placed. Exchange reply: {raw}')
         if not reduce_only:
             self.last_entry_id = order.get('id')
         return dict(id=order.get('id'), status=order.get('status'), side=side,
