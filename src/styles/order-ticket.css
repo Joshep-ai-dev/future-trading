@@ -628,3 +628,19 @@
     display: none;
   }
 }
+
+/* Inside the bot form, generic label/input rules would stack the checkbox above its text. */
+.bot-form > .ticket-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 12px;
+}
+
+.bot-form > .ticket-confirm input {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  margin: 0;
+}
