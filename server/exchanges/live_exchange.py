@@ -354,8 +354,36 @@ class LiveExchange:
                     takeProfitError=take_profit_error, direction=direction,
                     quantity=stop_quantity, entryPrice=result.get('average'))
 
+    def _exchange_tpsl(self, venue: str) -> dict[str, list[tuple[str, float | None]]] | None:
+        """Open stop-loss / take-profit orders as the exchange reports them (HTX), or None if unknown."""
+        if venue != 'htx':
+            return None
+        exchange, market = self._get(venue)
+        found: dict[str, list[tuple[str, float | None]]] = {'stop': [], 'takeProfit': []}
+        for key, flag, field in (('stop', 'stopLoss', 'sl_trigger_price'), ('takeProfit', 'takeProfit', 'tp_trigger_price')):
+            for order in exchange.fetch_open_orders(market['symbol'], None, None, {flag: True}) or []:
+                info = order.get('info') or {}
+                price = order.get('triggerPrice') or order.get('stopLossPrice' if key == 'stop' else 'takeProfitPrice')                     or info.get(field) or info.get('trigger_price')
+                if order.get('id'):
+                    found[key].append((str(order['id']), float(price) if price not in (None, '') else None))
+        return found
+
     def protection(self, venue: str) -> dict:
-        """Stop loss and take profit this terminal placed for the open position (None when absent)."""
+        """Stop loss and take profit of the open position (None when absent)."""
+        try:
+            found = self._exchange_tpsl(venue)
+        except Exception:
+            found = None
+        if found is not None:
+            with self.lock:
+                for key, book in (('stop', self.protective_orders), ('takeProfit', self.take_profit_orders)):
+                    if found[key]:
+                        book[venue] = found[key][0][0]
+                        self.protection_prices.setdefault(venue, {})[key] = found[key][0][1]
+                    else:
+                        book.pop(venue, None)
+            return dict(venue=venue, stop=found['stop'][0][1] if found['stop'] else None,
+                        takeProfit=found['takeProfit'][0][1] if found['takeProfit'] else None)
         with self.lock:
             prices = dict(self.protection_prices.get(venue) or {})
             return dict(venue=venue, stop=prices.get('stop') if self.protective_orders.get(venue) else None,
@@ -381,18 +409,25 @@ class LiveExchange:
                 raise ValueError(f'Stop loss must be {"below" if direction == "long" else "above"} the current price {last:g} for this {direction}')
             if take_profit_price is not None and (take_profit_price <= last if direction == 'long' else take_profit_price >= last):
                 raise ValueError(f'Take profit must be {"above" if direction == "long" else "below"} the current price {last:g} for this {direction}')
-            # Cancel first: the exchange limits closing orders to the position size.
-            for book, label in ((self.protective_orders, 'Cancelling the stop loss'), (self.take_profit_orders, 'Cancelling the take profit')):
+            # Cancel first: the exchange limits closing orders to the position size. Include TP/SL set
+            # elsewhere (exchange app, before a restart) when the exchange can list them.
+            try:
+                found = self._exchange_tpsl(venue)
+            except Exception as error:
+                raise OrderStepError('Reading the current TP/SL orders', error) from error
+            for book, key, label in ((self.protective_orders, 'stop', 'Cancelling the stop loss'),
+                                     (self.take_profit_orders, 'takeProfit', 'Cancelling the take profit')):
                 with self.lock:
-                    order_id = book.get(venue)
-                if not order_id:
-                    continue
-                try:
-                    self.cancel_stop(venue, order_id)
-                except Exception as error:
-                    text = str(error).lower()
-                    if not any(word in text for word in ('not exist', 'not found', 'filled', 'cancel', 'finished')):
-                        raise OrderStepError(label, error) from error
+                    ids = {book[venue]} if book.get(venue) else set()
+                if found is not None:
+                    ids |= {order_id for order_id, _ in found[key]}
+                for order_id in ids:
+                    try:
+                        self.cancel_stop(venue, order_id)
+                    except Exception as error:
+                        text = str(error).lower()
+                        if not any(word in text for word in ('not exist', 'not found', 'filled', 'cancel', 'finished')):
+                            raise OrderStepError(label, error) from error
                 with self.lock:
                     book.pop(venue, None)
             with self.lock:

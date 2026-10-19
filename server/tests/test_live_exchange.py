@@ -181,10 +181,14 @@ class LiveOrderSafetyTests(unittest.TestCase):
         self.exchange.fetch_ticker.return_value = {'last': 60.}
         self.exchange.create_order.return_value = {'id': 'new', 'amount': 2}
         self.service.protective_orders['htx'], self.service.take_profit_orders['htx'] = 'old-sl', 'old-tp'
+        self.exchange.fetch_open_orders.side_effect = lambda symbol, since, limit, params: (
+            [{'id': 'app-sl', 'triggerPrice': 55.}] if params.get('stopLoss') else [])
         result = self.service.update_protection('htx', 58., None)
         cancelled = [call.args[0] for call in self.exchange.cancel_order.call_args_list]
-        self.assertEqual(cancelled, ['old-sl', 'old-tp'])
-        self.assertEqual(result, {'venue': 'htx', 'stop': 58., 'takeProfit': None})
+        self.assertEqual(sorted(cancelled), ['app-sl', 'old-sl', 'old-tp'])
+        self.exchange.fetch_open_orders.side_effect = lambda symbol, since, limit, params: (
+            [{'id': 'new', 'triggerPrice': 58.}] if params.get('stopLoss') else [])
+        self.assertEqual(self.service.protection('htx'), {'venue': 'htx', 'stop': 58., 'takeProfit': None})
         self.assertNotIn('htx', self.service.take_profit_orders)
         with self.assertRaisesRegex(ValueError, 'below the current price'):
             self.service.update_protection('htx', 61., None)

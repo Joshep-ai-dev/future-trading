@@ -7,6 +7,7 @@ import {useExchangeStream} from '../../shared/api/useExchangeStream';
 import LiveTradeHistory from './LiveTradeHistory';
 import {BotEventLog} from './TradingHistory';
 import PatternPanel from './PatternPanel';
+import PositionProtection from './PositionProtection';
 
 type AccountTab='positions'|'orders'|'history'|'assets'|'botlog'|'patterns';
 export default function ExchangeOverview({venue}:{venue:ExchangeVenue}){
@@ -14,6 +15,7 @@ export default function ExchangeOverview({venue}:{venue:ExchangeVenue}){
   const [tab,setTab]=useState<AccountTab>('positions');
   const [busy,setBusy]=useState(false);
   const [message,setMessage]=useState('');
+  const [editingProtection,setEditingProtection]=useState(false);
   const section=tab==='assets'?'balance':tab==='history'||tab==='botlog'||tab==='patterns'?'orders':tab;
   const sectionError=data?.errors[section];
   const positions=data?.positions;
@@ -33,6 +35,17 @@ export default function ExchangeOverview({venue}:{venue:ExchangeVenue}){
     }catch(reason){setMessage(String(reason));}finally{setBusy(false);}
   }
 
+  async function run(path:string,body:unknown){
+    setBusy(true);setMessage('');
+    try{
+      await api(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      setMessage('TP/SL updated at the exchange.');
+      return true;
+    }catch(reason){setMessage(String(reason));return false;}finally{setBusy(false);}
+  }
+  const tableDisabled=busy||!connected||!!sectionError||!!data?.executionError;
+  const single=positions?.length===1?positions[0]:null;
+
   return <Panel className="exchange-activity" aria-label="Live exchange account">
     <TabBar<AccountTab> items={[
       {value:'positions',label:'Positions',count:positions?.length,controls:`exchange-${venue}-positions`},
@@ -48,7 +61,10 @@ export default function ExchangeOverview({venue}:{venue:ExchangeVenue}){
     {sectionError&&<p className="exchange-inline-error" role="status">{sectionError} Account data is unverified.</p>}
     <div role="tabpanel" id={`exchange-${venue}-${tab}`} aria-labelledby={`${idPrefix}-${tab}`} className="exchange-activity-content">
       {tab==='positions'&&(positions?.length?
-        <PositionTable positions={positions} disabled={busy||!connected||!!sectionError||!!data?.executionError} onClose={()=>void closePosition()}/>:
+        <>
+          <PositionTable positions={positions} disabled={tableDisabled} onClose={()=>void closePosition()} editing={editingProtection} onEditProtection={()=>setEditingProtection(value=>!value)}/>
+          {editingProtection&&single&&(single.side==='long'||single.side==='short')&&<div className="exchange-protection-editor"><PositionProtection venue={venue} side={single.side} price={data?.market?.last} disabled={tableDisabled} onRun={run}/></div>}
+        </>:
         !sectionError&&<EmptyState compact title={positions?'No open XAG positions':'Loading positions'} description={positions?'Your exchange positions will appear here automatically.':'Waiting for a verified account snapshot.'}/>)}
       {tab==='orders'&&(orders?.length?
         <OrderTable orders={orders}/>:
