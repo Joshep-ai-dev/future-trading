@@ -888,3 +888,25 @@
 .ui-page-header + .setup-picker {
   max-width: 640px;
 }
+
+/* Bot model + saved parameters selector */
+.bot-selector {
+  display: grid;
+  gap: 10px;
+}
+
+.page-results .bot-selector,
+#page-results .bot-selector {
+  grid-template-columns: 260px minmax(0, 640px);
+  align-items: end;
+  margin-bottom: 12px;
+}
+
+.bot-selector .bot-picker,
+.bot-selector .setup-picker {
+  margin-bottom: 0;
+}
+
+@media (max-width: 800px) {
+  #page-results .bot-selector { grid-template-columns: minmax(0, 1fr); }
+}
