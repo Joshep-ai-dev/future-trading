@@ -1,4 +1,4 @@
-import {useState} from 'react';
+import {useEffect,useState} from 'react';
 import {api} from '../../shared/api/api';
 import type {ExchangeVenue} from '../../shared/api/exchangeVenue';
 import {AssetTable,OrderTable,PositionTable} from './ExchangeTables';
@@ -16,6 +16,8 @@ export default function ExchangeOverview({venue}:{venue:ExchangeVenue}){
   const [busy,setBusy]=useState(false);
   const [message,setMessage]=useState('');
   const [editingProtection,setEditingProtection]=useState(false);
+  const [protection,setProtection]=useState<{stop:number|null;takeProfit:number|null}|null>(null);
+  const [protectionRevision,setProtectionRevision]=useState(0);
   const section=tab==='assets'?'balance':tab==='history'||tab==='botlog'||tab==='patterns'?'orders':tab;
   const sectionError=data?.errors[section];
   const positions=data?.positions;
@@ -40,9 +42,20 @@ export default function ExchangeOverview({venue}:{venue:ExchangeVenue}){
     try{
       await api(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
       setMessage('TP/SL updated at the exchange.');
+      setProtectionRevision(value=>value+1);
       return true;
     }catch(reason){setMessage(String(reason));return false;}finally{setBusy(false);}
   }
+  const positionKey=positions?.map(position=>`${position.side}:${position.quantity}`).join('|')??'';
+  // TP/SL orders are not in the account stream: read them now, after edits and every 15 s.
+  useEffect(()=>{
+    if(!positionKey){setProtection(null);return;}
+    let live=true;
+    const load=()=>api<{stop:number|null;takeProfit:number|null}>(`/api/exchange/protection?venue=${venue}`).then(value=>live&&setProtection(value)).catch(()=>undefined);
+    void load();
+    const timer=setInterval(()=>void load(),15000);
+    return ()=>{live=false;clearInterval(timer);};
+  },[venue,positionKey,protectionRevision]);
   const tableDisabled=busy||!connected||!!sectionError||!!data?.executionError;
   const single=positions?.length===1?positions[0]:null;
 
@@ -62,8 +75,8 @@ export default function ExchangeOverview({venue}:{venue:ExchangeVenue}){
     <div role="tabpanel" id={`exchange-${venue}-${tab}`} aria-labelledby={`${idPrefix}-${tab}`} className="exchange-activity-content">
       {tab==='positions'&&(positions?.length?
         <>
-          <PositionTable positions={positions} disabled={tableDisabled} onClose={()=>void closePosition()} editing={editingProtection} onEditProtection={()=>setEditingProtection(value=>!value)}/>
-          {editingProtection&&single&&(single.side==='long'||single.side==='short')&&<div className="exchange-protection-editor"><PositionProtection venue={venue} side={single.side} price={data?.market?.last} disabled={tableDisabled} onRun={run}/></div>}
+          <PositionTable positions={positions} disabled={tableDisabled} onClose={()=>void closePosition()} protection={protection} onEditProtection={()=>setEditingProtection(true)}/>
+          {editingProtection&&single&&(single.side==='long'||single.side==='short')&&<PositionProtection venue={venue} side={single.side} quantity={single.quantity} entryPrice={single.entryPrice} price={single.markPrice??data?.market?.last} disabled={tableDisabled} onRun={run} onClose={()=>setEditingProtection(false)}/>}
         </>:
         !sectionError&&<EmptyState compact title={positions?'No open XAG positions':'Loading positions'} description={positions?'Your exchange positions will appear here automatically.':'Waiting for a verified account snapshot.'}/>)}
       {tab==='orders'&&(orders?.length?

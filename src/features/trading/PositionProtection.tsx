@@ -1,51 +1,92 @@
-import {useEffect,useState} from 'react';
+import {useEffect,useRef,useState} from 'react';
+import {createPortal} from 'react-dom';
 import {api} from '../../shared/api/api';
 import type {ExchangeVenue} from '../../shared/api/exchangeVenue';
 import {liveNumber as number} from '../../shared/api/useExchangeStream';
-import {Button} from '../../shared/ui/ui';
+import {Button,StatusBadge} from '../../shared/ui/ui';
 
 type Protection={stop:number|null;takeProfit:number|null};
+type Props={venue:ExchangeVenue;side:'long'|'short';quantity?:number|null;entryPrice?:number|null;price:number|null|undefined;
+  disabled:boolean;onRun:(path:string,body:unknown)=>Promise<boolean>;onClose:()=>void};
 
-/** Edit or remove the stop loss and take profit of the open position. */
-export default function PositionProtection({venue,side,price,disabled,onRun}:{
-  venue:ExchangeVenue;side:'long'|'short';price:number|null|undefined;disabled:boolean;
-  onRun:(path:string,body:unknown)=>Promise<boolean>;
-}){
+/** Modal to set, change or remove the stop loss and take profit of the open position. */
+export default function PositionProtection({venue,side,quantity,entryPrice,price,disabled,onRun,onClose}:Props){
+  const dialog=useRef<HTMLDialogElement>(null);
   const [current,setCurrent]=useState<Protection|null>(null);
+  const [loadError,setLoadError]=useState('');
   const [stop,setStop]=useState(''),[takeProfit,setTakeProfit]=useState('');
-  const [revision,setRevision]=useState(0);
+  const [saving,setSaving]=useState(false);
+
+  useEffect(()=>{const element=dialog.current,previous=document.activeElement as HTMLElement|null;element?.showModal();return ()=>{element?.close();previous?.focus();};},[]);
   useEffect(()=>{
     let live=true;
     api<Protection>(`/api/exchange/protection?venue=${venue}`).then(value=>{
       if(!live)return;
       setCurrent(value);setStop(value.stop!=null?String(value.stop):'');setTakeProfit(value.takeProfit!=null?String(value.takeProfit):'');
-    }).catch(()=>live&&setCurrent(null));
+    }).catch(reason=>live&&setLoadError(String(reason)));
     return ()=>{live=false;};
-  },[venue,side,revision]);
+  },[venue]);
 
-  const stopValue=stop.trim()?Number(stop):null,takeProfitValue=takeProfit.trim()?Number(takeProfit):null;
+  const parse=(text:string)=>text.trim()?Number(text):null;
+  const stopValue=parse(stop),takeProfitValue=parse(takeProfit);
   const invalid=[stopValue,takeProfitValue].some(value=>value!=null&&!(Number.isFinite(value)&&value>0));
-  const stopWrong=stopValue!=null&&price!=null&&(side==='long'?stopValue>=price:stopValue<=price);
-  const takeProfitWrong=takeProfitValue!=null&&price!=null&&(side==='long'?takeProfitValue<=price:takeProfitValue>=price);
+  const long=side==='long';
+  const stopWrong=stopValue!=null&&price!=null&&(long?stopValue>=price:stopValue<=price);
+  const takeProfitWrong=takeProfitValue!=null&&price!=null&&(long?takeProfitValue<=price:takeProfitValue>=price);
   const unchanged=current!=null&&stopValue===current.stop&&takeProfitValue===current.takeProfit;
+  const busy=disabled||saving||current==null;
+  const canSave=!(busy||invalid||stopWrong||takeProfitWrong||unchanged);
+  // Result at the trigger, from the entry price, for the whole position.
+  const outcome=(target:number|null)=>target==null||entryPrice==null||quantity==null?null:(target-entryPrice)*quantity*(long?1:-1);
+  const distance=(target:number|null)=>target==null||!price?null:(target-price)/price*100;
 
   async function save(nextStop:number|null,nextTakeProfit:number|null){
-    const summary=`Stop loss: ${nextStop??'none'} · Take profit: ${nextTakeProfit??'none'}`;
-    if(!window.confirm(`Replace the TP/SL orders of this ${side} position at the exchange?\n${summary}`))return;
-    await onRun('/api/exchange/protection',{venue,stop_price:nextStop,take_profit_price:nextTakeProfit,confirmation:'UPDATE LIVE TPSL'});
-    setRevision(value=>value+1);
+    setSaving(true);
+    const ok=await onRun('/api/exchange/protection',{venue,stop_price:nextStop,take_profit_price:nextTakeProfit,confirmation:'UPDATE LIVE TPSL'});
+    setSaving(false);
+    if(ok)onClose();
   }
 
-  return <fieldset className="ticket-tpsl position-protection"><legend>Position TP / SL</legend>
-    <p className="ticket-help">Current: stop loss <b>{number(current?.stop,3)}</b> · take profit <b>{number(current?.takeProfit,3)}</b>. Leave a field empty to remove that order.</p>
-    <label className="ui-field ticket-stop"><span>Stop loss price <small>{side==='long'?'below':'above'} {number(price,3)}</small></span><input type="number" aria-label="New stop loss price" min="0" step="any" placeholder="No stop loss" value={stop} disabled={disabled} onChange={event=>setStop(event.target.value)}/></label>
-    <label className="ui-field ticket-stop"><span>Take profit price <small>{side==='long'?'above':'below'} {number(price,3)}</small></span><input type="number" aria-label="New take profit price" min="0" step="any" placeholder="No take profit" value={takeProfit} disabled={disabled} onChange={event=>setTakeProfit(event.target.value)}/></label>
-    {stopWrong&&<p className="ticket-warning">The stop loss must be {side==='long'?'below':'above'} the current price.</p>}
-    {takeProfitWrong&&<p className="ticket-warning">The take profit must be {side==='long'?'above':'below'} the current price.</p>}
-    {stopValue==null&&<p className="ticket-warning">Without a stop loss, losses are not limited.</p>}
-    <div className="ticket-submit-row">
-      <Button disabled={disabled||invalid||stopWrong||takeProfitWrong||unchanged} onClick={()=>void save(stopValue,takeProfitValue)}>Update TP/SL</Button>
-      <Button variant="danger" disabled={disabled||(current?.stop==null&&current?.takeProfit==null)} onClick={()=>void save(null,null)}>Cancel both</Button>
-    </div>
-  </fieldset>;
+  function row(label:string,value:string,setValue:(text:string)=>void,currentValue:number|null|undefined,target:number|null,wrong:boolean,rule:string){
+    const pnl=outcome(target),gap=distance(target);
+    return <div className={`tpsl-row${wrong?' is-invalid':''}`}>
+      <div className="tpsl-row-head"><strong>{label}</strong><span>Current <b>{currentValue!=null?number(currentValue,3):'none'}</b></span></div>
+      <div className="tpsl-input">
+        <input type="number" min="0" step="any" inputMode="decimal" aria-label={`${label} price`} placeholder="Not set" value={value} disabled={busy} onChange={event=>setValue(event.target.value)}/>
+        {value&&<button type="button" className="tpsl-clear" aria-label={`Remove ${label.toLowerCase()}`} disabled={busy} onClick={()=>setValue('')}>×</button>}
+        <span>USDT</span>
+      </div>
+      <div className="tpsl-row-foot">
+        {wrong?<span className="negative">Must be {rule} the mark price</span>:<span>{rule} {number(price,3)}{gap!=null?` · ${gap>=0?'+':''}${gap.toFixed(2)}%`:''}</span>}
+        {pnl!=null&&!wrong&&<span className={pnl<0?'negative':'positive'}>≈ {pnl>=0?'+':''}{pnl.toFixed(2)} USDT</span>}
+      </div>
+    </div>;
+  }
+
+  return createPortal(<dialog ref={dialog} className="tpsl-modal" aria-labelledby="tpsl-title" onCancel={event=>{event.preventDefault();onClose();}}
+    onClick={event=>{if(event.target===event.currentTarget)onClose();}}>
+    <form className="tpsl-dialog" onSubmit={event=>{event.preventDefault();if(canSave)void save(stopValue,takeProfitValue);}}>
+      <header className="tpsl-header">
+        <div><h3 id="tpsl-title">TP / SL</h3><p>XAGUSDT Perpetual · {venue.toUpperCase()}</p></div>
+        <button type="button" className="text-button" aria-label="Close" onClick={onClose}>×</button>
+      </header>
+      <dl className="tpsl-summary">
+        <div><dt>Side</dt><dd><StatusBadge tone={long?'positive':'negative'}>{side.toUpperCase()}</StatusBadge></dd></div>
+        <div><dt>Size</dt><dd>{number(quantity)} XAG</dd></div>
+        <div><dt>Entry</dt><dd>{number(entryPrice,3)}</dd></div>
+        <div><dt>Mark</dt><dd>{number(price,3)}</dd></div>
+      </dl>
+      {loadError?<p className="ticket-warning">Could not read the current TP/SL: {loadError}</p>:current==null&&<p className="ticket-help">Reading TP/SL orders from the exchange…</p>}
+      {row('Take profit',takeProfit,setTakeProfit,current?.takeProfit,takeProfitValue,takeProfitWrong,long?'Above':'Below')}
+      {row('Stop loss',stop,setStop,current?.stop,stopValue,stopWrong,long?'Below':'Above')}
+      {stopValue==null&&current!=null&&<p className="ticket-warning">No stop loss: losses are not limited and the position can be liquidated.</p>}
+      <p className="tpsl-note">Market orders for the whole position, triggered at the exchange. Confirm replaces the existing TP/SL; an empty field removes it.</p>
+      <footer className="tpsl-footer">
+        <Button variant="ghost" className="tpsl-remove" disabled={busy||(current?.stop==null&&current?.takeProfit==null)} onClick={()=>{if(window.confirm('Remove both the stop loss and the take profit?'))void save(null,null);}}>Remove all</Button>
+        <span/>
+        <Button variant="secondary" onClick={onClose}>Cancel</Button>
+        <Button type="submit" disabled={!canSave}>{saving?'Saving…':'Confirm'}</Button>
+      </footer>
+    </form>
+  </dialog>,document.body);
 }

@@ -1,15 +1,16 @@
 import {liveNumber as number,type LiveOrder,type LivePosition} from '../../shared/api/useExchangeStream';
 import {Button,StatusBadge,TableFrame} from '../../shared/ui/ui';
 
-export function PositionTable({positions,disabled,onClose,onEditProtection,editing}:{positions:LivePosition[];disabled:boolean;onClose:()=>void;onEditProtection?:()=>void;editing?:boolean}){
-  return <TableFrame label="Open XAG positions" columns={['Contract','Mark price','Entry price','Margin (USDT)','Unrealized PnL','PnL (%)','Liquidation','Size (XAG)','Action']}>
+export function PositionTable({positions,disabled,onClose,onEditProtection,protection}:{positions:LivePosition[];disabled:boolean;onClose:()=>void;onEditProtection?:()=>void;protection?:{stop:number|null;takeProfit:number|null}|null}){
+  return <TableFrame label="Open XAG positions" columns={['Contract','Mark price','Entry price','Margin (USDT)','Unrealized PnL','PnL (%)','Liquidation','Size (XAG)','TP / SL','Action']}>
     {positions.map((position,index)=><tr key={`${position.side}-${position.marginMode}-${index}`}>
       <td><strong>XAGUSDT <small>Perpetual</small></strong><div className="exchange-position-tags"><StatusBadge tone={position.side==='long'?'positive':'negative'}>{position.side?.toUpperCase()}</StatusBadge><StatusBadge>{number(position.leverage,1)}x</StatusBadge><StatusBadge>{position.marginMode??'—'}</StatusBadge></div></td>
       <td>{number(position.markPrice,3)}</td><td>{number(position.entryPrice,3)}</td><td>{number(position.initialMargin,4)}</td>
       <td className={(position.unrealizedPnl??0)<0?'negative':'positive'}>{position.unrealizedPnl!=null&&position.unrealizedPnl>=0?'+':''}{number(position.unrealizedPnl,4)} <small>USDT</small></td>
       <td className={(position.percentage??0)<0?'negative':'positive'}>{number(position.percentage,2)}{position.percentage!=null?'%':''}</td>
       <td>{number(position.liquidationPrice,3)}</td><td>{number(position.quantity)}</td>
-      <td><div className="exchange-position-actions">{onEditProtection&&<Button variant="secondary" aria-expanded={editing} disabled={disabled||positions.length!==1} onClick={onEditProtection}>TP/SL</Button>}<Button variant="danger" disabled={disabled||positions.length!==1} onClick={onClose}>Close {position.side}</Button></div></td>
+      <td><div className="position-tpsl"><span className="positive">{protection?.takeProfit!=null?number(protection.takeProfit,3):'--'}</span><span className="negative">{protection?.stop!=null?number(protection.stop,3):'--'}</span></div></td>
+      <td><div className="exchange-position-actions">{onEditProtection&&<Button variant="secondary" disabled={disabled||positions.length!==1} onClick={onEditProtection}>TP/SL</Button>}<Button variant="danger" disabled={disabled||positions.length!==1} onClick={onClose}>Close {position.side}</Button></div></td>
     </tr>)}
   </TableFrame>;
 }
