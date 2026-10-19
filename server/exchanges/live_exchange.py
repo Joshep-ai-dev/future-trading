@@ -239,7 +239,8 @@ class LiveExchange:
         params = {**margin_params(venue), **({'reduceOnly': True} if reduce_only else {})}
         order = exchange.create_order(market['symbol'], 'market', side, amount, None, params)
         if not order.get('id'):
-            raw = json.dumps(order.get('info'), default=str)[:300]
+            reply = order.get('info') or getattr(exchange, 'last_json_response', None) or getattr(exchange, 'last_http_response', None)
+            raw = (reply if isinstance(reply, str) else json.dumps(reply, default=str))[:300]
             raise RuntimeError(f'The exchange returned no order id, so the order was not placed. Exchange reply: {raw}')
         if not reduce_only:
             self.last_entry_id = order.get('id')
