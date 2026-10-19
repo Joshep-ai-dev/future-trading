@@ -315,7 +315,7 @@ class LiveExchange:
                 raise RuntimeError('Entry was sent, the stop loss was rejected, and the emergency close also failed '
                                    f'({safe_exchange_error(close_error)}). Check the position at the exchange now.') from error
             raise RuntimeError('Entry was sent but the stop loss was rejected, so it was closed again with a reduce-only order '
-                               f'({safe_exchange_error(error)}).') from error
+                               f'({safe_exchange_error(error, 480)}).') from error
         if stop is not None:
             with self.lock:
                 self.protective_orders[venue] = stop.get('id')
@@ -395,7 +395,9 @@ class LiveExchange:
                     break
                 except Exception as error:
                     if attempt == len(sides)-1 or not _position_side_error(error):
-                        raise
+                        seen = f'{held[1]:g} contracts, side {held[0]}' if held else 'not found'
+                        raise RuntimeError(f'{safe_exchange_error(error)} [sent {amount:g} contracts, position_side '
+                                           f'{position_side}; HTX position: {seen}]') from error
         if not order.get('id'):
             raise RuntimeError('Exchange did not confirm the protective stop order id')
         return dict(id=order.get('id'), amount=order.get('amount'), triggerPrice=price)
