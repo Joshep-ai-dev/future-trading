@@ -1,7 +1,7 @@
 import {fmt,type BacktestSettings,type MLConfig} from '../../shared/types/types';
 import {Field,SettingsCard,TIMEFRAME_CHOICES} from './BBReversalSettings';
 import {useStrategyCatalog} from './useStrategyCatalog';
-import {ML_PRESETS,REGIME_NAMES} from './strategyDefaults';
+import {REGIME_NAMES} from './strategyDefaults';
 
 type NumberKey={[K in keyof MLConfig]:MLConfig[K] extends number?K:never}[keyof MLConfig];
 
@@ -16,10 +16,6 @@ export default function MLStrategySettings({settings,onChange}:{settings:Backtes
   const activeGpuModels=(catalog?.models??[]).filter(model=>model.device==='cuda'&&(config.models[model.key]??0)>0).length;
 
   return <>
-    <section className="ml-presets" aria-label="Trading style"><span className="setup-label">Trading style</span><div>{ML_PRESETS.map(preset=>{
-      const active=Object.entries(preset.values).every(([key,value])=>config[key as keyof MLConfig]===value);
-      return <button key={preset.key} type="button" aria-pressed={active} onClick={()=>setMl(preset.values as Partial<MLConfig>)}><strong>{preset.label}</strong><small>{preset.hint}</small></button>;
-    })}</div><small className="setup-note">Win rate and trade size pull against each other: closer targets win more often but smaller. Fine-tune any value below after choosing a style.</small></section>
 
     <SettingsCard step={1} id="settings-execution" title="Position size" description="How much the bot puts into each trade and which candles the models learn from.">
       <div className="setup-field setup-field--wide"><span className="setup-label">Timeframe</span><div className="chip-group" role="radiogroup" aria-label="Execution timeframe">{TIMEFRAME_CHOICES.map(tf=><button key={tf} type="button" role="radio" aria-checked={settings.entry_timeframe===tf} onClick={()=>onChange({...settings,entry_timeframe:tf})}>{tf}</button>)}</div><small>Short timeframes have small moves relative to trading costs; 15m or higher usually suits ML signals better.</small></div>

@@ -18,16 +18,6 @@ export const mlDefaults: BacktestSettings['ml'] = {
   regimes:['Trend up','Trend down','Range','Volatile'],recency_half_life:2000,min_atr:.03,min_target:.5,let_profit_run:true,quality_filter:true,quality_threshold:.5,device:'auto',
 };
 
-/** One-click ML trading styles. Numbers are from the 1h walk-forward check (last 120 days). */
-export const ML_PRESETS=[
-  {key:'winners',label:'Big winners',hint:'Few trades, let profits run. 1h: 26 trades · 42% win · avg win $58',
-   values:{let_profit_run:true,tp_quantile:.5,sl_quantile:.7,min_reward_risk:1.2,min_target:.5,entry_threshold:.55,quality_threshold:.5,trail_start:.6}},
-  {key:'winrate',label:'High win rate',hint:'Closer target, wider stop. 1h: 97 trades · 53% win · avg win $26',
-   values:{let_profit_run:false,tp_quantile:.3,sl_quantile:.8,min_reward_risk:.4,min_target:.2,entry_threshold:.55,quality_threshold:.5,trail_start:.7}},
-  {key:'trades',label:'More trades',hint:'Looser filters. 1h: 103 trades · 50% win, but weaker trades',
-   values:{let_profit_run:false,tp_quantile:.45,sl_quantile:.7,min_reward_risk:.8,min_target:.3,entry_threshold:.5,quality_threshold:.45,trail_start:.6}},
-] as const;
-
 export const REGIME_NAMES=['Trend up','Trend down','Range','Volatile'] as const;
 
 export const STRATEGY_LABELS:Record<string,string>={bb_outer_reversal:'BB Outer Band Reversal',ml_ensemble:'ML Ensemble'};
