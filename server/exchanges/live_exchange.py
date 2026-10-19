@@ -37,6 +37,15 @@ def safe_exchange_error(error: Exception, limit: int = 240) -> str:
     return ' '.join(text.split())[:limit]
 
 
+# Exchanges whose ccxt adapter chooses the margin mode per request (and defaults to cross) instead of
+# offering setMarginMode: every order and leverage call must say 'isolated' explicitly.
+PER_ORDER_MARGIN = {'htx'}
+
+
+def margin_params(venue: str) -> dict:
+    return {'marginMode': 'isolated'} if venue in PER_ORDER_MARGIN else {}
+
+
 class OrderStepError(RuntimeError):
     """A live order step failed; the message names the step and the (sanitised) exchange reason."""
 
@@ -222,7 +231,7 @@ class LiveExchange:
         amount = float(exchange.amount_to_precision(market['symbol'], size))
         if amount <= 0 or amount < float(market.get('limits', {}).get('amount', {}).get('min') or 0):
             raise ValueError('Quantity is below this contract’s minimum order size')
-        params = {'reduceOnly': True} if reduce_only else {}
+        params = {**margin_params(venue), **({'reduceOnly': True} if reduce_only else {})}
         order = exchange.create_order(market['symbol'], 'market', side, amount, None, params)
         return dict(id=order.get('id'), status=order.get('status'), side=side,
                     amount=order.get('amount'), filled=order.get('filled'), average=order.get('average'),
@@ -231,10 +240,15 @@ class LiveExchange:
     def prepare_account(self, venue: str, leverage: int) -> None:
         """Isolated margin and leverage, tolerating 'already set' answers. Call only when flat."""
         exchange, market = self.execution_client(venue)
-        for step, call in (('Setting isolated margin', lambda: exchange.set_margin_mode('isolated', market['symbol'])),
-                           (f'Setting {leverage}x leverage', lambda: exchange.set_leverage(int(leverage), market['symbol']))):
+        import ccxt
+        steps = [(f'Setting {leverage}x leverage', lambda: exchange.set_leverage(int(leverage), market['symbol'], margin_params(venue)))]
+        if venue not in PER_ORDER_MARGIN:  # HTX sets isolated margin on each order instead.
+            steps.insert(0, ('Setting isolated margin', lambda: exchange.set_margin_mode('isolated', market['symbol'])))
+        for step, call in steps:
             try:
                 call()
+            except ccxt.NotSupported:
+                continue  # The adapter has no such call; margin mode is then sent with each order.
             except Exception as error:
                 if any(word in str(error).lower() for word in _UNCHANGED):
                     continue  # The account already uses this setting.
@@ -341,7 +355,7 @@ class LiveExchange:
         amount = float(exchange.amount_to_precision(market['symbol'], contracts))
         price = float(exchange.price_to_precision(market['symbol'], trigger))
         order = exchange.create_order(market['symbol'], 'market', side, amount, None,
-                                      {'triggerPrice': price, 'reduceOnly': True})
+                                      {**margin_params(venue), 'triggerPrice': price, 'reduceOnly': True})
         if not order.get('id'):
             raise RuntimeError('Exchange did not confirm the protective stop order id')
         return dict(id=order.get('id'), amount=order.get('amount'), triggerPrice=price)

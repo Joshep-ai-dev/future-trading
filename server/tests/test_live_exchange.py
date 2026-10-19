@@ -185,12 +185,27 @@ class LiveOrderSafetyTests(unittest.TestCase):
 
     def test_prepare_account_accepts_already_set_and_names_real_failures(self) -> None:
         from server.exchanges.live_exchange import OrderStepError
+        self.service.clients['okx'], self.service.markets['okx'] = self.exchange, self.market
         self.exchange.set_margin_mode.side_effect = Exception('margin mode already isolated, no need to change')
-        self.service.prepare_account('htx', 12)
-        self.exchange.set_leverage.assert_called_once_with(12, 'XAG/USDT:USDT')
+        self.service.prepare_account('okx', 12)
+        self.exchange.set_leverage.assert_called_once_with(12, 'XAG/USDT:USDT', {})
         self.exchange.set_leverage.side_effect = Exception('leverage exceeds the maximum allowed')
         with self.assertRaisesRegex(OrderStepError, 'Setting 12x leverage failed.*maximum'):
-            self.service.prepare_account('htx', 12)
+            self.service.prepare_account('okx', 12)
+
+    def test_htx_sends_isolated_margin_with_leverage_and_orders(self) -> None:
+        import ccxt
+        self.exchange.set_margin_mode.side_effect = ccxt.NotSupported('htx setMarginMode() is not supported yet')
+        self.service.prepare_account('htx', 12)
+        self.exchange.set_margin_mode.assert_not_called()
+        self.exchange.set_leverage.assert_called_once_with(12, 'XAG/USDT:USDT', {'marginMode': 'isolated'})
+        self.exchange.amount_to_precision.side_effect = lambda symbol, amount: amount
+        self.exchange.price_to_precision.side_effect = lambda symbol, price: price
+        self.exchange.create_order.return_value = {'id': '1', 'amount': 2}
+        self.service.market_order('htx', 'buy', 2)
+        self.service.set_stop('htx', 'long', 2, 56.)
+        for call in self.exchange.create_order.call_args_list:
+            self.assertEqual(call.args[5]['marginMode'], 'isolated')
 
     def test_order_without_stop_places_no_stop_order(self) -> None:
         self.exchange.fetch_positions.return_value = []
