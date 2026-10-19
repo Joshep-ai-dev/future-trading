@@ -174,6 +174,21 @@ class LiveOrderSafetyTests(unittest.TestCase):
         self.service.clients['htx'] = self.exchange
         self.service.markets['htx'] = self.market
 
+    def test_update_protection_replaces_and_removes_orders(self) -> None:
+        self.exchange.amount_to_precision.side_effect = lambda symbol, amount: amount
+        self.exchange.price_to_precision.side_effect = lambda symbol, price: price
+        self.exchange.fetch_positions.return_value = [{'contracts': 2, 'side': 'long', 'info': {'position_side': 'both'}}]
+        self.exchange.fetch_ticker.return_value = {'last': 60.}
+        self.exchange.create_order.return_value = {'id': 'new', 'amount': 2}
+        self.service.protective_orders['htx'], self.service.take_profit_orders['htx'] = 'old-sl', 'old-tp'
+        result = self.service.update_protection('htx', 58., None)
+        cancelled = [call.args[0] for call in self.exchange.cancel_order.call_args_list]
+        self.assertEqual(cancelled, ['old-sl', 'old-tp'])
+        self.assertEqual(result, {'venue': 'htx', 'stop': 58., 'takeProfit': None})
+        self.assertNotIn('htx', self.service.take_profit_orders)
+        with self.assertRaisesRegex(ValueError, 'below the current price'):
+            self.service.update_protection('htx', 61., None)
+
     def test_error_text_hides_urls_queries_and_tokens(self) -> None:
         from server.exchanges.live_exchange import safe_exchange_error
         error = RuntimeError('htx POST https://api.hbdm.com/linear-swap-api/v1/order?AccessKeyId=abcdef1234567890abcdef12&Signature=XYZ '

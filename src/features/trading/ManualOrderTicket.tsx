@@ -3,6 +3,7 @@ import type {ExchangeVenue} from '../../shared/api/exchangeVenue';
 import {liveNumber as number,useExchangeStream} from '../../shared/api/useExchangeStream';
 import {Button,StatusBadge} from '../../shared/ui/ui';
 import {estimateOrderSize} from './orderSizing';
+import PositionProtection from './PositionProtection';
 
 type Props={venue:ExchangeVenue;connected:boolean;busy:boolean;blocked:boolean;botRunning:boolean;leverage:string;onLeverageChange:(value:string)=>void;onRun:(path:string,body:unknown)=>Promise<boolean>};
 const leverageOptions=[...Array.from({length:20},(_,index)=>index+1),...Array.from({length:16},(_,index)=>(index+5)*5)];
@@ -74,7 +75,7 @@ export default function ManualOrderTicket({venue,connected,busy,blocked,botRunni
       {!busy&&openBlockReason&&<p className="ticket-help">{openBlockReason}</p>}
     </>:<div className="ticket-close-panel">
       <div className="ticket-order-type"><strong>Market close</strong><StatusBadge>Reduce only</StatusBadge></div>
-      {position?<><div className="ticket-position"><StatusBadge tone={position.side==='long'?'positive':'negative'}>{position.side.toUpperCase()}</StatusBadge><strong>{number(position.quantity)} XAG</strong></div><dl><div><dt>Entry price</dt><dd>{number(position.entryPrice,3)}</dd></div><div><dt>Mark price</dt><dd>{number(position.markPrice,3)}</dd></div><div><dt>Unrealized PnL</dt><dd className={(position.unrealizedPnl??0)<0?'negative':'positive'}>{number(position.unrealizedPnl,4)} USDT</dd></div></dl><Button variant="danger" disabled={disabled} onClick={()=>void close()}>Close entire {position.side} position</Button></>:<p className="ticket-help">{!accountVerified?'Waiting for verified position data.':positionOpen?'Multiple positions detected. Manage them on the exchange.':'No open XAG position to close.'}</p>}
+      {position?<><div className="ticket-position"><StatusBadge tone={position.side==='long'?'positive':'negative'}>{position.side.toUpperCase()}</StatusBadge><strong>{number(position.quantity)} XAG</strong></div><dl><div><dt>Entry price</dt><dd>{number(position.entryPrice,3)}</dd></div><div><dt>Mark price</dt><dd>{number(position.markPrice,3)}</dd></div><div><dt>Unrealized PnL</dt><dd className={(position.unrealizedPnl??0)<0?'negative':'positive'}>{number(position.unrealizedPnl,4)} USDT</dd></div></dl><Button variant="danger" disabled={disabled} onClick={()=>void close()}>Close entire {position.side} position</Button>{(position.side==='long'||position.side==='short')&&<PositionProtection venue={venue} side={position.side} price={price} disabled={disabled} onRun={onRun}/>}</>:<p className="ticket-help">{!accountVerified?'Waiting for verified position data.':positionOpen?'Multiple positions detected. Manage them on the exchange.':'No open XAG position to close.'}</p>}
     </div>}
     {botRunning&&<p className="ticket-help">Stop the running strategy to enable manual orders.</p>}
   </div>;

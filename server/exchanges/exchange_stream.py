@@ -39,6 +39,9 @@ def order_view(order: dict, contract_size: float) -> dict:
                 status=order.get('status'))
 
 
+RECONCILE_SECONDS = 5
+
+
 class ExchangeFeed:
     def __init__(self, service: LiveExchange, venue: str):
         self.service, self.venue = service, venue
@@ -48,6 +51,7 @@ class ExchangeFeed:
                           streams={'market': 'connecting', 'account': 'connecting'}, sectionTimes={})
         self.changed = asyncio.Event()
         self.account_changed = asyncio.Event()
+        self.loop = asyncio.get_running_loop()
         self.queues: set[asyncio.Queue] = set()
         self.client = None
         self.tasks: list[asyncio.Task] = []
@@ -227,7 +231,8 @@ class ExchangeFeed:
     async def reconcile(self) -> None:
         while True:
             try:
-                await asyncio.wait_for(self.account_changed.wait(), timeout=30)
+                # Short timeout: some venues (HTX) push no private account events, so this poll is the update.
+                await asyncio.wait_for(self.account_changed.wait(), timeout=RECONCILE_SECONDS)
             except asyncio.TimeoutError:
                 pass
             self.account_changed.clear()
@@ -292,6 +297,14 @@ class ExchangeStreams:
                 await asyncio.gather(feed.runner, return_exceptions=True)
                 if self.feeds.get(venue) is feed:
                     self.feeds.pop(venue, None)
+
+    def refresh(self, venue: str) -> None:
+        """Re-read balance/positions/orders now and again shortly after (call from any thread after an order)."""
+        feed = self.feeds.get(venue)
+        if feed is None:
+            return
+        feed.loop.call_soon_threadsafe(feed.account_changed.set)
+        feed.loop.call_soon_threadsafe(feed.loop.call_later, 1.5, feed.account_changed.set)
 
     async def close(self) -> None:
         tasks = [feed.runner for feed in self.feeds.values()]

@@ -58,7 +58,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 logger = logging.getLogger(__name__)
 AUTH_COOKIE = 'silver_session'
 TRADER_PATHS = ('/api/exchange/connect', '/api/exchange/disconnect', '/api/exchange/reconnect',
-                '/api/exchange/forget', '/api/exchange/order', '/api/exchange/close',
+                '/api/exchange/forget', '/api/exchange/order', '/api/exchange/close', '/api/exchange/protection',
                 '/api/exchange/auto/', '/api/paper/start', '/api/paper/speed', '/api/paper/pause',
                 '/api/paper/resume', '/api/profiles', '/api/market-refresh', '/api/market-backfill')
 
@@ -307,6 +307,14 @@ class ExchangeDisconnectRequest(BaseModel):
     venue: Literal['okx','htx','mexc','binance']
 
 
+class ExchangeProtectionRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    venue: Literal['okx','htx','mexc','binance']
+    stop_price: float | None = Field(default=None,gt=0,le=1e9)
+    take_profit_price: float | None = Field(default=None,gt=0,le=1e9)
+    confirmation: Literal['UPDATE LIVE TPSL']
+
+
 class ExchangeCloseRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
     venue: Literal['okx','htx','mexc','binance']
@@ -442,6 +450,28 @@ def exchange_order(parameters: ExchangeOrderRequest, request: Request):
     except Exception as error:
         logger.exception('Live order failed')
         raise HTTPException(status_code=502,detail=f'Live order failed ({safe_exchange_error(error)}). Check the exchange order and position status before retrying.') from error
+    finally:
+        ws.streams.refresh(parameters.venue)
+
+
+@app.get('/api/exchange/protection')
+def exchange_protection(venue: Literal['okx','htx','mexc','binance'], request: Request):
+    return workspace(request).exchange.protection(venue)
+
+
+@app.post('/api/exchange/protection')
+def exchange_update_protection(parameters: ExchangeProtectionRequest, request: Request):
+    ws = workspace(request)
+    try:
+        return ws.exchange.update_protection(parameters.venue, parameters.stop_price, parameters.take_profit_price)
+    except ValueError as error:
+        raise HTTPException(status_code=400,detail=str(error)) from error
+    except Exception as error:
+        logger.warning('TP/SL update failed for user %s: %s', request.state.user['id'], error)
+        raise HTTPException(status_code=502,detail=f'{safe_exchange_error(error, 480) if not isinstance(error, OrderStepError) else error} '
+                                                   'Check the position’s TP/SL orders at the exchange.') from error
+    finally:
+        ws.streams.refresh(parameters.venue)
 
 
 @app.post('/api/exchange/close')
@@ -453,6 +483,8 @@ def exchange_close(parameters: ExchangeCloseRequest, request: Request):
         raise HTTPException(status_code=400,detail=str(error)) from error
     except Exception as error:
         raise HTTPException(status_code=502,detail='Close request failed. Check the live position and open reduce-only orders at the exchange.') from error
+    finally:
+        ws.streams.refresh(parameters.venue)
 
 
 @app.post('/api/exchange/auto/start')

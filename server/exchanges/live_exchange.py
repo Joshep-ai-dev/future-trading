@@ -73,6 +73,7 @@ class LiveExchange:
         self.markets = {}
         self.protective_orders = {}
         self.take_profit_orders = {}
+        self.protection_prices: dict[str, dict] = {}
         self.auto_bot = None
 
     @staticmethod
@@ -336,6 +337,7 @@ class LiveExchange:
         if stop is not None:
             with self.lock:
                 self.protective_orders[venue] = stop.get('id')
+                self.protection_prices.setdefault(venue, {})['stop'] = stop.get('triggerPrice')
         take_profit = None
         take_profit_error = None
         if take_profit_price is not None:
@@ -343,6 +345,7 @@ class LiveExchange:
                 take_profit = self.set_stop(venue, direction, stop_quantity, take_profit_price, take_profit=True)
                 with self.lock:
                     self.take_profit_orders[venue] = take_profit.get('id')
+                    self.protection_prices.setdefault(venue, {})['takeProfit'] = take_profit.get('triggerPrice')
             except Exception:
                 # The required stop is already active, so keep the protected position and
                 # report that the optional take-profit must be added at the exchange.
@@ -350,6 +353,63 @@ class LiveExchange:
         return dict(order=result, protectiveStop=stop, takeProfit=take_profit,
                     takeProfitError=take_profit_error, direction=direction,
                     quantity=stop_quantity, entryPrice=result.get('average'))
+
+    def protection(self, venue: str) -> dict:
+        """Stop loss and take profit this terminal placed for the open position (None when absent)."""
+        with self.lock:
+            prices = dict(self.protection_prices.get(venue) or {})
+            return dict(venue=venue, stop=prices.get('stop') if self.protective_orders.get(venue) else None,
+                        takeProfit=prices.get('takeProfit') if self.take_profit_orders.get(venue) else None)
+
+    def update_protection(self, venue: str, stop_price: float | None, take_profit_price: float | None) -> dict:
+        """Replace or remove the stop loss and take profit of the open position. None removes that order."""
+        with self.trade_lock:
+            if self.auto_bot and self.auto_bot.running and self.auto_bot.venue == venue:
+                raise ValueError('The automated bot manages this position’s stop; stop the bot to edit TP/SL by hand')
+            exchange, market = self.execution_client(venue)
+            active = [position for position in self.positions(venue) if float(position.get('contracts') or 0) != 0]
+            if len(active) != 1:
+                raise ValueError('No single open XAG/USDT position to protect')
+            direction = active[0].get('side')
+            if direction not in ('long', 'short'):
+                raise ValueError('The exchange did not report the position direction')
+            quantity = abs(float(active[0].get('contracts') or 0))*float(market.get('contractSize') or 1)
+            last = float(exchange.fetch_ticker(market['symbol']).get('last') or 0)
+            if not last:
+                raise ValueError('No current price from the exchange; try again')
+            if stop_price is not None and (stop_price >= last if direction == 'long' else stop_price <= last):
+                raise ValueError(f'Stop loss must be {"below" if direction == "long" else "above"} the current price {last:g} for this {direction}')
+            if take_profit_price is not None and (take_profit_price <= last if direction == 'long' else take_profit_price >= last):
+                raise ValueError(f'Take profit must be {"above" if direction == "long" else "below"} the current price {last:g} for this {direction}')
+            # Cancel first: the exchange limits closing orders to the position size.
+            for book, label in ((self.protective_orders, 'Cancelling the stop loss'), (self.take_profit_orders, 'Cancelling the take profit')):
+                with self.lock:
+                    order_id = book.get(venue)
+                if not order_id:
+                    continue
+                try:
+                    self.cancel_stop(venue, order_id)
+                except Exception as error:
+                    text = str(error).lower()
+                    if not any(word in text for word in ('not exist', 'not found', 'filled', 'cancel', 'finished')):
+                        raise OrderStepError(label, error) from error
+                with self.lock:
+                    book.pop(venue, None)
+            with self.lock:
+                self.protection_prices.pop(venue, None)
+            for price, book, key, label, take_profit in (
+                    (stop_price, self.protective_orders, 'stop', 'Placing the stop loss', False),
+                    (take_profit_price, self.take_profit_orders, 'takeProfit', 'Placing the take profit', True)):
+                if price is None:
+                    continue
+                try:
+                    order = self.set_stop(venue, direction, quantity, price, take_profit=take_profit)
+                except Exception as error:
+                    raise OrderStepError(label, error) from error
+                with self.lock:
+                    book[venue] = order.get('id')
+                    self.protection_prices.setdefault(venue, {})[key] = order.get('triggerPrice')
+            return self.protection(venue)
 
     def close_position(self, venue: str):
         with self.trade_lock:
@@ -373,6 +433,7 @@ class LiveExchange:
         with self.lock:
             stop_id = self.protective_orders.pop(venue, None)
             take_profit_id = self.take_profit_orders.pop(venue, None)
+            self.protection_prices.pop(venue, None)
         for stop_id in (stop_id, take_profit_id):
             if stop_id:
                 try:
