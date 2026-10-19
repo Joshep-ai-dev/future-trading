@@ -24,7 +24,6 @@ export default function LiveBotPanel({venue,settings,onSettingsChange,onConfigur
   const validLeverage=Number.isInteger(Number(leverage))&&Number(leverage)>=1&&Number(leverage)<=100;
   const mlSelected=settings.strategy==='ml_ensemble';
   const canStart=!mlSelected&&connected&&validMargin&&validAllocation&&!blocked&&!positionOpen&&!bot.running&&confirmed&&!busy&&validLeverage;
-  const status=active?'Running':bot.running?`Running on ${bot.venue?.toUpperCase()}`:connected?'Ready to start':'Not connected';
   // First reason the bot cannot start, shown under the button.
   const hint=bot.running?null:!connected?'Connect an exchange account first.':mlSelected?'ML Ensemble runs in backtests and paper trading only; choose BB Reversal to trade live.'
     :blocked?'Live trading is blocked until the position check succeeds.':positionOpen?'Close the open position to start.'
@@ -37,7 +36,6 @@ export default function LiveBotPanel({venue,settings,onSettingsChange,onConfigur
   }
 
   return <div id="bot-ticket-panel" role="tabpanel" aria-labelledby="execution-tab-bot" className="live-bot-panel bot-control">
-    <div className="panel-heading"><h2>Live bot</h2><span className={`bot-state ${active?'is-running':''}`}><i className="status-dot"/>{status}</span></div>
     <form className="bot-form" onSubmit={event=>{event.preventDefault();void start();}}>
       <fieldset disabled={locked}>
         {onApplySetup&&<BotSelector strategy={settings.strategy} onStrategyChange={key=>onSettingsChange?.({...settings,strategy:key})} profiles={profiles} onApplySetup={onApplySetup} setupLabel="Saved parameters"/>}

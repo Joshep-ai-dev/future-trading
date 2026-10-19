@@ -502,7 +502,14 @@
 }
 
 .live-bot-panel {
-  padding: 18px;
+  padding: 0 0 16px;
+}
+
+/* Same insets as the paper bot: the form and strategy card carry their own 16px padding. */
+.live-bot-panel > .ticket-help,
+.live-bot-panel > .error {
+  margin: 0;
+  padding: 0 16px 12px;
 }
 
 .bot-strategy-heading {
