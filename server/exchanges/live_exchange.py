@@ -241,7 +241,21 @@ class LiveExchange:
         """Isolated margin and leverage, tolerating 'already set' answers. Call only when flat."""
         exchange, market = self.execution_client(venue)
         import ccxt
-        steps = [(f'Setting {leverage}x leverage', lambda: exchange.set_leverage(int(leverage), market['symbol'], margin_params(venue)))]
+        def set_leverage() -> None:
+            params = margin_params(venue)
+            if venue != 'htx':
+                exchange.set_leverage(int(leverage), market['symbol'], params)
+                return
+            # HTX's unified-account endpoint needs position_side: 'both' in one-way mode, each side in hedge mode.
+            try:
+                exchange.set_leverage(int(leverage), market['symbol'], {**params, 'position_side': 'both'})
+            except Exception as error:
+                if 'position_side' not in str(error).lower() and '1066' not in str(error):
+                    raise
+                for side in ('long', 'short'):
+                    exchange.set_leverage(int(leverage), market['symbol'], {**params, 'position_side': side})
+
+        steps = [(f'Setting {leverage}x leverage', set_leverage)]
         if venue not in PER_ORDER_MARGIN:  # HTX sets isolated margin on each order instead.
             steps.insert(0, ('Setting isolated margin', lambda: exchange.set_margin_mode('isolated', market['symbol'])))
         for step, call in steps:

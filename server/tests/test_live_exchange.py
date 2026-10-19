@@ -193,12 +193,18 @@ class LiveOrderSafetyTests(unittest.TestCase):
         with self.assertRaisesRegex(OrderStepError, 'Setting 12x leverage failed.*maximum'):
             self.service.prepare_account('okx', 12)
 
+    def test_htx_hedge_mode_sets_leverage_for_each_side(self) -> None:
+        self.exchange.set_leverage.side_effect = [Exception('{"code":1066,"message":"position_side cannot be empty."}'), None, None]
+        self.service.prepare_account('htx', 12)
+        sides = [call.args[2]['position_side'] for call in self.exchange.set_leverage.call_args_list]
+        self.assertEqual(sides, ['both', 'long', 'short'])
+
     def test_htx_sends_isolated_margin_with_leverage_and_orders(self) -> None:
         import ccxt
         self.exchange.set_margin_mode.side_effect = ccxt.NotSupported('htx setMarginMode() is not supported yet')
         self.service.prepare_account('htx', 12)
         self.exchange.set_margin_mode.assert_not_called()
-        self.exchange.set_leverage.assert_called_once_with(12, 'XAG/USDT:USDT', {'marginMode': 'isolated'})
+        self.exchange.set_leverage.assert_called_once_with(12, 'XAG/USDT:USDT', {'marginMode': 'isolated', 'position_side': 'both'})
         self.exchange.amount_to_precision.side_effect = lambda symbol, amount: amount
         self.exchange.price_to_precision.side_effect = lambda symbol, price: price
         self.exchange.create_order.return_value = {'id': '1', 'amount': 2}
