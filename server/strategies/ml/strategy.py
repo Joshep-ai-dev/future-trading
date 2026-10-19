@@ -56,6 +56,9 @@ class MLSettings:
     # Let profits run: no fixed take-profit and no time exit; only the stop and the trailing stop close
     # a trade. Trailing starts once profit reaches max(min_target, trail_start × learned target).
     let_profit_run: bool = True
+    # Trade-quality filter: a second model learns when direction calls win; enter only above the threshold.
+    quality_filter: bool = True
+    quality_threshold: float = .5
     # Recent candles matter more: training weights halve every ``recency_half_life`` candles back (0 = equal).
     recency_half_life: int = 2000
 
@@ -87,7 +90,8 @@ class MLSettings:
                   (.1 <= self.trail_start <= 2 and .2 <= self.trail_noise <= 5, 'Trailing settings out of range'),
                   (bool(self.regimes) and all(name in REGIME_NAMES for name in self.regimes), 'Choose at least one valid market regime'),
                   (0 <= self.recency_half_life <= 200_000, 'Recency half-life must be 0-200000 candles'),
-                  (0 <= self.min_atr <= 100 and 0 <= self.min_target <= 100, 'Minimum ATR and target must be 0-100')]
+                  (0 <= self.min_atr <= 100 and 0 <= self.min_target <= 100, 'Minimum ATR and target must be 0-100'),
+                  (0 <= self.quality_threshold < 1, 'Trade quality threshold must be 0-1')]
         for valid, message in checks:
             if not valid:
                 raise ValueError(message)
@@ -101,7 +105,7 @@ class MLSettings:
         return config_key(groups=sorted(self.feature_groups), models=self.models, horizon=self.horizon,
                           tp=self.take_profit_atr, sl=self.stop_atr, atr=self.atr_length, capacity=self.capacity,
                           exits=self.exit_mode, quantiles=(self.tp_quantile, self.sl_quantile) if self.exit_mode == 'learned' else None,
-                          recency=self.recency_half_life)
+                          recency=self.recency_half_life, quality=self.quality_filter)
 
 
 def _atr(frame: pd.DataFrame, length: int) -> pd.Series:
@@ -140,6 +144,11 @@ def signals_from(probabilities: pd.DataFrame, settings: MLSettings) -> np.ndarra
     p_long, p_short = probabilities.p_long.to_numpy(), probabilities.p_short.to_numpy()
     long = (p_long >= settings.entry_threshold) & (p_long-p_short >= settings.min_edge)
     short = (p_short >= settings.entry_threshold) & (p_short-p_long >= settings.min_edge)
+    if settings.quality_filter and 'p_win' in probabilities:
+        quality = probabilities['p_win'].to_numpy()
+        trusted = ~np.isfinite(quality) | (quality >= settings.quality_threshold)
+        long &= trusted
+        short &= trusted
     if settings.trade_mode == 'Long Only':
         short[:] = False
     if settings.trade_mode == 'Short Only':
@@ -171,7 +180,7 @@ def prepare(frame: pd.DataFrame, settings: MLSettings, start=None, progress=None
                           retrain_every=settings.retrain_every, horizon=settings.horizon,
                           models=settings.models, key=settings.model_key(), capacity=settings.capacity, progress=progress,
                           exit_targets=targets, quantiles=(settings.tp_quantile, settings.sl_quantile),
-                          half_life=settings.recency_half_life)
+                          half_life=settings.recency_half_life, meta=settings.quality_filter)
     return Prepared(clean, atr, features.shape[1], labels, start_index, result)
 
 

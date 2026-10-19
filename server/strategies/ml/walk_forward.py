@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from collections import OrderedDict
 from dataclasses import dataclass, field
 
@@ -19,9 +21,11 @@ import numpy as np
 import pandas as pd
 
 from server.strategies.ml.exits import ExitModel, RegimeModel
+from server.strategies.ml.meta import MetaModel
 from server.strategies.ml.models import fit_model
 
 MIN_TRAIN_ROWS = 300
+WORKERS = max(1, min(8, (os.cpu_count() or 2)//3))  # blocks train in parallel; each model uses ~2 threads
 
 
 @dataclass
@@ -33,6 +37,7 @@ class Fold:
     weights: list[float]
     exits: object = None
     regimes: object = None
+    meta: object = None
 
 
 @dataclass
@@ -70,7 +75,7 @@ def config_key(**parts) -> str:
 
 def _train_fold(features: pd.DataFrame, labels: pd.Series, train_slice: slice, models: dict[str, float], key: str,
                 capacity: str = 'standard', exit_targets: pd.DataFrame | None = None, quantiles=(.4, .7),
-                half_life: float = 0) -> Fold | None:
+                half_life: float = 0, meta: bool = False) -> Fold | None:
     window_x, window_y = features.iloc[train_slice], labels.iloc[train_slice]
     mask = window_y.notna().to_numpy()
     if mask.sum() < MIN_TRAIN_ROWS:
@@ -93,6 +98,9 @@ def _train_fold(features: pd.DataFrame, labels: pd.Series, train_slice: slice, m
         except ValueError:
             fold.exits = None  # Too little data in this window; the strategy falls back to fixed exits.
     fold.regimes = RegimeModel.fit(features, train_slice)  # Market regimes are always learned.
+    if meta:
+        primary = next(name for name, weight in models.items() if weight > 0)
+        fold.meta = MetaModel.fit(features, labels, train_slice, primary=primary, capacity=capacity, half_life=half_life)
     fold_cache.put(cache_key, fold)
     return fold
 
@@ -100,7 +108,7 @@ def _train_fold(features: pd.DataFrame, labels: pd.Series, train_slice: slice, m
 def walk_forward(features: pd.DataFrame, labels: pd.Series, *, start_index: int, train_bars: int,
                  retrain_every: int, horizon: int, models: dict[str, float], key: str,
                  capacity: str = 'standard', progress=None, exit_targets: pd.DataFrame | None = None,
-                 quantiles=(.4, .7), half_life: float = 0) -> WalkForwardResult:
+                 quantiles=(.4, .7), half_life: float = 0, meta: bool = False) -> WalkForwardResult:
     """Out-of-sample probabilities (short, none, long) for every bar from ``start_index``.
 
     With ``exit_targets`` every block also learns take-profit / stop distances
@@ -113,20 +121,34 @@ def walk_forward(features: pd.DataFrame, labels: pd.Series, *, start_index: int,
     probabilities = np.full((n, 3), np.nan)
     exits = np.full((n, 4), np.nan)
     regimes = np.full(n, -1)
+    quality = np.full(n, np.nan)
     folds, importance = [], {}
     # Block boundaries are anchored at the evaluation start so they stay identical
     # when more candles arrive, which keeps cached folds valid for paper trading.
     blocks = list(range(start_index, n, retrain_every))
-    for number, block_start in enumerate(blocks):
-        if progress:
-            progress(number, len(blocks))
-        block_end = min(n, block_start+retrain_every)
+    windows = {}
+    for block_start in blocks:
         train_end = block_start-horizon
         train_start = max(0, train_end-train_bars)
-        if train_end <= train_start:
-            continue
-        fold = _train_fold(features, labels, slice(train_start, train_end), models, key, capacity, exit_targets, quantiles,
-                           half_life)
+        if train_end > train_start:
+            windows[block_start] = slice(train_start, train_end)
+    # Blocks are independent: train them in parallel, then predict in order.
+    done = [0]
+    lock = threading.Lock()
+
+    def train(block_start):
+        fold = _train_fold(features, labels, windows[block_start], models, key, capacity, exit_targets, quantiles, half_life, meta)
+        with lock:
+            done[0] += 1
+            if progress:
+                progress(done[0], len(windows))
+        return block_start, fold
+
+    with ThreadPoolExecutor(max_workers=max(1, min(WORKERS, len(windows)))) as pool:
+        trained = dict(pool.map(train, windows))
+    for block_start in blocks:
+        block_end = min(n, block_start+retrain_every)
+        fold = trained.get(block_start)
         if fold is None:
             continue
         rows = slice(block_start, block_end)
@@ -138,6 +160,8 @@ def walk_forward(features: pd.DataFrame, labels: pd.Series, *, start_index: int,
             exits[block_start:block_end] = fold.exits.predict(features, rows).to_numpy()
         if fold.regimes is not None:
             regimes[block_start:block_end] = fold.regimes.predict(features, rows)
+        if fold.meta is not None:
+            quality[block_start:block_end] = fold.meta.predict(features, rows, blended)
         truth = labels.iloc[block_start:block_end].to_numpy()
         known = np.isfinite(truth)
         predicted = np.array([-1, 0, 1])[np.argmax(blended, axis=1)]
@@ -153,4 +177,5 @@ def walk_forward(features: pd.DataFrame, labels: pd.Series, *, start_index: int,
     frame = pd.DataFrame(probabilities, index=features.index, columns=['p_short', 'p_none', 'p_long'])
     frame[['long_tp', 'long_sl', 'short_tp', 'short_sl']] = exits
     frame['regime'] = regimes
+    frame['p_win'] = quality
     return WalkForwardResult(frame, folds, importance)

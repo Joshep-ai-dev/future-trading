@@ -16,6 +16,7 @@ import numpy as np
 from server.strategies.ml.labels import CLASSES
 
 ENCODED = {label: index for index, label in enumerate(CLASSES)}
+GPU_MIN_ROWS = 50_000  # Below this, tree models train faster on the CPU (measured on this project's data).
 
 
 def _installed(module: str) -> bool:
@@ -68,7 +69,7 @@ def _lightgbm(seed: int, c: dict):
     from lightgbm import LGBMClassifier
     return LGBMClassifier(n_estimators=c['trees'], learning_rate=.05, num_leaves=c['leaves'], min_child_samples=c['leaf'],
                           max_bin=63, subsample=.8, subsample_freq=1, colsample_bytree=.8, reg_lambda=1.,
-                          class_weight='balanced', random_state=seed, n_jobs=4, verbose=-1)
+                          class_weight='balanced', random_state=seed, n_jobs=2, verbose=-1)
 
 
 def _xgboost(seed: int, c: dict):
@@ -90,14 +91,14 @@ def _random_forest(seed: int, c: dict):
     from sklearn.ensemble import RandomForestClassifier
     return _imputed(RandomForestClassifier(n_estimators=c['trees'], max_depth=c['forest_depth'], min_samples_leaf=c['leaf']*2//3,
                                            max_features='sqrt', class_weight='balanced_subsample',
-                                           random_state=seed, n_jobs=-1))
+                                           random_state=seed, n_jobs=2))
 
 
 def _extra_trees(seed: int, c: dict):
     from sklearn.ensemble import ExtraTreesClassifier
     return _imputed(ExtraTreesClassifier(n_estimators=c['trees']*3//2, max_depth=c['forest_depth']+2,
                                          min_samples_leaf=c['leaf']*2//3, max_features='sqrt',
-                                         class_weight='balanced', random_state=seed, n_jobs=-1))
+                                         class_weight='balanced', random_state=seed, n_jobs=2))
 
 
 def _logistic(seed: int, c: dict):
@@ -203,6 +204,8 @@ def train_model(key: str, features: np.ndarray, labels: np.ndarray, feature_name
     remap = {cls: index for index, cls in enumerate(present)}
     target = np.vectorize(remap.get)(encoded)
     estimator = spec.build(seed, CAPACITY[capacity])
+    if spec.key == 'xgboost' and len(target) < GPU_MIN_ROWS:
+        estimator.set_params(device='cpu')  # GPU launch overhead outweighs the work on small windows.
     weights = None if spec.balanced else _sample_weights(target)
     if recency is not None and spec.key != 'neural_net':  # MLPClassifier cannot take sample weights.
         weights = recency if weights is None else weights*recency

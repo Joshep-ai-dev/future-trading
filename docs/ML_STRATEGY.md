@@ -344,6 +344,47 @@ reward/risk filter skipped about 1 100 weak signals. Per regime, only **Range** 
 
 ---
 
+## 7c. Trade-quality filter (meta-labeling) — `meta.py`
+
+```mermaid
+flowchart LR
+    W[Block training window] --> A[First 70%:<br/>quick direction model]
+    A --> B[Predict last 30%<br/>unseen inside the window]
+    B --> C[Where it would signal:<br/>did that side win?]
+    C --> D[Quality model<br/>features + direction probabilities]
+    D --> P[P win for each new signal]
+    P --> G{P win ≥ threshold?}
+    G -->|yes| T[Trade]
+    G -->|no| S[Skip]
+```
+
+The direction ensemble decides *which side*; the quality model learns *when that call tends to be
+right* and outputs a win probability per signal. Entries need **P(win) ≥ Minimum win chance**
+(default 0.5). It trains only on the block's past window, so it adds no look-ahead.
+
+Measured on unseen walk-forward data (last 120 days, default settings):
+
+| Timeframe | Filter | Trades | Win rate | Profit factor | Net |
+|---|---|---|---|---|---|
+| 1h | off | 32 | 40.6% | 0.98 | −$15 |
+| 1h | 0.55 | 23 | 34.8% | 1.23 | +$113 |
+| 15m | off | 102 | 43.1% | 0.64 | −$377 |
+| 15m | 0.65 | 47 | 42.6% | 0.60 | −$218 |
+
+It removes losing trades (profit factor up) more than it raises the win rate. The 1h sample is small
+(20–30 trades), so confirm it with a forward test and paper trading.
+
+## 7d. Training speed and GPU use
+
+* Walk-forward blocks train **in parallel** (up to 8 at once, 2 threads per model).
+* The four learned exits share two excursion targets (rise / fall), so they need fewer models.
+* **GPU (CUDA):** used by the 1D-CNN and LSTM, and by XGBoost for training windows of 50 000+ rows.
+  Tree models on smaller windows run on the CPU because GPU launch overhead per tree outweighs the
+  work (measured: GPU exit models added ~9 s per backtest; LightGBM CPU needs < 1 s).
+* Default 15m backtest: 23.4 s → 11.2 s; four-model ensemble with CNN: ~17 s.
+
+---
+
 ## 8. Hyperparameter search — `tuning.py`
 
 Started from **Bot settings → Find better settings** (with ML Ensemble selected).
@@ -512,6 +553,7 @@ flowchart LR
 | `server/strategies/ml/features.py` | Indicator feature groups (registry) |
 | `server/strategies/ml/labels.py` | Triple-barrier labels and MFE/MAE excursion targets |
 | `server/strategies/ml/exits.py` | Learned exit (quantile) models and market regime model |
+| `server/strategies/ml/meta.py` | Trade-quality filter (meta-labeling) |
 | `server/market/patterns.py` | Similar-pattern search and future high/low projection |
 | `server/strategies/ml/models.py` | Model registry, capacity presets, unified `fit_model` |
 | `server/strategies/ml/sequence.py` | PyTorch 1D-CNN and LSTM |

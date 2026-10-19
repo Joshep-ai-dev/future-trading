@@ -309,3 +309,22 @@ class SizeFilterTests(unittest.TestCase):
         self.assertTrue(reasons)
         self.assertTrue(result['trades'].target.isna().all())  # No take-profit is published as empty, not infinity.
         self.assertTrue(reasons <= {'stop', 'trailing_stop_at_close', 'period_end', 'data_gap'}, reasons)
+
+
+class QualityFilterTests(unittest.TestCase):
+    def test_learns_when_direction_calls_are_right(self):
+        from server.strategies.ml.meta import MetaModel
+        rng = np.random.default_rng(11)
+        n = 4000
+        features = pd.DataFrame(dict(a=rng.normal(size=n), b=rng.normal(size=n), c=rng.normal(size=n)))
+        reliable = features.b > 0
+        direction = np.where(features.a > 0, LONG, SHORT)
+        noise = rng.choice([LONG, SHORT], size=n)
+        labels = pd.Series(np.where(reliable, direction, noise).astype(float))
+        meta = MetaModel.fit(features, labels, slice(0, 3000), primary='lightgbm', capacity='light', half_life=0)
+        self.assertIsNotNone(meta)
+        rows = slice(3000, n)
+        probabilities = np.column_stack([(features.a.iloc[rows] < 0)*.6+.2, np.full(1000, .1),
+                                         (features.a.iloc[rows] > 0)*.6+.2])
+        p_win = meta.predict(features, rows, probabilities)
+        self.assertGreater(p_win[reliable.iloc[rows].to_numpy()].mean(), p_win[~reliable.iloc[rows].to_numpy()].mean()+.1)

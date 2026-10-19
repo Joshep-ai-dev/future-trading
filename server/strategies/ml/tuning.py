@@ -32,8 +32,8 @@ CAPACITIES = ('light', 'standard', 'rich')
 ENTRY_GRID = dict(entry_threshold=(.45, .5, .55, .6, .65), min_edge=(.05, .1, .2, .3), reverse_on_signal=(True, False))
 # Learned exits: the models set targets and stops; the search tunes how cautious they are.
 LEARNED_MODEL_GRID = dict(horizon=(8, 12, 24), tp_quantile=(.3, .4, .5), sl_quantile=(.6, .75))
-LEARNED_ENTRY_GRID = dict(entry_threshold=(.45, .5, .55, .6), min_edge=(.05, .1, .2), min_reward_risk=(1., 1.3, 1.6),
-                          trail_start=(.5, .8))
+LEARNED_ENTRY_GRID = dict(entry_threshold=(.45, .5, .55, .6), min_edge=(.05, .1, .2), min_reward_risk=(1., 1.3),
+                          trail_start=(.5, .8), quality_threshold=(.5, .55, .6))
 RANDOM_MODELS = 24
 FINALISTS = 5
 
