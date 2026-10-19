@@ -26,6 +26,19 @@ export default function ManualOrderTicket({venue,connected,busy,blocked,botRunni
   const stopValid=!useStop||(Number.isFinite(Number(stop))&&Number(stop)>0);
   const takeProfitValid=!useTakeProfit||(Number.isFinite(Number(takeProfit))&&Number(takeProfit)>0);
   const openDisabled=disabled||positionOpen||!confirmed||quantity==null||!stopValid||!takeProfitValid||!validPrice||data?.streams.market!=='live';
+  // Why Open Long/Short are unavailable, first reason that applies.
+  const openBlockReason=!connected?'Connect the exchange account first.'
+    :botRunning?'The automated bot is running; stop it to trade manually.'
+    :blocked?'Live trading is blocked for this account.'
+    :!accountVerified?'Waiting for verified account and position data from the exchange.'
+    :positionOpen?null
+    :data?.streams.market!=='live'?'No live price from the exchange: the market may be closed or the price feed is reconnecting.'
+    :!validPrice?'No current market price yet.'
+    :quantity==null?'Enter the order size.'
+    :!stopValid?'Enter a stop loss price or turn Stop loss off.'
+    :!takeProfitValid?'Enter a take profit price or turn Take profit off.'
+    :!confirmed?'Tick the confirmation box to enable the order buttons.'
+    :null;
   const stopWrongSide=(direction:'long'|'short')=>useStop&&(direction==='long'?Number(stop)>=price!:Number(stop)<=price!);
   const takeProfitWrongSide=(direction:'long'|'short')=>useTakeProfit&&(direction==='long'?Number(takeProfit)<=price!:Number(takeProfit)>=price!);
 
@@ -58,6 +71,7 @@ export default function ManualOrderTicket({venue,connected,busy,blocked,botRunni
       <label className="ticket-confirm"><input type="checkbox" checked={confirmed} disabled={disabled||positionOpen} onChange={event=>setConfirmed(event.target.checked)}/><span>I confirm this places a real market order.</span></label>
       <div className="ticket-submit-row"><Button className="ticket-buy" disabled={openDisabled||stopWrongSide('long')||takeProfitWrongSide('long')} onClick={()=>void open('long')}>{busy?'Submitting...':'Open Long'}</Button><Button className="ticket-sell" disabled={openDisabled||stopWrongSide('short')||takeProfitWrongSide('short')} onClick={()=>void open('short')}>{busy?'Submitting...':'Open Short'}</Button></div>
       {positionOpen&&<p className="ticket-help">An XAG position is already open. Select Close to manage it.</p>}
+      {!busy&&openBlockReason&&<p className="ticket-help">{openBlockReason}</p>}
     </>:<div className="ticket-close-panel">
       <div className="ticket-order-type"><strong>Market close</strong><StatusBadge>Reduce only</StatusBadge></div>
       {position?<><div className="ticket-position"><StatusBadge tone={position.side==='long'?'positive':'negative'}>{position.side.toUpperCase()}</StatusBadge><strong>{number(position.quantity)} XAG</strong></div><dl><div><dt>Entry price</dt><dd>{number(position.entryPrice,3)}</dd></div><div><dt>Mark price</dt><dd>{number(position.markPrice,3)}</dd></div><div><dt>Unrealized PnL</dt><dd className={(position.unrealizedPnl??0)<0?'negative':'positive'}>{number(position.unrealizedPnl,4)} USDT</dd></div></dl><Button variant="danger" disabled={disabled} onClick={()=>void close()}>Close entire {position.side} position</Button></>:<p className="ticket-help">{!accountVerified?'Waiting for verified position data.':positionOpen?'Multiple positions detected. Manage them on the exchange.':'No open XAG position to close.'}</p>}
