@@ -1,5 +1,5 @@
 import {Button,PageHeader} from '../shared/ui/ui';
-import {lazy,Suspense,useEffect,useState,type FormEvent} from 'react';
+import {lazy,Suspense,useEffect,useRef,useState,type FormEvent} from 'react';
 import {api} from '../shared/api/api';
 import {htxCostDefaults} from '../features/strategy/executionCostDefaults';
 import {STRATEGY_LABELS,bbDefaults,mlDefaults} from '../features/strategy/strategyDefaults';
@@ -105,10 +105,17 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
     try{const opened=await api<BacktestResult>(`/api/backtests/${id}`);setResult(opened);setRunId(value=>value+1);}
     catch(e){setError(String(e));}finally{setBusy(false);}
   }
+  const tuneAbort=useRef<AbortController|null>(null);
+  async function stopFineTune(){
+    setTuneProgress(old=>({...old,message:'Stopping the search…'}));
+    try{await api('/api/backtest/fine-tune/stop',{method:'POST'});}catch{/* The stream abort below still ends the request. */}
+    tuneAbort.current?.abort();
+  }
   async function runFineTune(){
     setTuning(true);setTuneError('');setTuneResult(null);setTuneProgress({percent:0,message:'Connecting to the tuning worker'});
+    const abort=new AbortController();tuneAbort.current=abort;
     try{
-      const response=await fetch('/api/backtest/fine-tune',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({settings,search_method:searchMethod,objective:searchObjective,validation_start:validationStart||null,forward_start:forwardStart||null})});
+      const response=await fetch('/api/backtest/fine-tune',{method:'POST',signal:abort.signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({settings,search_method:searchMethod,objective:searchObjective,validation_start:validationStart||null,forward_start:forwardStart||null})});
       if(!response.ok)throw new Error(`Fine tuning request failed (${response.status})`);
       if(!response.body)throw new Error('Fine tuning progress stream is unavailable.');
       const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='',finalResult:FineTuneResult|null=null;
@@ -118,6 +125,7 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
         if(update.type==='progress')setTuneProgress({percent:update.percent,message:update.message});
         else if(update.type==='result')finalResult=update.result as FineTuneResult;
         else if(update.type==='error')throw new Error(update.detail);
+        else if(update.type==='stopped')throw new DOMException('Search stopped.','AbortError');
         // Older backend processes return the result as plain JSON instead of a progress event stream.
         else if(update.bestSettings)finalResult=update as FineTuneResult;
       };
@@ -132,7 +140,8 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
       setTuneResult(finalResult);
       setSelectedTuneCaseId((finalResult as FineTuneResult).candidates?.[0]?.id??'best');
     }
-    catch(error){setTuneError(String(error));}finally{setTuning(false);}
+    catch(error){setTuneError(error instanceof DOMException&&error.name==='AbortError'?'Search stopped. Start it again any time.':String(error));}
+    finally{setTuning(false);tuneAbort.current=null;}
   }
   function renderTuneMetrics(label:string,metrics:TuneMetrics){
     return <div className="tune-period" key={label}><strong>{label}</strong><span>Win rate <b>{fmt(metrics.winRate)}%</b></span><span>Average winner <b>${fmt(metrics.averageWin??null)}</b></span><span>Average loser <b>${fmt(metrics.averageLoss??null)}</b></span><span>Winner / loser size <b>{fmt(metrics.payoffRatio??null)}×</b></span><span>Losing trades <b>{metrics.losses}</b></span><span>Net P&amp;L <b className={metrics.netPnl>=0?'positive':'negative'}>{metrics.netPnl>=0?'+':''}${fmt(metrics.netPnl)}</b></span><span>Max drawdown <b className="negative">{fmt(Math.abs(metrics.maxDrawdownPct))}%</b></span><span>Average loss <b>{fmt(metrics.averageLossPct)}% of start</b></span><span>Trades <b>{metrics.trades}</b></span></div>;
@@ -197,7 +206,7 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
                 <Field label="Forward test from"><input type="date" value={forwardStart} min={validationStart||settings.start_date} max={settings.end_date} disabled={busy||tuning} onChange={e=>setForwardStart(e.target.value)}/></Field>
               </div>
               <small className="setup-note">{validationStart||forwardStart?`Training ${settings.start_date} → ${validationStart||'60%'} · validation → ${forwardStart||'80%'} · forward test → ${settings.end_date}.`:'Empty = automatic 60% training · 20% validation · 20% forward test.'}{(validationStart||forwardStart)&&<button type="button" className="text-button" onClick={()=>{setValidationStart('');setForwardStart('');}}>Reset</button>}</small>
-              <button type="button" className="secondary" disabled={busy||tuning} onClick={()=>void runFineTune()}>{tuning?'Searching…':'Start search'}</button>
+              {tuning?<button type="button" className="secondary danger-text" onClick={()=>void stopFineTune()}>■ Stop search</button>:<button type="button" className="secondary" disabled={busy} onClick={()=>void runFineTune()}>Start search</button>}
               <small className="setup-note">{settings.strategy==='ml_ensemble'?(searchMethod==='grid'?'Retrains the models for 18 exit settings plus capacity checks, then tests 40 entry rules each. Takes several minutes.':'Retrains 24 random model settings and tests 40 entry rules each. Takes several minutes.'):'Ranks on validation data; the last 20% of the range is a forward test.'}</small>
             </div>
           </section>
@@ -212,7 +221,7 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
       </form>
       {(tuning||tuneError||tuneResult)&&<section className="fine-tune-panel" aria-live="polite">
         {tuning&&<div className="tune-progress"><div className="tune-progress-heading"><strong>{tuneProgress.message||'Preparing fine tuning'}</strong><span>{tuneProgress.percent}%</span></div><div className="tune-progress-track"><span style={{width:`${tuneProgress.percent}%`}}/></div><small>Evaluating every grid combination on training and validation data. Forward test is reserved for reporting.</small></div>}
-        {tuneError&&<p className="error" role="alert">{tuneError}</p>}
+        {tuneError&&<p className={tuneError.startsWith('Search stopped')?'notice':'error'} role="alert">{tuneError}</p>}
         {tuneResult&&selectedTuneCase&&<>
           <div className="fine-tune-heading"><div><h3>Historical search results</h3><p>Model: {tuneResult.model}. Evaluated {tuneResult.candidatesEvaluated} strategy candidates, including {tuneResult.adaptiveCandidatesEvaluated} ML guided settings. {tuneResult.searchMethod==='grid'?'Every combination was evaluated. Allocation, leverage, dates and costs stay as configured.':`Model cross-validation RMSE: ${fmt(tuneResult.modelCrossValidationRmse??0,3)}.`}</p></div></div>
           {tuneResult.gridAxes&&<details className="tune-model-details"><summary>Grid values searched</summary><div>{Object.entries(tuneResult.gridAxes).map(([name,values])=><span key={name}>{tuneLabels[name]??name}<b>{values.join(' / ')}</b></span>)}</div></details>}<div className="tune-case-picker"><label htmlFor="fine-tune-case">Select a candidate</label><select id="fine-tune-case" value={selectedTuneCase.id} onChange={event=>setSelectedTuneCaseId(event.target.value)}>{tuneCases.map(candidate=><option key={candidate.id} value={candidate.id}>Case {candidate.rank} · validation {fmt(candidate.periods.validation.metrics.winRate)}% win rate · {candidate.periods.validation.metrics.netPnl>=0?'+':''}${fmt(candidate.periods.validation.metrics.netPnl)} P&amp;L</option>)}</select><small>Cases are ranked by validation performance. Forward-test results are shown for comparison; choosing based on them can overfit that period.</small></div>

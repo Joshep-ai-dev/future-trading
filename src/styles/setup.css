@@ -910,3 +910,8 @@
 @media (max-width: 800px) {
   #page-results .bot-selector { grid-template-columns: minmax(0, 1fr); }
 }
+
+.setup-search-panel .danger-text {
+  border-color: #f6465d66 !important;
+  color: var(--red) !important;
+}

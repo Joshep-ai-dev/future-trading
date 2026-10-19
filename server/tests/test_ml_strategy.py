@@ -328,3 +328,32 @@ class QualityFilterTests(unittest.TestCase):
                                          (features.a.iloc[rows] > 0)*.6+.2])
         p_win = meta.predict(features, rows, probabilities)
         self.assertGreater(p_win[reliable.iloc[rows].to_numpy()].mean(), p_win[~reliable.iloc[rows].to_numpy()].mean()+.1)
+
+
+class SearchStopTests(unittest.TestCase):
+    def test_raising_from_progress_stops_the_ml_search(self):
+        from unittest.mock import patch
+        from server.strategies.ml import tuning
+        from server.strategies.strategy import BacktestRequest
+
+        class Stop(Exception):
+            pass
+
+        calls = []
+
+        def progress(percent, message):
+            calls.append(percent)
+            if len(calls) >= 3:
+                raise Stop()
+
+        request = BacktestRequest(start_date=date(2026, 1, 5), end_date=date(2026, 1, 12), strategy='ml_ensemble',
+                                  entry_timeframe='5m', capital=1000, fee_bps=0, slippage=0, spread=0, funding_bps=0,
+                                  ml=dict(train_bars=700, retrain_every=300, models={'extra_trees': 1.}, exit_mode='fixed',
+                                          feature_groups=['returns', 'volatility'], min_reward_cost=0., min_target=0.))
+        from server.strategies.ml import walk_forward
+        fold_cache.items.clear()
+        # One training thread makes the stop point deterministic (parallel blocks may report once more).
+        with patch.object(tuning, 'MODEL_GRID', dict(horizon=(6, 8), take_profit_atr=(1., 1.5), stop_atr=(1.,))),              patch.object(walk_forward, 'WORKERS', 1):
+            with self.assertRaises(Stop):
+                tuning.ml_fine_tune(market(3200), request, progress=progress)
+        self.assertEqual(len(calls), 3)

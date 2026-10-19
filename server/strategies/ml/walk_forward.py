@@ -146,8 +146,15 @@ def walk_forward(features: pd.DataFrame, labels: pd.Series, *, start_index: int,
                 progress(done[0], len(windows))
         return block_start, fold
 
-    with ThreadPoolExecutor(max_workers=max(1, min(WORKERS, len(windows)))) as pool:
-        trained = dict(pool.map(train, windows))
+    pool = ThreadPoolExecutor(max_workers=max(1, min(WORKERS, len(windows))))
+    futures = [pool.submit(train, block_start) for block_start in windows]
+    try:
+        trained = dict(future.result() for future in futures)
+    except BaseException:
+        # A stop request (or error) cancels blocks that have not started; running ones finish their step.
+        pool.shutdown(wait=False, cancel_futures=True)
+        raise
+    pool.shutdown()
     for block_start in blocks:
         block_end = min(n, block_start+retrain_every)
         fold = trained.get(block_start)

@@ -3,6 +3,7 @@ from datetime import date
 from typing import Literal
 from contextlib import asynccontextmanager
 from queue import Queue
+import threading
 from threading import Thread
 import json
 import logging
@@ -625,9 +626,35 @@ def bot_events(request: Request):
     return user_data_store.bot_events(int(request.state.user['id']))
 
 
+class SearchStopped(Exception):
+    """Raised inside a tuner when its user asks to stop the search."""
+
+
+# One cancel signal per user: a new search replaces it, the stop route sets it.
+search_cancels: dict[int, threading.Event] = {}
+
+
+@app.post('/api/backtest/fine-tune/stop')
+def fine_tune_stop(request: Request):
+    cancel = search_cancels.get(int(request.state.user['id']))
+    if cancel:
+        cancel.set()
+    return {'stopping': cancel is not None}
+
+
 @app.post('/api/backtest/fine-tune')
-def fine_tune_backtest(parameters: FineTuneRequest):
+def fine_tune_backtest(parameters: FineTuneRequest, request: Request):
     updates = Queue()
+    user_id = int(request.state.user['id'])
+    previous = search_cancels.get(user_id)
+    if previous:
+        previous.set()  # Starting a new search stops the user's previous one.
+    cancel = search_cancels[user_id] = threading.Event()
+
+    def progress(percent, message):
+        if cancel.is_set():
+            raise SearchStopped()
+        updates.put({'type': 'progress', 'percent': percent, 'message': message})
 
     def work():
         try:
@@ -635,15 +662,18 @@ def fine_tune_backtest(parameters: FineTuneRequest):
             tuner = ml_fine_tune if parameters.settings.strategy == 'ml_ensemble' else fine_tune
             result = tuner(frame, parameters.settings, search_method=parameters.search_method, objective=parameters.objective,
                            validation_start=parameters.validation_start, forward_start=parameters.forward_start,
-                               progress=lambda percent, message: updates.put(
-                                   {'type': 'progress', 'percent': percent, 'message': message}))
+                           progress=progress)
             updates.put({'type': 'result', 'result': result})
+        except SearchStopped:
+            updates.put({'type': 'stopped', 'detail': 'Search stopped.'})
         except (ValueError, OSError) as error:
             updates.put({'type': 'error', 'detail': str(error)})
         except Exception as error:
             logger.exception('Fine tuning failed')
             updates.put({'type': 'error', 'detail': str(error) or 'Fine tuning failed. Check the backend log.'})
         finally:
+            if search_cancels.get(user_id) is cancel:
+                search_cancels.pop(user_id, None)
             updates.put(None)
 
     Thread(target=work, daemon=True).start()
