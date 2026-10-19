@@ -8,9 +8,10 @@ import type {BacktestSettings} from '../../shared/types/types';
 import type {VenueStatus,BotStatus} from '../../shared/api/exchangeTypes';
 import ExchangeConnections from '../account/ExchangeConnections';
 import LiveBotPanel from './LiveBotPanel';
+import type {SavedSetup} from '../strategy/SetupPicker';
 
 type Venue=ExchangeVenue;
-export default function LiveExecution({view,settings,onSettingsChange,onConfigure,onManageAccount,onOpenTerminal}:{view:'account'|'terminal';settings:BacktestSettings;onSettingsChange?:(settings:BacktestSettings)=>void;onConfigure?:()=>void;onManageAccount?:()=>void;onOpenTerminal?:()=>void}){
+export default function LiveExecution({view,settings,onSettingsChange,onConfigure,onManageAccount,onOpenTerminal,profiles,onApplySetup}:{view:'account'|'terminal';settings:BacktestSettings;profiles?:SavedSetup[];onApplySetup?:(setup:SavedSetup)=>void;onSettingsChange?:(settings:BacktestSettings)=>void;onConfigure?:()=>void;onManageAccount?:()=>void;onOpenTerminal?:()=>void}){
   const [statuses,setStatuses]=useState<VenueStatus[]>([]),[bot,setBot]=useState<BotStatus>({running:false,venue:null,timeframe:null,position:null,strategyState:null,error:null,lastProcessed:null});
   const venue=useExchangeVenue();
   const [savedVenues,setSavedVenues]=useState<Venue[]>([]);
@@ -51,7 +52,7 @@ export default function LiveExecution({view,settings,onSettingsChange,onConfigur
       <TabBar items={[{value:'manual',label:'Manual',controls:'manual-ticket-panel'},{value:'bot',label:'Bots',controls:'bot-ticket-panel'}] as const} value={mode} onChange={setMode} label="Execution mode" idPrefix="execution-tab"/>
       <div className="ticket-connection"><StatusBadge tone={connected?'positive':'warning'} dot>{connected?selected.name+' connected':'No exchange connected'}</StatusBadge>{connected?<Button variant="ghost" disabled={busy} onClick={()=>{if(window.confirm('Disconnect this exchange? Local automation stops. Exchange positions and orders remain active.'))void run('/api/exchange/disconnect',{venue});}}>Disconnect</Button>:<Button variant="ghost" onClick={onManageAccount}>Connect API</Button>}</div>
       {account?.executionError&&<p className="exchange-inline-error">{account.executionError}</p>}
-      {mode==='manual'?<ManualOrderTicket venue={venue} connected={connected} busy={busy} blocked={positionCheckFailed} botRunning={botForVenue} leverage={liveLeverage} onLeverageChange={setLiveLeverage} onRun={run}/>:<LiveBotPanel key={venue} venue={venue} settings={settings} onSettingsChange={onSettingsChange} onConfigure={onConfigure} bot={bot} connected={connected} busy={busy} blocked={positionCheckFailed} positionOpen={positionOpen} leverage={liveLeverage} onLeverageChange={setLiveLeverage} onRun={run}/>}
+      {mode==='manual'?<ManualOrderTicket venue={venue} connected={connected} busy={busy} blocked={positionCheckFailed} botRunning={botForVenue} leverage={liveLeverage} onLeverageChange={setLiveLeverage} onRun={run}/>:<LiveBotPanel key={venue} venue={venue} settings={settings} onSettingsChange={onSettingsChange} onConfigure={onConfigure} profiles={profiles} onApplySetup={onApplySetup} bot={bot} connected={connected} busy={busy} blocked={positionCheckFailed} positionOpen={positionOpen} leverage={liveLeverage} onLeverageChange={setLiveLeverage} onRun={run}/>}
 
     </div>}
     {message&&<p className={message.startsWith('Error:')?'error':'live-result'} role="status">{message}</p>}
