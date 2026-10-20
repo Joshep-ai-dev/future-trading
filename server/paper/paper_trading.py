@@ -25,8 +25,8 @@ STATE = Path(__file__).resolve().parents[2] / 'data' / 'paper_trading.json'
 
 
 
-def quote_error_text(error: Exception) -> str:
-    """Readable live-quote failure; the bot keeps retrying and the message clears on the next success."""
+def quote_error_text(error: Exception, source: str = 'Live price update') -> str:
+    """Readable network failure; the bot keeps retrying and the message clears on the next success."""
     text = str(error)
     lowered = text.lower()
     if 'getaddrinfo' in lowered or 'name or service not known' in lowered or 'nodename nor servname' in lowered:
@@ -35,7 +35,7 @@ def quote_error_text(error: Exception) -> str:
         return 'The OKX price server did not answer in time. Retrying automatically.'
     if 'urlopen error' in lowered or 'connection' in lowered:
         return 'Could not connect to the OKX price server. Retrying automatically.'
-    return f'Live price update failed: {text[:160]}. Retrying automatically.'
+    return f'{source} failed: {text[:160]}. Retrying automatically.'
 
 class PaperTrading:
     def __init__(self, path=STATE, loader=load_bars, refresh=refresh_service, now=time.time, store=None, live_fetch=None):
@@ -276,13 +276,14 @@ class PaperTrading:
             if status['running']:
                 return  # Another download owns the cache; retry on the next cycle.
             if status['error']:
-                self.error = status['error']
+                self.error = quote_error_text(Exception(status['error']), 'OKX candle download')
                 return
+            self.error = None  # The download worked again: drop the old network error.
             if self.stop.is_set():
                 return
             self.advance()
         except Exception as error:
-            self.error = str(error)
+            self.error = quote_error_text(error, 'Paper bot update')
 
     def update_quote(self):
         with self.lock:

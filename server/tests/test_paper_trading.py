@@ -129,13 +129,20 @@ class PaperTradingTests(unittest.TestCase):
             service=PaperTrading(Path(folder)/'paper.json')
             service.state={'running':True}
             class Refresh:
+                error='<urlopen error [Errno 11001] getaddrinfo failed>'
                 def refresh(self):
-                    return {'running':False,'error':'Offline'}
+                    return {'running':False,'error':self.error}
             service.refresh=Refresh()
             with patch.object(service,'advance') as advance:
                 service.cycle()
                 advance.assert_not_called()
-            self.assertEqual(service.error,'Offline')
+            self.assertIn('No internet connection',service.error)
+            # The next successful download clears the message.
+            service.refresh.error=None
+            service.live_check=0
+            with patch.object(service,'advance'):
+                service.cycle()
+            self.assertIsNone(service.error)
 
     def test_halted_account_cannot_resume(self):
         with TemporaryDirectory() as folder:
