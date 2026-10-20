@@ -24,6 +24,19 @@ def session_request(cfg: dict):
 STATE = Path(__file__).resolve().parents[2] / 'data' / 'paper_trading.json'
 
 
+
+def quote_error_text(error: Exception) -> str:
+    """Readable live-quote failure; the bot keeps retrying and the message clears on the next success."""
+    text = str(error)
+    lowered = text.lower()
+    if 'getaddrinfo' in lowered or 'name or service not known' in lowered or 'nodename nor servname' in lowered:
+        return 'No internet connection: the OKX price server could not be reached. Retrying automatically.'
+    if 'timed out' in lowered or 'timeout' in lowered:
+        return 'The OKX price server did not answer in time. Retrying automatically.'
+    if 'urlopen error' in lowered or 'connection' in lowered:
+        return 'Could not connect to the OKX price server. Retrying automatically.'
+    return f'Live price update failed: {text[:160]}. Retrying automatically.'
+
 class PaperTrading:
     def __init__(self, path=STATE, loader=load_bars, refresh=refresh_service, now=time.time, store=None, live_fetch=None):
         self.path, self.loader, self.refresh, self.now = Path(path), loader, refresh, now
@@ -293,7 +306,7 @@ class PaperTrading:
         except Exception as error:
             with self.lock:
                 if self.state and self.state['startedAt']==identity:
-                    self.state['quoteError']=str(error)
+                    self.state['quoteError']=quote_error_text(error)
 
     def start(self):
         def loop():
