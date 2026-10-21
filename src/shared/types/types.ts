@@ -66,7 +66,7 @@ export type IndicatorPoint = {time: number; ema20: number | null; ema50: number 
 export type BacktestResult = {runId?: number|null; strategy?: string; model?: ModelReport|null; strategyName: string; executionTimeframe: string; barSeconds: number; indicators: IndicatorPoint[]; settings: BacktestSettings; backtest: PeriodResult; candles: Analysis['candles']};
 export type TuneMetrics = {averageWin?:number;averageLoss?:number;payoffRatio?:number|null;score:number;trades:number;wins:number;losses:number;winRate:number;netPnl:number;returnPct:number;maxDrawdownPct:number;averageLossPct:number};
 export type FineTuneCase = {
-  id:string;rank:number;bestSettings:BacktestSettings;
+  id:string;rank:number;reliable?:boolean;bestSettings:BacktestSettings;
   bestParameters:Partial<BacktestSettings['bb_reversal']>&{leverage?:number};
   periods:{train:{metrics:TuneMetrics};validation:{metrics:TuneMetrics};forwardTest:{metrics:TuneMetrics}};
 };

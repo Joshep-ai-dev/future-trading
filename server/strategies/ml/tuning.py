@@ -23,7 +23,7 @@ from dataclasses import asdict, replace
 import pandas as pd
 
 from server.market.data import TIMEFRAMES
-from server.strategies.fine_tuning import _ranking_key, _score
+from server.strategies.fine_tuning import _score
 from server.strategies.ml.strategy import MLSettings, execute, prepare
 from server.strategies.strategy import seconds, split_points
 
@@ -36,6 +36,24 @@ LEARNED_ENTRY_GRID = dict(entry_threshold=(.45, .5, .55, .6), min_edge=(.05, .1,
                           trail_start=(.5, .8), quality_threshold=(.5, .55, .6))
 RANDOM_MODELS = 24
 FINALISTS = 5
+# A few lucky validation trades must not win the search: require a real sample in both periods.
+MIN_VALIDATION_TRADES = 10
+MIN_TRAIN_TRADES = 20
+
+
+def _ml_ranking_key(train: dict, validation: dict, objective: str) -> tuple:
+    """Rank on train + validation together (both are out-of-sample walk-forward predictions).
+
+    Order: enough trades in both periods, profitable in both, then combined profit (or score),
+    then the shallower of the two drawdowns. The forward test is never used.
+    """
+    enough = validation['trades'] >= MIN_VALIDATION_TRADES and train['trades'] >= MIN_TRAIN_TRADES
+    consistent = train['netPnl'] > 0 and validation['netPnl'] > 0
+    combined = train['netPnl']+validation['netPnl']
+    drawdown = -max(abs(train['maxDrawdownPct']), abs(validation['maxDrawdownPct']))  # higher = shallower
+    if objective == 'profit':
+        return (enough, consistent, combined, drawdown)
+    return (enough, consistent, train['score']+validation['score'], combined)
 
 
 def _combinations(axes: dict) -> list[dict]:
@@ -115,7 +133,8 @@ def ml_fine_tune(frame: pd.DataFrame, request, progress=None, search_method='gri
         prepared = prepared_cache[key]
         for entry in entry_candidates:
             candidate = replace(settings, **entry)
-            scored.append((run_segment(prepared, candidate, 'validation'), {**params, **entry}, key))
+            scored.append((run_segment(prepared, candidate, 'validation'), {**params, **entry}, key,
+                           run_segment(prepared, candidate, 'train')))
 
     report(2, f'Training {len(model_candidates)} model settings × {len(entry_candidates)} entry rules')
     for number, params in enumerate(model_candidates):
@@ -124,7 +143,7 @@ def ml_fine_tune(frame: pd.DataFrame, request, progress=None, search_method='gri
     capacity_trials = 0
     if search_method == 'grid':
         best_models = []
-        for metrics, params, _ in sorted(scored, key=lambda item: _ranking_key(item[0], objective), reverse=True):
+        for metrics, params, _, _ in sorted(scored, key=lambda item: _ml_ranking_key(item[3], item[0], objective), reverse=True):
             model_part = {k: params[k] for k in model_grid}
             if model_part not in best_models:
                 best_models.append(model_part)
@@ -135,25 +154,26 @@ def ml_fine_tune(frame: pd.DataFrame, request, progress=None, search_method='gri
             evaluate_model(params, 'Capacity check', 72, 14, number, len(extra))
         capacity_trials = len(extra)
 
-    scored.sort(key=lambda item: _ranking_key(item[0], objective), reverse=True)
+    scored.sort(key=lambda item: _ml_ranking_key(item[3], item[0], objective), reverse=True)
     finalists, seen = [], set()
-    for metrics, params, key in scored:
+    for metrics, params, key, train_metrics in scored:
         identity = tuple(sorted(params.items()))
         if identity not in seen:
             seen.add(identity)
-            finalists.append((metrics, params, key))
+            finalists.append((metrics, params, key, train_metrics))
         if len(finalists) == FINALISTS:
             break
 
     candidates = []
-    for rank, (validation_metrics, params, key) in enumerate(finalists, start=1):
+    for rank, (validation_metrics, params, key, train_metrics) in enumerate(finalists, start=1):
         settings = replace(base, **params)
         prepared = prepared_cache[key]
         report(88+rank*2, f'Reporting finalist {rank} of {len(finalists)} on train and forward periods')
         candidates.append(dict(
             id=f'case-{rank}', rank=rank, bestParameters=params,
             bestSettings=request.model_copy(update={'ml': asdict(settings)}).model_dump(mode='json'),
-            periods=dict(train=dict(metrics=run_segment(prepared, settings, 'train')),
+            reliable=_ml_ranking_key(train_metrics, validation_metrics, objective)[:2] == (True, True),
+            periods=dict(train=dict(metrics=train_metrics),
                          validation=dict(metrics=validation_metrics),
                          forwardTest=dict(metrics=run_segment(prepared, settings, 'forwardTest')))))
     best = candidates[0]
@@ -163,10 +183,12 @@ def ml_fine_tune(frame: pd.DataFrame, request, progress=None, search_method='gri
         bestSettings=best['bestSettings'], bestParameters=best['bestParameters'],
         searchMethod=search_method, gridAxes=grid_axes,
         model='Walk-forward grid search' if search_method == 'grid' else 'Walk-forward random search',
-        objective=('Maximize validation net profit after costs; prefer at least 20 trades; drawdown breaks ties. '
+        objective=(f'Maximize train + validation net profit after costs; requires at least {MIN_TRAIN_TRADES} training and '
+                   f'{MIN_VALIDATION_TRADES} validation trades and a profit in both; drawdown breaks ties. '
                    'All periods use out-of-sample model predictions; the forward test is not used for selection.'
                    if objective == 'profit' else
-                   '35% win rate, 35% profit, 20% drawdown control, 10% average loss control; small samples discounted.'),
+                   f'35% win rate, 35% profit, 20% drawdown control, 10% average loss control, on train + validation; '
+                   f'requires {MIN_TRAIN_TRADES}/{MIN_VALIDATION_TRADES} trades and a profit in both periods.'),
         rankingObjective=objective, candidates=candidates, modelHyperparameters=None, modelCrossValidationRmse=None,
         candidatesEvaluated=len(scored), seedCandidates=len(model_candidates), adaptiveCandidatesEvaluated=capacity_trials,
         shortlisted=len(finalists),

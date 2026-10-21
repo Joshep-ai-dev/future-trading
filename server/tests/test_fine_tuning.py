@@ -47,3 +47,14 @@ class ProfitRankingTests(unittest.TestCase):
         adequate = dict(trades=30, netPnl=100., maxDrawdownPct=-5., winRate=55., score=65.)
         tiny = {**adequate, 'trades': 1, 'netPnl': 1000.}
         self.assertGreater(_ranking_key(adequate, 'profit'), _ranking_key(tiny, 'profit'))
+
+
+class MLRankingTests(unittest.TestCase):
+    def test_lucky_small_sample_loses_to_steady_profit(self) -> None:
+        from server.strategies.ml.tuning import _ml_ranking_key
+        metrics = lambda trades, pnl, drawdown=10.: dict(trades=trades, netPnl=pnl, maxDrawdownPct=drawdown, score=0.)
+        lucky = _ml_ranking_key(metrics(469, -5146.73, 92.1), metrics(3, 101.09, 1.4), 'profit')
+        steady = _ml_ranking_key(metrics(120, 300.), metrics(30, 40.), 'profit')
+        losing_train = _ml_ranking_key(metrics(120, -50.), metrics(30, 400.), 'profit')
+        self.assertGreater(steady, losing_train)
+        self.assertGreater(losing_train, lucky)
