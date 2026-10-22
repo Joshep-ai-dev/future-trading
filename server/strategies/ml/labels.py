@@ -29,12 +29,19 @@ def first_touch(high: np.ndarray, low: np.ndarray, upper: np.ndarray, lower: np.
     return up_hit, down_hit
 
 
-def triple_barrier(frame: pd.DataFrame, atr: pd.Series, horizon: int, take_profit: float, stop: float) -> pd.Series:
-    """Class per candle: LONG, SHORT or NONE. The last ``horizon`` candles are NaN (unknown yet)."""
+def triple_barrier(frame: pd.DataFrame, atr: pd.Series, horizon: int, take_profit: float, stop: float,
+                   cost: np.ndarray | float = 0.) -> pd.Series:
+    """Class per candle: LONG, SHORT or NONE. The last ``horizon`` candles are NaN (unknown yet).
+
+    ``cost`` is the round-trip trading cost in price units (fees, spread, slippage). The take-profit
+    barrier moves out by it, so a side only wins when its move still clears the target after costs:
+    moves too small to pay the fees are labelled NONE instead of teaching the models to chase them.
+    """
     close, high, low = (frame[column].to_numpy(float) for column in ('close', 'high', 'low'))
     distance = atr.to_numpy(float)
-    long_up, long_down = first_touch(high, low, close+take_profit*distance, close-stop*distance, horizon)
-    short_up, short_down = first_touch(high, low, close+stop*distance, close-take_profit*distance, horizon)
+    cost = np.nan_to_num(np.broadcast_to(np.asarray(cost, float), close.shape), nan=0.)
+    long_up, long_down = first_touch(high, low, close+take_profit*distance+cost, close-stop*distance, horizon)
+    short_up, short_down = first_touch(high, low, close+stop*distance, close-take_profit*distance-cost, horizon)
     long_win = long_up < long_down
     short_win = short_down < short_up
     label = np.where(long_win & ~short_win, LONG, np.where(short_win & ~long_win, SHORT, NONE)).astype(float)

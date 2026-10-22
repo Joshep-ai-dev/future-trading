@@ -357,3 +357,30 @@ class SearchStopTests(unittest.TestCase):
             with self.assertRaises(Stop):
                 tuning.ml_fine_tune(market(3200), request, progress=progress)
         self.assertEqual(len(calls), 3)
+
+
+class CostAwareLabelTests(unittest.TestCase):
+    def frame(self, closes):
+        index = pd.date_range('2026-01-01', periods=len(closes), freq='h', tz='UTC')
+        close = np.asarray(closes, float)
+        return pd.DataFrame(dict(open=close, high=close, low=close, close=close), index=index)
+
+    def test_move_too_small_to_pay_costs_is_not_a_win(self) -> None:
+        frame = self.frame([100, 101.2, 101.2, 101.2, 101.2])
+        atr = pd.Series(1., index=frame.index)
+        free = triple_barrier(frame, atr, horizon=2, take_profit=1., stop=1.)
+        costly = triple_barrier(frame, atr, horizon=2, take_profit=1., stop=1., cost=.5)
+        self.assertEqual(free.iloc[0], LONG)
+        self.assertEqual(costly.iloc[0], NONE)
+
+    def test_request_costs_reach_settings_and_cache_key(self) -> None:
+        from types import SimpleNamespace
+        from server.strategies.ml.strategy import with_label_costs
+        base = MLSettings()
+        priced = with_label_costs(base, SimpleNamespace(fee_bps=6, slippage=.01, spread=.02))
+        self.assertEqual((priced.label_fee_bps, priced.label_slippage, priced.label_spread), (6., .01, .02))
+        self.assertNotEqual(priced.model_key(), base.model_key())
+        cost = priced.label_cost(pd.Series([50.]))
+        self.assertAlmostEqual(float(cost[0]), 50*2*6/10000+2*.01+.02)
+        from dataclasses import replace
+        self.assertEqual(replace(priced, cost_aware_labels=False).label_cost(pd.Series([50.])), 0.)

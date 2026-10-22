@@ -7,7 +7,7 @@ dashboard can treat both strategies uniformly.
 """
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 
 import numpy as np
 import pandas as pd
@@ -63,6 +63,12 @@ class MLSettings:
     device: str = 'auto'
     # Recent candles matter more: training weights halve every ``recency_half_life`` candles back (0 = equal).
     recency_half_life: int = 2000
+    # Fee-aware training: winning labels must clear the round-trip cost. The cost fields are filled
+    # from the backtest request (see ``with_label_costs``), not set by hand.
+    cost_aware_labels: bool = True
+    label_fee_bps: float = 0.
+    label_slippage: float = 0.
+    label_spread: float = 0.
 
     def __post_init__(self):
         unknown = [key for key in self.feature_groups if key not in FEATURE_GROUPS]
@@ -108,7 +114,21 @@ class MLSettings:
         return config_key(groups=sorted(self.feature_groups), models=self.models, horizon=self.horizon,
                           tp=self.take_profit_atr, sl=self.stop_atr, atr=self.atr_length, capacity=self.capacity,
                           exits=self.exit_mode, quantiles=(self.tp_quantile, self.sl_quantile) if self.exit_mode == 'learned' else None,
-                          recency=self.recency_half_life, quality=self.quality_filter, device=self.device)
+                          recency=self.recency_half_life, quality=self.quality_filter, device=self.device,
+                          label_cost=(self.label_fee_bps, self.label_slippage, self.label_spread) if self.cost_aware_labels else None)
+
+    def label_cost(self, close: pd.Series) -> np.ndarray | float:
+        """Round-trip cost per candle in price units, as the execution engine charges it."""
+        if not self.cost_aware_labels:
+            return 0.
+        return close.to_numpy(float)*2*self.label_fee_bps/10000+2*self.label_slippage+self.label_spread
+
+
+def with_label_costs(settings: MLSettings, request) -> MLSettings:
+    """Copy the request's trading costs into the settings so training labels include them."""
+    return replace(settings, label_fee_bps=float(getattr(request, 'fee_bps', 0) or 0),
+                   label_slippage=float(getattr(request, 'slippage', 0) or 0),
+                   label_spread=float(getattr(request, 'spread', 0) or 0))
 
 
 def _atr(frame: pd.DataFrame, length: int) -> pd.Series:
@@ -196,7 +216,8 @@ def prepare(frame: pd.DataFrame, settings: MLSettings, start=None, progress=None
         raise ValueError('Not enough candles for the ML strategy')
     atr = _atr(clean, settings.atr_length)
     features = build_features(clean, settings.feature_groups)
-    labels = triple_barrier(clean, atr, settings.horizon, settings.take_profit_atr, settings.stop_atr)
+    labels = triple_barrier(clean, atr, settings.horizon, settings.take_profit_atr, settings.stop_atr,
+                            cost=settings.label_cost(clean.close))
     start_index = int(np.searchsorted(clean.index, start)) if start is not None else 0
     targets = excursions(clean, atr, settings.horizon) if settings.exit_mode == 'learned' else None
     result = walk_forward(features, labels, start_index=start_index, train_bars=settings.train_bars,

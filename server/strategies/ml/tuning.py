@@ -24,7 +24,7 @@ import pandas as pd
 
 from server.market.data import TIMEFRAMES
 from server.strategies.fine_tuning import _score
-from server.strategies.ml.strategy import MLSettings, execute, prepare
+from server.strategies.ml.strategy import MLSettings, execute, prepare, with_label_costs
 from server.strategies.strategy import seconds, split_points
 
 MODEL_GRID = dict(horizon=(8, 12, 24), take_profit_atr=(1., 1.5, 2.), stop_atr=(.75, 1.))
@@ -86,7 +86,7 @@ def ml_fine_tune(frame: pd.DataFrame, request, progress=None, search_method='gri
     if search_method not in ('grid', 'ml'):
         raise ValueError('Search method must be grid or ml')
     report = progress or (lambda percent, message: None)
-    base = MLSettings(**request.ml)
+    base = with_label_costs(MLSettings(**request.ml), request)
     duration = TIMEFRAMES[request.entry_timeframe]
     start = pd.Timestamp(seconds(request.start_date), unit='s', tz='UTC')
     end = pd.Timestamp(seconds(request.end_date)+86400, unit='s', tz='UTC')

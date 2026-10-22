@@ -77,8 +77,8 @@ class MLEnsemble(StrategyRunner):
 
     @staticmethod
     def settings(request):
-        from server.strategies.ml.strategy import MLSettings
-        return MLSettings(**request.ml)
+        from server.strategies.ml.strategy import MLSettings, with_label_costs
+        return with_label_costs(MLSettings(**request.ml), request)
 
     def run(self, frame, request, *, start=None, close_at_end=False, bar_seconds=None):
         from server.strategies.ml.strategy import run_ml_backtest
