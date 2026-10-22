@@ -384,3 +384,33 @@ class CostAwareLabelTests(unittest.TestCase):
         self.assertAlmostEqual(float(cost[0]), 50*2*6/10000+2*.01+.02)
         from dataclasses import replace
         self.assertEqual(replace(priced, cost_aware_labels=False).label_cost(pd.Series([50.])), 0.)
+
+
+class SupertrendStopTests(unittest.TestCase):
+    def bars(self, closes):
+        index = pd.date_range('2026-01-01', periods=len(closes), freq='h', tz='UTC')
+        close = np.asarray(closes, float)
+        return pd.DataFrame(dict(open=close, high=close+.2, low=close-.2, close=close), index=index)
+
+    def test_line_flips_with_the_trend(self) -> None:
+        from server.strategies.supertrend import supertrend
+        bars = self.bars(list(np.linspace(100, 110, 40))+list(np.linspace(110, 95, 40)))
+        line, direction = supertrend(bars, 10, 2.)
+        self.assertEqual(direction[35], 1.)
+        self.assertLess(line[35], bars.close.iloc[35])
+        self.assertEqual(direction[-1], -1.)
+        self.assertGreater(line[-1], bars.close.iloc[-1])
+
+    def test_stop_follows_line_and_flip_exits(self) -> None:
+        bars = self.bars(list(np.linspace(100, 110, 40))+list(np.linspace(110, 95, 40)))
+        signals = np.zeros(len(bars)); signals[15] = 1
+        settings = ExecutionSettings(initial_capital=1000., leverage=1., amount_per_trade=100., amount_unit='percent',
+                                     max_hold_bars=10**6, reverse_on_signal=False, min_tick=.01)
+        from server.strategies.supertrend import supertrend
+        line, direction = supertrend(bars, 10, 2.)
+        result = run_signal_backtest(bars, signals, np.full(len(bars), 50.), np.full(len(bars), np.inf), settings,
+                                     supertrend_line=line, supertrend_direction=direction)
+        trade = result['trades'].iloc[0]
+        self.assertIn(trade.exit_reason, ('stop', 'supertrend_flip'))
+        self.assertTrue(any(point['reason'] == 'supertrend' for point in trade.stop_history))
+        self.assertGreater(trade.exit_price, 100.)

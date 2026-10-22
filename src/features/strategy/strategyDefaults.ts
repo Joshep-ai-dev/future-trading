@@ -15,7 +15,7 @@ export const mlDefaults: BacktestSettings['ml'] = {
   horizon:24,take_profit_atr:1.5,stop_atr:1,atr_length:14,entry_threshold:.55,min_edge:.15,min_reward_cost:3,
   train_bars:6000,retrain_every:2000,trade_mode:'Both',reverse_on_signal:true,amount_per_trade:100,amount_unit:'percent',
   capacity:'standard',exit_mode:'learned',tp_quantile:.5,sl_quantile:.7,min_reward_risk:1.2,trailing:true,trail_start:.6,trail_noise:1,
-  regimes:['Trend up','Trend down','Range','Volatile'],recency_half_life:2000,min_atr:.03,min_target:.5,let_profit_run:true,quality_filter:true,quality_threshold:.5,cost_aware_labels:true,device:'auto',
+  regimes:['Trend up','Trend down','Range','Volatile'],recency_half_life:2000,min_atr:.03,min_target:.5,let_profit_run:true,quality_filter:true,quality_threshold:.5,cost_aware_labels:true,supertrend_stop:false,supertrend_length:10,supertrend_multiplier:3,device:'auto',
 };
 
 export const REGIME_NAMES=['Trend up','Trend down','Range','Volatile'] as const;

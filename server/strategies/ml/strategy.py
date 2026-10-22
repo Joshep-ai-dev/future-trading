@@ -65,6 +65,10 @@ class MLSettings:
     recency_half_life: int = 2000
     # Fee-aware training: winning labels must clear the round-trip cost. The cost fields are filled
     # from the backtest request (see ``with_label_costs``), not set by hand.
+    # Supertrend stop: the stop follows the Supertrend line and a Supertrend flip closes the trade.
+    supertrend_stop: bool = False
+    supertrend_length: int = 10
+    supertrend_multiplier: float = 3.
     cost_aware_labels: bool = True
     label_fee_bps: float = 0.
     label_slippage: float = 0.
@@ -94,6 +98,8 @@ class MLSettings:
                   (self.capacity in ('light', 'standard', 'rich'), 'Model capacity must be light, standard or rich'),
                   (self.exit_mode in ('learned', 'fixed'), 'Exit mode must be learned or fixed'),
                   (.05 <= self.tp_quantile <= .95 and .05 <= self.sl_quantile <= .95, 'Exit quantiles must be 0.05-0.95'),
+                  (2 <= self.supertrend_length <= 500, 'Supertrend length must be 2-500'),
+                  (.1 <= self.supertrend_multiplier <= 20, 'Supertrend multiplier must be 0.1-20'),
                   (0 <= self.min_reward_risk <= 10, 'Minimum reward/risk must be 0-10'),
                   (.1 <= self.trail_start <= 2 and .2 <= self.trail_noise <= 5, 'Trailing settings out of range'),
                   (bool(self.regimes) and all(name in REGIME_NAMES for name in self.regimes), 'Choose at least one valid market regime'),
@@ -122,6 +128,14 @@ class MLSettings:
         if not self.cost_aware_labels:
             return 0.
         return close.to_numpy(float)*2*self.label_fee_bps/10000+2*self.label_slippage+self.label_spread
+
+
+def _supertrend_inputs(bars: pd.DataFrame, settings: MLSettings) -> dict:
+    if not settings.supertrend_stop:
+        return {}
+    from server.strategies.supertrend import supertrend
+    line, direction = supertrend(bars, settings.supertrend_length, settings.supertrend_multiplier)
+    return dict(supertrend_line=line, supertrend_direction=direction)
 
 
 def with_label_costs(settings: MLSettings, request) -> MLSettings:
@@ -278,7 +292,8 @@ def execute(prepared: Prepared, settings: MLSettings, *, initial_capital: float,
     output = run_signal_backtest(bars, signals, stop_distance, target_distance, execution,
                                  start=start, close_at_end=close_at_end, bar_seconds=bar_seconds,
                                  fee_bps=fee_bps, slippage=slippage, spread=spread, funding_bps=funding_bps,
-                                 trail_activation=trail_activation, trail_distance=trail_distance)
+                                 trail_activation=trail_activation, trail_distance=trail_distance,
+                                 **_supertrend_inputs(bars, settings))
     trades = output['trades']
     if len(trades):
         codes = bars['regime'].reindex(trades.entry_time).to_numpy() if 'regime' in bars else np.full(len(trades), -1)

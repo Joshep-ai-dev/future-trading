@@ -33,20 +33,29 @@ def _seconds(time) -> float:
 def run_signal_backtest(bars: pd.DataFrame, signals: np.ndarray, stop_distance: np.ndarray, target_distance: np.ndarray,
                         settings: ExecutionSettings, *, start=None, close_at_end=False, bar_seconds=None,
                         fee_bps=0., slippage=0., spread=0., funding_bps=0.,
-                        trail_activation: np.ndarray | None = None, trail_distance: np.ndarray | None = None):
+                        trail_activation: np.ndarray | None = None, trail_distance: np.ndarray | None = None,
+                        supertrend_line: np.ndarray | None = None, supertrend_direction: np.ndarray | None = None):
     """Simulate trades. Optional per-bar trailing: after price moves ``trail_activation`` in favour,
-    the stop follows the best price at ``trail_distance`` and never loosens (NaN disables trailing)."""
+    the stop follows the best price at ``trail_distance`` and never loosens (NaN disables trailing).
+
+    Optional Supertrend stop: from the candle after entry, while the Supertrend points the position's
+    way the stop moves up to its line (never loosens); a close on the other side of the line (a flip)
+    exits at that close."""
     if not all(np.isfinite(v) for v in (fee_bps, slippage, spread, funding_bps)) or min(fee_bps, slippage, spread) < 0:
         raise ValueError('Execution costs must be finite; fees, slippage and spread must be nonnegative')
     signals = np.asarray(signals, float)
     n_all = len(signals)
     trail_activation = np.full(n_all, np.nan) if trail_activation is None else np.asarray(trail_activation, float)
     trail_distance = np.full(n_all, np.nan) if trail_distance is None else np.asarray(trail_distance, float)
+    use_supertrend = supertrend_line is not None and supertrend_direction is not None
+    supertrend_line = np.full(n_all, np.nan) if supertrend_line is None else np.asarray(supertrend_line, float)
+    supertrend_direction = np.full(n_all, np.nan) if supertrend_direction is None else np.asarray(supertrend_direction, float)
     if start is not None:
         keep = bars.index >= start
         bars, signals = bars.loc[keep], signals[keep]
         stop_distance, target_distance = np.asarray(stop_distance)[keep], np.asarray(target_distance)[keep]
         trail_activation, trail_distance = trail_activation[keep], trail_distance[keep]
+        supertrend_line, supertrend_direction = supertrend_line[keep], supertrend_direction[keep]
     adverse = slippage+spread/2
     cash, position, trades, records = float(settings.initial_capital), None, [], []
 
@@ -124,6 +133,15 @@ def run_signal_backtest(bars: pd.DataFrame, signals: np.ndarray, stop_distance: 
                                                       reason='activation' if activated else 'trailing'))
                     if direction*(bar.close-p['stop']) <= 0:
                         close_position(time, bar.close, 'trailing_stop_at_close')
+            if use_supertrend and position is not None and i > position['entry_index'] and np.isfinite(supertrend_line[i]):
+                p = position
+                if supertrend_direction[i] == -direction:
+                    close_position(time, bar.close, 'supertrend_flip')
+                else:
+                    previous = p['stop']
+                    p['stop'] = max(previous, supertrend_line[i]) if direction == 1 else min(previous, supertrend_line[i])
+                    if p['stop'] != previous:
+                        p['stop_history'].append(dict(time=int(_seconds(time)), price=float(p['stop']), reason='supertrend'))
         signal = int(signals[i]) if np.isfinite(signals[i]) else 0
         valid = signal and np.isfinite(stop_distance[i]) and not np.isnan(target_distance[i])
         if valid and position is not None and position['direction'] != signal and settings.reverse_on_signal:
