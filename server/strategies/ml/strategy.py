@@ -276,6 +276,8 @@ def execute(prepared: Prepared, settings: MLSettings, *, initial_capital: float,
     trail_distance = np.where(signals == -1, plan['short_trail'], plan['long_trail'])
     if settings.let_profit_run:
         target_distance = np.full(len(target_distance), np.inf)
+    # Without a take-profit something must lock in gains: the trailing stop, unless the Supertrend stop does it.
+    if settings.let_profit_run and (settings.trailing or not settings.supertrend_stop):
         trail_activation = np.maximum(np.nan_to_num(trail_activation, nan=0.), settings.min_target)
         trail_distance = np.where(np.isfinite(trail_distance), trail_distance, stop_distance)
     execution = ExecutionSettings(initial_capital=initial_capital, leverage=leverage,

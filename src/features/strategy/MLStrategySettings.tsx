@@ -12,6 +12,9 @@ export default function MLStrategySettings({settings,onChange}:{settings:Backtes
   const num=(key:NumberKey,label:string,min:number,max:number,step:number|'any',hint?:string,unit?:string)=>
     <Field key={key} label={label} hint={hint} unit={unit}><input type="number" required min={min} max={max} step={step} value={config[key]} onChange={event=>setMl({[key]:Number(event.target.value)} as Partial<MLConfig>)}/></Field>;
   const toggleGroup=(key:string)=>setMl({feature_groups:config.feature_groups.includes(key)?config.feature_groups.filter(item=>item!==key):[...config.feature_groups,key]});
+  // Let profits run has no take-profit, so trailing stays on unless the Supertrend stop locks in gains.
+  const trailingLocked=config.let_profit_run&&!config.supertrend_stop;
+  const trailingOn=config.trailing||trailingLocked;
   const activeModels=Object.values(config.models).filter(weight=>weight>0).length;
   const activeGpuModels=(catalog?.models??[]).filter(model=>model.device==='cuda'&&(config.models[model.key]??0)>0).length;
 
@@ -82,8 +85,8 @@ export default function MLStrategySettings({settings,onChange}:{settings:Backtes
         {num('atr_length','ATR length',2,500,1,undefined,'bars')}
       </div>
       <div className="setup-option"><div><strong>Let profits run</strong><p>No fixed take-profit and no time exit: the trade stays open until the stop or the trailing stop closes it. Trailing starts at +{config.min_target} USDT.</p></div><label className="setup-toggle"><input type="checkbox" role="switch" aria-label="Let profits run" checked={config.let_profit_run} onChange={event=>setMl({let_profit_run:event.target.checked,trailing:event.target.checked?true:config.trailing})}/><i aria-hidden="true"/><span>{config.let_profit_run?'On':'Off'}</span></label></div>
-      <div className="setup-option"><div><strong>Trailing stop</strong><p>{config.exit_mode==='learned'?'Starts after a share of the learned target and follows price by the learned noise level.':'Starts after a share of the target and follows price by the stop distance.'}</p></div><label className="setup-toggle"><input type="checkbox" role="switch" aria-label="Trailing stop" checked={config.trailing||config.let_profit_run} disabled={config.let_profit_run} onChange={event=>setMl({trailing:event.target.checked})}/><i aria-hidden="true"/><span>{config.trailing?'On':'Off'}</span></label></div>
-      {config.trailing&&<div className="setup-grid setup-grid--nested">
+      <div className="setup-option"><div><strong>Trailing stop</strong><p>{config.exit_mode==='learned'?'Starts after a share of the learned target and follows price by the learned noise level.':'Starts after a share of the target and follows price by the stop distance.'}</p>{trailingLocked&&<p className="setup-note">Locked on while “Let profits run” is on: with no take-profit it is the only profit exit. Turn on the Supertrend stop, or turn off “Let profits run”, to switch it off.</p>}</div><label className="setup-toggle"><input type="checkbox" role="switch" aria-label="Trailing stop" checked={trailingOn} disabled={trailingLocked} onChange={event=>setMl({trailing:event.target.checked})}/><i aria-hidden="true"/><span>{trailingOn?'On':'Off'}</span></label></div>
+      {trailingOn&&<div className="setup-grid setup-grid--nested">
         {num('trail_start','Start trailing at',.1,2,'any','Share of the target reached.','× target')}
         {num('trail_noise','Trailing distance',.2,5,'any','Multiple of the stop distance.','× stop')}
       </div>}
