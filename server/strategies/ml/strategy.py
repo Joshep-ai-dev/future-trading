@@ -65,8 +65,9 @@ class MLSettings:
     recency_half_life: int = 2000
     # Fee-aware training: winning labels must clear the round-trip cost. The cost fields are filled
     # from the backtest request (see ``with_label_costs``), not set by hand.
-    # Supertrend stop: the stop follows the Supertrend line and a Supertrend flip closes the trade.
-    supertrend_stop: bool = False
+    # Supertrend exit (default): the only exit. Entries must agree with the Supertrend direction, the stop
+    # starts on its line and follows it, and a flip closes the trade. Off = the learned/fixed exits below.
+    supertrend_stop: bool = True
     supertrend_length: int = 10
     supertrend_multiplier: float = 3.
     cost_aware_labels: bool = True
@@ -128,14 +129,6 @@ class MLSettings:
         if not self.cost_aware_labels:
             return 0.
         return close.to_numpy(float)*2*self.label_fee_bps/10000+2*self.label_slippage+self.label_spread
-
-
-def _supertrend_inputs(bars: pd.DataFrame, settings: MLSettings) -> dict:
-    if not settings.supertrend_stop:
-        return {}
-    from server.strategies.supertrend import supertrend
-    line, direction = supertrend(bars, settings.supertrend_length, settings.supertrend_multiplier)
-    return dict(supertrend_line=line, supertrend_direction=direction)
 
 
 def with_label_costs(settings: MLSettings, request) -> MLSettings:
@@ -252,8 +245,14 @@ def execute(prepared: Prepared, settings: MLSettings, *, initial_capital: float,
     signals = signals_from(result.probabilities, settings)
     raw_signals = signals.copy()
     distance = atr.to_numpy()
-    # Learned risk/reward and regime filters.
-    signals = np.where(plan['reward_risk'] >= settings.min_reward_risk, signals, 0.)
+    supertrend_only = settings.supertrend_stop
+    st_line = st_direction = None
+    if supertrend_only:
+        from server.strategies.supertrend import supertrend
+        st_line, st_direction = supertrend(clean, settings.supertrend_length, settings.supertrend_multiplier)
+    # Learned risk/reward (not used when the Supertrend sets the stop) and regime filters.
+    if not supertrend_only:
+        signals = np.where(plan['reward_risk'] >= settings.min_reward_risk, signals, 0.)
     blocked_by_reward_risk = int(((raw_signals != 0) & (signals == 0))[start_index:].sum())
     regime_codes = result.probabilities['regime'].to_numpy() if 'regime' in result.probabilities else np.full(len(clean), -1)
     allowed = np.isin(regime_codes, [REGIME_NAMES.index(name) for name in settings.regimes]) | (regime_codes < 0)
@@ -270,20 +269,27 @@ def execute(prepared: Prepared, settings: MLSettings, *, initial_capital: float,
     big_enough = (np.nan_to_num(distance) >= settings.min_atr) & (target_for_signal >= settings.min_target)
     blocked_by_size = int(((signals != 0) & ~big_enough)[start_index:].sum())
     signals = np.where(big_enough, signals, 0.)
-    stop_distance = np.where(signals == -1, plan['short_stop'], plan['long_stop'])
-    target_distance = target_for_signal
-    trail_activation = np.where(signals == -1, plan['short_trail_start'], plan['long_trail_start'])
-    trail_distance = np.where(signals == -1, plan['short_trail'], plan['long_trail'])
-    if settings.let_profit_run:
-        target_distance = np.full(len(target_distance), np.inf)
-    # Without a take-profit something must lock in gains: the trailing stop, unless the Supertrend stop does it.
-    if settings.let_profit_run and (settings.trailing or not settings.supertrend_stop):
-        trail_activation = np.maximum(np.nan_to_num(trail_activation, nan=0.), settings.min_target)
-        trail_distance = np.where(np.isfinite(trail_distance), trail_distance, stop_distance)
+    if supertrend_only:
+        # Supertrend is the only exit: enter only with its direction, start the stop on its line,
+        # no take-profit, trailing, time exit or reversal. A flip or the line closes the trade.
+        signals = np.where(np.isfinite(st_line) & (st_direction == signals), signals, 0.)
+        stop_distance = np.where(signals != 0, np.abs(close-st_line), np.nan)
+        target_distance = np.full(len(signals), np.inf)
+        trail_activation = trail_distance = np.full(len(signals), np.nan)
+    else:
+        stop_distance = np.where(signals == -1, plan['short_stop'], plan['long_stop'])
+        target_distance = target_for_signal
+        trail_activation = np.where(signals == -1, plan['short_trail_start'], plan['long_trail_start'])
+        trail_distance = np.where(signals == -1, plan['short_trail'], plan['long_trail'])
+        if settings.let_profit_run:
+            target_distance = np.full(len(target_distance), np.inf)
+            # Without a take-profit the trailing stop locks in gains.
+            trail_activation = np.maximum(np.nan_to_num(trail_activation, nan=0.), settings.min_target)
+            trail_distance = np.where(np.isfinite(trail_distance), trail_distance, stop_distance)
     execution = ExecutionSettings(initial_capital=initial_capital, leverage=leverage,
                                   amount_per_trade=settings.amount_per_trade, amount_unit=settings.amount_unit,
-                                  max_hold_bars=10**9 if settings.let_profit_run else settings.horizon,
-                                  reverse_on_signal=settings.reverse_on_signal,
+                                  max_hold_bars=10**9 if settings.let_profit_run or supertrend_only else settings.horizon,
+                                  reverse_on_signal=settings.reverse_on_signal and not supertrend_only,
                                   min_tick=min_tick)
     bars = clean.join(result.probabilities).assign(atr=atr)
     if end is not None:
@@ -291,11 +297,13 @@ def execute(prepared: Prepared, settings: MLSettings, *, initial_capital: float,
         bars, signals, distance = bars.loc[keep], signals[keep], distance[keep]
         stop_distance, target_distance = stop_distance[keep], target_distance[keep]
         trail_activation, trail_distance = trail_activation[keep], trail_distance[keep]
+        if supertrend_only:
+            st_line, st_direction = st_line[keep], st_direction[keep]
     output = run_signal_backtest(bars, signals, stop_distance, target_distance, execution,
                                  start=start, close_at_end=close_at_end, bar_seconds=bar_seconds,
                                  fee_bps=fee_bps, slippage=slippage, spread=spread, funding_bps=funding_bps,
                                  trail_activation=trail_activation, trail_distance=trail_distance,
-                                 **_supertrend_inputs(bars, settings))
+                                 supertrend_line=st_line, supertrend_direction=st_direction)
     trades = output['trades']
     if len(trades):
         codes = bars['regime'].reindex(trades.entry_time).to_numpy() if 'regime' in bars else np.full(len(trades), -1)
