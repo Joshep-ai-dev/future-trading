@@ -310,6 +310,7 @@ class ExchangeDisconnectRequest(BaseModel):
 class ExchangeProtectionRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
     venue: Literal['okx','htx','mexc','binance']
+    side: Literal['long','short'] | None = None
     stop_price: float | None = Field(default=None,gt=0,le=1e9)
     take_profit_price: float | None = Field(default=None,gt=0,le=1e9)
     confirmation: Literal['UPDATE LIVE TPSL']
@@ -455,15 +456,16 @@ def exchange_order(parameters: ExchangeOrderRequest, request: Request):
 
 
 @app.get('/api/exchange/protection')
-def exchange_protection(venue: Literal['okx','htx','mexc','binance'], request: Request):
-    return workspace(request).exchange.protection(venue)
+def exchange_protection(venue: Literal['okx','htx','mexc','binance'], request: Request,
+                        side: Literal['long','short'] | None = None):
+    return workspace(request).exchange.protection(venue, side)
 
 
 @app.post('/api/exchange/protection')
 def exchange_update_protection(parameters: ExchangeProtectionRequest, request: Request):
     ws = workspace(request)
     try:
-        return ws.exchange.update_protection(parameters.venue, parameters.stop_price, parameters.take_profit_price)
+        return ws.exchange.update_protection(parameters.venue, parameters.stop_price, parameters.take_profit_price, parameters.side)
     except ValueError as error:
         raise HTTPException(status_code=400,detail=str(error)) from error
     except Exception as error:

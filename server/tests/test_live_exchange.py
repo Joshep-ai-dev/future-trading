@@ -80,6 +80,38 @@ class ExchangeConnectionTests(unittest.TestCase):
         self.assertNotIn('private-secret', str(result))
         self.assertEqual(result['market']['last'], 32)
 
+    def test_htx_positions_prefer_classic_hedge_rows_even_with_v5_balance(self) -> None:
+        self.service.clients['htx'] = self.exchange
+        self.service.markets['htx'] = {**self.market, 'id': 'XAG-USDT'}
+        self.exchange.options = {}
+        self.exchange.request.side_effect = [
+            {'status': 'ok', 'data': [
+                {'contract_code': 'XAG-USDT', 'direction': 'buy', 'volume': '3.32'},
+                {'contract_code': 'XAG-USDT', 'direction': 'sell', 'volume': '23.68'},
+            ]},
+            {'status': 'ok', 'data': []},
+        ]
+        self.exchange.parse_position.side_effect = lambda row, market: {
+            'side': 'long' if row['direction'] == 'buy' else 'short',
+            'contracts': float(row['volume']),
+            'marginMode': row['margin_mode'],
+        }
+
+        positions = self.service.positions('htx')
+
+        self.assertEqual([position['side'] for position in positions], ['long', 'short'])
+        self.exchange.fetch_positions.assert_not_called()
+
+    def test_htx_positions_fall_back_to_v5_when_classic_is_unavailable(self) -> None:
+        self.service.clients['htx'] = self.exchange
+        self.service.markets['htx'] = self.market
+        self.exchange.options = {}
+        self.exchange.request.side_effect = ccxt.NotSupported('classic account unavailable')
+        self.exchange.fetch_positions.return_value = [{'side': 'long', 'contracts': 2}]
+
+        self.assertEqual(self.service.positions('htx'), [{'side': 'long', 'contracts': 2}])
+        self.exchange.fetch_positions.assert_called_once_with([self.market['symbol']])
+
     def test_disconnect_preserves_exchange_positions_and_orders(self) -> None:
         self.service.clients['htx'] = self.exchange
         self.service.markets['htx'] = self.market
@@ -205,6 +237,30 @@ class LiveOrderSafetyTests(unittest.TestCase):
         with self.assertRaisesRegex(OrderStepError, 'did not cancel'):
             self.service.update_protection('htx', 58., None)
         self.exchange.create_order.assert_not_called()
+
+    def test_update_protection_targets_one_side_in_hedge_mode(self) -> None:
+        self.market['id'] = 'XAG-USDT'
+        self.exchange.amount_to_precision.side_effect = lambda symbol, amount: amount
+        self.exchange.price_to_precision.side_effect = lambda symbol, price: price
+        self.exchange.fetch_ticker.return_value = {'last': 60.}
+        self.exchange.create_order.return_value = {'id': 'new-long-sl', 'amount': 2}
+        positions = [{'contracts': 2, 'side': 'long', 'info': {'position_side': 'long'}},
+                     {'contracts': 3, 'side': 'short', 'info': {'position_side': 'short'}}]
+        orders = [{'algo_id': 'long-sl', 'type': 'sl', 'direction': 'sell', 'sl_trigger_price': '55'},
+                  {'algo_id': 'short-sl', 'type': 'sl', 'direction': 'buy', 'sl_trigger_price': '65'}]
+        self.exchange.contractPrivateGetV5AlgoOrderOpens.side_effect = lambda params: {'code': 200, 'data': list(orders)}
+        def cancel(items):
+            orders[:] = [row for row in orders if row['algo_id'] not in {item['algo_id'] for item in items}]
+            return {'code': 200, 'data': [{'code': 200, 'algo_id': item['algo_id']} for item in items]}
+        self.exchange.contractPrivatePostV5AlgoCancelOrders.side_effect = cancel
+        with patch.object(self.service, 'positions', return_value=positions), \
+             patch.object(self.service, '_htx_open_position', return_value=('long', 2)):
+            self.service.update_protection('htx', 58., None, 'long')
+
+        cancelled = {item['algo_id'] for item in self.exchange.contractPrivatePostV5AlgoCancelOrders.call_args.args[0]}
+        self.assertEqual(cancelled, {'long-sl'})
+        self.assertEqual([row['algo_id'] for row in orders], ['short-sl'])
+        self.assertEqual(self.exchange.create_order.call_args.args[3], 2)
 
     def test_error_text_hides_urls_queries_and_tokens(self) -> None:
         from server.exchanges.live_exchange import safe_exchange_error

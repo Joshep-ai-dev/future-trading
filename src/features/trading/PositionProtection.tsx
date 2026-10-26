@@ -20,12 +20,12 @@ export default function PositionProtection({venue,side,quantity,entryPrice,price
   useEffect(()=>{const element=dialog.current,previous=document.activeElement as HTMLElement|null;element?.showModal();return ()=>{element?.close();previous?.focus();};},[]);
   useEffect(()=>{
     let live=true;
-    api<Protection>(`/api/exchange/protection?venue=${venue}`).then(value=>{
+    api<Protection>(`/api/exchange/protection?venue=${venue}&side=${side}`).then(value=>{
       if(!live)return;
       setCurrent(value);setStop(value.stop!=null?String(value.stop):'');setTakeProfit(value.takeProfit!=null?String(value.takeProfit):'');
     }).catch(reason=>live&&setLoadError(String(reason)));
     return ()=>{live=false;};
-  },[venue]);
+  },[venue,side]);
 
   const parse=(text:string)=>text.trim()?Number(text):null;
   const stopValue=parse(stop),takeProfitValue=parse(takeProfit);
@@ -42,7 +42,7 @@ export default function PositionProtection({venue,side,quantity,entryPrice,price
 
   async function save(nextStop:number|null,nextTakeProfit:number|null){
     setSaving(true);
-    const ok=await onRun('/api/exchange/protection',{venue,stop_price:nextStop,take_profit_price:nextTakeProfit,confirmation:'UPDATE LIVE TPSL'});
+    const ok=await onRun('/api/exchange/protection',{venue,side,stop_price:nextStop,take_profit_price:nextTakeProfit,confirmation:'UPDATE LIVE TPSL'});
     setSaving(false);
     if(ok)onClose();
   }

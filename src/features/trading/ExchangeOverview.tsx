@@ -3,7 +3,7 @@ import {api} from '../../shared/api/api';
 import type {ExchangeVenue} from '../../shared/api/exchangeVenue';
 import {AssetTable,OrderTable,PositionTable} from './ExchangeTables';
 import {EmptyState,Panel,TabBar} from '../../shared/ui/ui';
-import {useExchangeStream} from '../../shared/api/useExchangeStream';
+import {useExchangeStream,type LivePosition} from '../../shared/api/useExchangeStream';
 import LiveTradeHistory from './LiveTradeHistory';
 import {BotEventLog} from './TradingHistory';
 import PatternPanel from './PatternPanel';
@@ -15,8 +15,8 @@ export default function ExchangeOverview({venue}:{venue:ExchangeVenue}){
   const [tab,setTab]=useState<AccountTab>('positions');
   const [busy,setBusy]=useState(false);
   const [message,setMessage]=useState('');
-  const [editingProtection,setEditingProtection]=useState(false);
-  const [protection,setProtection]=useState<{stop:number|null;takeProfit:number|null}|null>(null);
+  const [editingProtection,setEditingProtection]=useState<LivePosition|null>(null);
+  const [protection,setProtection]=useState<Partial<Record<string,{stop:number|null;takeProfit:number|null}>>>({});
   const [protectionRevision,setProtectionRevision]=useState(0);
   const section=tab==='assets'?'balance':tab==='history'||tab==='botlog'||tab==='patterns'?'orders':tab;
   const sectionError=data?.errors[section];
@@ -49,15 +49,16 @@ export default function ExchangeOverview({venue}:{venue:ExchangeVenue}){
   const positionKey=positions?.map(position=>`${position.side}:${position.quantity}`).join('|')??'';
   // TP/SL orders are not in the account stream: read them now, after edits and every 15 s.
   useEffect(()=>{
-    if(!positionKey){setProtection(null);return;}
+    if(!positionKey){setProtection({});return;}
     let live=true;
-    const load=()=>api<{stop:number|null;takeProfit:number|null}>(`/api/exchange/protection?venue=${venue}`).then(value=>live&&setProtection(value)).catch(()=>undefined);
+    const sides=[...new Set(positions?.map(position=>position.side).filter(side=>side==='long'||side==='short')??[])];
+    const load=()=>Promise.all(sides.map(async side=>[side,await api<{stop:number|null;takeProfit:number|null}>(`/api/exchange/protection?venue=${venue}&side=${side}`)] as const))
+      .then(values=>live&&setProtection(Object.fromEntries(values))).catch(()=>undefined);
     void load();
     const timer=setInterval(()=>void load(),15000);
     return ()=>{live=false;clearInterval(timer);};
   },[venue,positionKey,protectionRevision]);
   const tableDisabled=busy||!connected||!!sectionError||!!data?.executionError;
-  const single=positions?.length===1?positions[0]:null;
 
   return <Panel className="exchange-activity" aria-label="Live exchange account">
     <TabBar<AccountTab> items={[
@@ -75,8 +76,8 @@ export default function ExchangeOverview({venue}:{venue:ExchangeVenue}){
     <div role="tabpanel" id={`exchange-${venue}-${tab}`} aria-labelledby={`${idPrefix}-${tab}`} className="exchange-activity-content">
       {tab==='positions'&&(positions?.length?
         <>
-          <PositionTable positions={positions} disabled={tableDisabled} onClose={()=>void closePosition()} protection={protection} onEditProtection={()=>setEditingProtection(true)}/>
-          {editingProtection&&single&&(single.side==='long'||single.side==='short')&&<PositionProtection venue={venue} side={single.side} quantity={single.quantity} entryPrice={single.entryPrice} price={single.markPrice??data?.market?.last} disabled={tableDisabled} onRun={run} onClose={()=>setEditingProtection(false)}/>}
+          <PositionTable positions={positions} disabled={tableDisabled} onClose={()=>void closePosition()} protection={protection} onEditProtection={setEditingProtection}/>
+          {editingProtection&&(editingProtection.side==='long'||editingProtection.side==='short')&&<PositionProtection venue={venue} side={editingProtection.side} quantity={editingProtection.quantity} entryPrice={editingProtection.entryPrice} price={editingProtection.markPrice??data?.market?.last} disabled={tableDisabled} onRun={run} onClose={()=>setEditingProtection(null)}/>}
         </>:
         !sectionError&&<EmptyState compact title={positions?'No open XAG positions':'Loading positions'} description={positions?'Your exchange positions will appear here automatically.':'Waiting for a verified account snapshot.'}/>)}
       {tab==='orders'&&(orders?.length?

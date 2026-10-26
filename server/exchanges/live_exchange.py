@@ -364,12 +364,19 @@ class LiveExchange:
         rows = data if isinstance(data, list) else (data or {}).get('orders') or []
         return [row for row in rows if row.get('contract_code') in (None, market['id'])]
 
-    def _exchange_tpsl(self, venue: str) -> dict[str, list[tuple[str, float | None]]] | None:
+    def _exchange_tpsl(self, venue: str, side: str | None = None) -> dict[str, list[tuple[str, float | None]]] | None:
         """Open stop-loss / take-profit orders as the exchange reports them (HTX), or None if unknown."""
         if venue != 'htx':
             return None
         found: dict[str, list[tuple[str, float | None]]] = {'stop': [], 'takeProfit': []}
         for row in self._htx_algo_opens(venue):
+            # A TP/SL order closes the position, so its direction is opposite
+            # the position side (sell closes long; buy closes short).
+            row_side = str(row.get('position_side') or '').lower()
+            direction = str(row.get('direction') or '').lower()
+            if side and ((row_side in ('long', 'short') and row_side != side) or
+                         (direction in ('buy', 'sell') and direction != ('sell' if side == 'long' else 'buy'))):
+                continue
             order_id = str(row.get('algo_id') or row.get('id') or '')
             if not order_id:
                 continue
@@ -391,36 +398,41 @@ class LiveExchange:
         if (response.get('code') is not None and str(response.get('code')) != '200') or failed:
             raise RuntimeError(f"HTX did not cancel: {json.dumps(failed or response, default=str)[:300]}")
 
-    def protection(self, venue: str) -> dict:
+    def protection(self, venue: str, side: str | None = None) -> dict:
         """Stop loss and take profit of the open position (None when absent)."""
         try:
-            found = self._exchange_tpsl(venue)
+            found = self._exchange_tpsl(venue, side)
         except Exception:
             found = None
         if found is not None:
             with self.lock:
+                storage_key = f'{venue}:{side}' if side else venue
                 for key, book in (('stop', self.protective_orders), ('takeProfit', self.take_profit_orders)):
                     if found[key]:
-                        book[venue] = found[key][0][0]
-                        self.protection_prices.setdefault(venue, {})[key] = found[key][0][1]
+                        book[storage_key] = found[key][0][0]
+                        self.protection_prices.setdefault(storage_key, {})[key] = found[key][0][1]
                     else:
-                        book.pop(venue, None)
+                        book.pop(storage_key, None)
             return dict(venue=venue, stop=found['stop'][0][1] if found['stop'] else None,
                         takeProfit=found['takeProfit'][0][1] if found['takeProfit'] else None)
         with self.lock:
-            prices = dict(self.protection_prices.get(venue) or {})
-            return dict(venue=venue, stop=prices.get('stop') if self.protective_orders.get(venue) else None,
-                        takeProfit=prices.get('takeProfit') if self.take_profit_orders.get(venue) else None)
+            storage_key = f'{venue}:{side}' if side else venue
+            prices = dict(self.protection_prices.get(storage_key) or {})
+            return dict(venue=venue, stop=prices.get('stop') if self.protective_orders.get(storage_key) else None,
+                        takeProfit=prices.get('takeProfit') if self.take_profit_orders.get(storage_key) else None)
 
-    def update_protection(self, venue: str, stop_price: float | None, take_profit_price: float | None) -> dict:
+    def update_protection(self, venue: str, stop_price: float | None, take_profit_price: float | None,
+                          side: str | None = None) -> dict:
         """Replace or remove the stop loss and take profit of the open position. None removes that order."""
         with self.trade_lock:
             if self.auto_bot and self.auto_bot.running and self.auto_bot.venue == venue:
                 raise ValueError('The automated bot manages this position’s stop; stop the bot to edit TP/SL by hand')
             exchange, market = self.execution_client(venue)
             active = [position for position in self.positions(venue) if float(position.get('contracts') or 0) != 0]
+            if side:
+                active = [position for position in active if position.get('side') == side]
             if len(active) != 1:
-                raise ValueError('No single open XAG/USDT position to protect')
+                raise ValueError(f'No single open {side or "XAG/USDT"} position to protect')
             direction = active[0].get('side')
             if direction not in ('long', 'short'):
                 raise ValueError('The exchange did not report the position direction')
@@ -432,27 +444,28 @@ class LiveExchange:
                 raise ValueError(f'Stop loss must be {"below" if direction == "long" else "above"} the current price {last:g} for this {direction}')
             if take_profit_price is not None and (take_profit_price <= last if direction == 'long' else take_profit_price >= last):
                 raise ValueError(f'Take profit must be {"above" if direction == "long" else "below"} the current price {last:g} for this {direction}')
+            storage_key = f'{venue}:{direction}' if side else venue
             # Cancel first: the exchange limits closing orders to the position size. Include TP/SL set
             # elsewhere (exchange app, before a restart) when the exchange can list them.
             if venue == 'htx':
                 try:
-                    found = self._exchange_tpsl(venue)
+                    found = self._exchange_tpsl(venue, side)
                     ids = {order_id for key in ('stop', 'takeProfit') for order_id, _ in found[key]}
                     with self.lock:
-                        ids |= {book[venue] for book in (self.protective_orders, self.take_profit_orders) if book.get(venue)}
+                        ids |= {book[storage_key] for book in (self.protective_orders, self.take_profit_orders) if book.get(storage_key)}
                     self._htx_cancel_algo(venue, ids)
-                    left = self._exchange_tpsl(venue)
+                    left = self._exchange_tpsl(venue, side)
                 except Exception as error:
                     raise OrderStepError('Cancelling the old TP/SL', error) from error
                 if left['stop'] or left['takeProfit']:
                     raise ValueError('The old TP/SL orders are still open at HTX; nothing new was placed. Cancel them in the HTX app and retry.')
                 with self.lock:
-                    self.protective_orders.pop(venue, None)
-                    self.take_profit_orders.pop(venue, None)
+                    self.protective_orders.pop(storage_key, None)
+                    self.take_profit_orders.pop(storage_key, None)
             for book, label in (() if venue == 'htx' else
                                 ((self.protective_orders, 'Cancelling the stop loss'), (self.take_profit_orders, 'Cancelling the take profit'))):
                 with self.lock:
-                    order_id = book.get(venue)
+                    order_id = book.get(storage_key)
                 if order_id:
                     try:
                         self.cancel_stop(venue, order_id)
@@ -461,9 +474,9 @@ class LiveExchange:
                         if not any(word in text for word in ('not exist', 'not found', 'filled', 'finished')):
                             raise OrderStepError(label, error) from error
                 with self.lock:
-                    book.pop(venue, None)
+                    book.pop(storage_key, None)
             with self.lock:
-                self.protection_prices.pop(venue, None)
+                self.protection_prices.pop(storage_key, None)
             for price, book, key, label, take_profit in (
                     (stop_price, self.protective_orders, 'stop', 'Placing the stop loss', False),
                     (take_profit_price, self.take_profit_orders, 'takeProfit', 'Placing the take profit', True)):
@@ -474,9 +487,9 @@ class LiveExchange:
                 except Exception as error:
                     raise OrderStepError(label, error) from error
                 with self.lock:
-                    book[venue] = order.get('id')
-                    self.protection_prices.setdefault(venue, {})[key] = order.get('triggerPrice')
-            return self.protection(venue)
+                    book[storage_key] = order.get('id')
+                    self.protection_prices.setdefault(storage_key, {})[key] = order.get('triggerPrice')
+            return self.protection(venue, side)
 
     def close_position(self, venue: str):
         with self.trade_lock:
@@ -688,8 +701,18 @@ class LiveExchange:
         exchange, market = self._get(venue)
         if not exchange.has.get('fetchPositions'):
             raise ValueError(f'{venue.upper()} position query is not supported by the installed exchange adapter')
-        if venue == 'htx' and exchange.options.get('localAccountApi') == 'classic':
-            return classic_positions(exchange, market)
+        if venue == 'htx':
+            # HTX can authenticate through its V5 account API while the positions
+            # shown in the web terminal still live in the classic linear-swap
+            # account.  In hedge mode that account contains a separate long and
+            # short row; V5 may expose only one of them.  Prefer the authoritative
+            # classic position endpoints whenever they are available, regardless
+            # of which API supplied the balance snapshot.
+            try:
+                return classic_positions(exchange, market)
+            except Exception:
+                if exchange.options.get('localAccountApi') == 'classic':
+                    raise
         return exchange.fetch_positions([market['symbol']])
 
 
