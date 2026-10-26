@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "concurrently --kill-others \"npm:backend\" \"vite --host 127.0.0.1\"",
-    "dev:lan": "concurrently --kill-others \"node scripts/backend.mjs --lan\" \"vite --host 0.0.0.0\"",
+    "dev": "concurrently --kill-others \"npm:backend\" \"node scripts/wait-backend.mjs && vite --host 127.0.0.1\"",
+    "dev:lan": "concurrently --kill-others \"node scripts/backend.mjs --lan\" \"node scripts/wait-backend.mjs && vite --host 0.0.0.0\"",
     "backend": "node scripts/backend.mjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview"
