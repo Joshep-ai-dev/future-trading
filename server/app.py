@@ -143,7 +143,7 @@ class FineTuneRequest(BaseModel):
 
 
 class LiveBotStartRequest(BBBacktestRequest):
-    venue: Literal['okx','htx','mexc','binance']
+    venue: Literal['okx','htx','mexc','binance','hyperliquid']
     confirmation: Literal['START LIVE STRATEGY']
 
 @app.post('/api/chart-view')
@@ -285,7 +285,8 @@ def paper_status(request: Request):
 
 class ExchangeConnectRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    venue: Literal['okx','htx','mexc','binance']
+    venue: Literal['okx','htx','mexc','binance','hyperliquid']
+    instrument: Literal['xag','silver','stable'] = 'xag'
     api_key: str = Field(min_length=1,max_length=512)
     secret: str = Field(min_length=1,max_length=512)
     passphrase: str | None = Field(default=None,max_length=512)
@@ -293,7 +294,7 @@ class ExchangeConnectRequest(BaseModel):
 
 class ExchangeOrderRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    venue: Literal['okx','htx','mexc','binance']
+    venue: Literal['okx','htx','mexc','binance','hyperliquid']
     direction: Literal['long','short']
     quantity: float = Field(gt=0,le=1e9)
     stop_price: float | None = Field(default=None,gt=0,le=1e9)
@@ -304,12 +305,13 @@ class ExchangeOrderRequest(BaseModel):
 
 class ExchangeDisconnectRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    venue: Literal['okx','htx','mexc','binance']
+    venue: Literal['okx','htx','mexc','binance','hyperliquid']
+    instrument: Literal['xag','silver','stable'] = 'xag'
 
 
 class ExchangeProtectionRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    venue: Literal['okx','htx','mexc','binance']
+    venue: Literal['okx','htx','mexc','binance','hyperliquid']
     side: Literal['long','short'] | None = None
     stop_price: float | None = Field(default=None,gt=0,le=1e9)
     take_profit_price: float | None = Field(default=None,gt=0,le=1e9)
@@ -318,7 +320,7 @@ class ExchangeProtectionRequest(BaseModel):
 
 class ExchangeCloseRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    venue: Literal['okx','htx','mexc','binance']
+    venue: Literal['okx','htx','mexc','binance','hyperliquid']
     confirmation: Literal['CLOSE LIVE POSITION']
 
 
@@ -332,18 +334,19 @@ def exchange_status(request: Request):
 def exchange_connect(parameters: ExchangeConnectRequest, request: Request):
     ws = workspace(request)
     try:
-        result = ws.exchange.connect(parameters.venue,parameters.api_key,parameters.secret,parameters.passphrase)
+        result = ws.exchange.connect(parameters.venue,parameters.api_key,parameters.secret,parameters.passphrase,
+                                     parameters.instrument)
         credential_store.save(parameters.venue,parameters.api_key,parameters.secret,parameters.passphrase,request.state.user['id'])
         return result
     except ValueError as error:
         raise HTTPException(status_code=400,detail=str(error)) from error
     except Exception as error:
         # Exchange/library errors may echo request details. Never return credentials to the browser.
-        raise HTTPException(status_code=502,detail=f'{parameters.venue.upper()} connection failed. Check API permissions, XAG contract access, account mode, and network availability.') from error
+        raise HTTPException(status_code=502,detail=f'{parameters.venue.upper()} connection failed. Check API permissions, {parameters.instrument.upper()} contract access, account mode, and network availability.') from error
 
 
 @app.get('/api/exchange/overview')
-def exchange_overview(venue: Literal['okx','htx','mexc','binance'], request: Request):
+def exchange_overview(venue: Literal['okx','htx','mexc','binance','hyperliquid'], request: Request):
     ws = workspace(request)
     try:
         return ws.exchange.overview(venue)
@@ -352,7 +355,7 @@ def exchange_overview(venue: Literal['okx','htx','mexc','binance'], request: Req
 
 
 @app.get('/api/exchange/trade-history')
-def exchange_trade_history(venue: Literal['okx','htx','mexc','binance'], request: Request):
+def exchange_trade_history(venue: Literal['okx','htx','mexc','binance','hyperliquid'], request: Request):
     ws = workspace(request)
     try:
         return {'trades': ws.exchange.trade_history(venue)}
@@ -363,7 +366,7 @@ def exchange_trade_history(venue: Literal['okx','htx','mexc','binance'], request
 
 
 @app.get('/api/exchange/stream')
-async def exchange_stream(venue: Literal['okx','htx','mexc','binance'], request: Request):
+async def exchange_stream(venue: Literal['okx','htx','mexc','binance','hyperliquid'], request: Request):
     ws = workspace(request)
     try:
         ws.exchange._get(venue)
@@ -374,7 +377,7 @@ async def exchange_stream(venue: Literal['okx','htx','mexc','binance'], request:
 
 
 @app.get('/api/exchange/candles')
-def exchange_candles(venue: Literal['okx','htx','mexc','binance'],
+def exchange_candles(venue: Literal['okx','htx','mexc','binance','hyperliquid'],
                      timeframe: Literal['1m','3m','5m','10m','15m','30m','1h','4h','1d'] = '1m',
                      before: int | None = None, *, request: Request):
     ws = workspace(request)
@@ -420,7 +423,7 @@ def exchange_reconnect(parameters: ExchangeDisconnectRequest, request: Request):
     ws = workspace(request)
     try:
         credentials = credential_store.load(parameters.venue,request.state.user['id'])
-        return ws.exchange.connect(parameters.venue, **credentials)
+        return ws.exchange.connect(parameters.venue, **credentials, instrument=parameters.instrument)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except Exception as error:
@@ -439,7 +442,7 @@ def exchange_order(parameters: ExchangeOrderRequest, request: Request):
     try:
         # Margin mode and leverage cannot change while a position is open: check that first.
         if any(float(position.get('contracts') or 0) != 0 for position in ws.exchange.positions(parameters.venue)):
-            raise ValueError('An XAG/USDT position is already open. Close it (Close tab) before opening another.')
+            raise ValueError('A position is already open. Close it (Close tab) before opening another.')
         ws.exchange.prepare_account(parameters.venue, parameters.leverage)
         return ws.exchange.open_with_stop(parameters.venue,parameters.direction,parameters.quantity,
                                             parameters.stop_price,parameters.take_profit_price)
@@ -456,7 +459,7 @@ def exchange_order(parameters: ExchangeOrderRequest, request: Request):
 
 
 @app.get('/api/exchange/protection')
-def exchange_protection(venue: Literal['okx','htx','mexc','binance'], request: Request,
+def exchange_protection(venue: Literal['okx','htx','mexc','binance','hyperliquid'], request: Request,
                         side: Literal['long','short'] | None = None):
     return workspace(request).exchange.protection(venue, side)
 
@@ -583,9 +586,9 @@ def run(parameters: Parameters):
 
 
 @app.get('/api/data-range')
-def data_range():
+def data_range(market: Literal['xag', 'stable'] = 'xag'):
     try:
-        frame, _ = load_bars('1m')
+        frame, _ = load_bars('1m', instrument=market)
         complete = frame.dropna(subset=['open','high','low','close'])
         if complete.empty:
             raise ValueError('No complete market candles available')
@@ -596,7 +599,7 @@ def data_range():
 
 
 def _run_backtest(parameters: BBBacktestRequest):
-    frame, _ = load_bars(parameters.entry_timeframe)
+    frame, _ = load_bars(parameters.entry_timeframe, instrument=parameters.market)
     return run_bb_reversal_backtest(frame, parameters)
 
 
@@ -698,7 +701,7 @@ def fine_tune_backtest(parameters: FineTuneRequest, request: Request):
 
     def work():
         try:
-            frame, _ = load_bars(parameters.settings.entry_timeframe)
+            frame, _ = load_bars(parameters.settings.entry_timeframe, instrument=parameters.settings.market)
             tuner = ml_fine_tune if parameters.settings.strategy == 'ml_ensemble' else fine_tune
             result = tuner(frame, parameters.settings, search_method=parameters.search_method, objective=parameters.objective,
                            validation_start=parameters.validation_start, forward_start=parameters.forward_start,

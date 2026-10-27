@@ -76,9 +76,11 @@ class ExchangeFeed:
                     self.state['errors'][section] = initial['errors'][section]
                 else:
                     self.update(section, initial[section])
+            credentials = (dict(walletAddress=self.source.walletAddress, privateKey=self.source.privateKey)
+                           if self.venue == 'hyperliquid' else
+                           dict(apiKey=self.source.apiKey, secret=self.source.secret, password=self.source.password))
             self.client = getattr(ccxtpro, VENUES[self.venue])(dict(
-                apiKey=self.source.apiKey, secret=self.source.secret, password=self.source.password,
-                enableRateLimit=True, options=dict(self.source.options), newUpdates=True))
+                **credentials, enableRateLimit=True, options=dict(self.source.options), newUpdates=True))
             # Share market metadata, never the synchronous client's network session.
             self.client.set_markets(self.source.markets, self.source.currencies)
             self.tasks = [asyncio.create_task(self.watch(section)) for section in ('market', 'candle')]
@@ -131,7 +133,8 @@ class ExchangeFeed:
                     balance = await self.client.watch_balance({'type': 'swap', 'subType': 'linear'})
                     if self.venue == 'htx':
                         balance = normalize_htx_balance(balance)
-                    value = {key: balance.get(key, {}).get('USDT') for key in ('total', 'free', 'used')}
+                    collateral = self.market.get('settle') or self.market.get('quote') or 'USDT'
+                    value = {key: balance.get(key, {}).get(collateral) for key in ('total', 'free', 'used')}
                     if value['free'] is None:
                         self.account_changed.set()
                     previous = self.state.get('balance') or {}

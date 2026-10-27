@@ -8,10 +8,12 @@ import LiveTradeHistory from './LiveTradeHistory';
 import {BotEventLog} from './TradingHistory';
 import PatternPanel from './PatternPanel';
 import PositionProtection from './PositionProtection';
+import {instrumentDetails,useExchangeInstrument} from '../../shared/api/exchangeInstrument';
 
 type AccountTab='positions'|'orders'|'history'|'assets'|'botlog'|'patterns';
 export default function ExchangeOverview({venue}:{venue:ExchangeVenue}){
   const {data,connected,error}=useExchangeStream(venue);
+  const asset=instrumentDetails(useExchangeInstrument()).base;
   const [tab,setTab]=useState<AccountTab>('positions');
   const [busy,setBusy]=useState(false);
   const [message,setMessage]=useState('');
@@ -26,7 +28,7 @@ export default function ExchangeOverview({venue}:{venue:ExchangeVenue}){
   const idPrefix=`exchange-tab-${venue}`;
 
   async function closePosition(){
-    if(!window.confirm('Close the XAG/USDT position with a reduce-only market order?'))return;
+    if(!window.confirm(`Close the ${asset}/USDT position with a reduce-only market order?`))return;
     setBusy(true);setMessage('');
     try{
       const result=await api<{message?:string}>('/api/exchange/close',{
@@ -68,7 +70,7 @@ export default function ExchangeOverview({venue}:{venue:ExchangeVenue}){
       {value:'assets',label:'Assets',controls:`exchange-${venue}-assets`},
       {value:'botlog',label:'Bot log',controls:`exchange-${venue}-botlog`},
       {value:'patterns',label:'Patterns',controls:`exchange-${venue}-patterns`},
-    ]} value={tab} onChange={setTab} label="Exchange activity" idPrefix={idPrefix} trailing={<span>{venue.toUpperCase()} · XAGUSDT</span>}/>
+    ]} value={tab} onChange={setTab} label="Exchange activity" idPrefix={idPrefix} trailing={<span>{venue.toUpperCase()} · {asset}USDT</span>}/>
     {(error||data?.errors.connection)&&<p className="exchange-inline-error" role="status">{error||data?.errors.connection} Displayed values may be stale.</p>}
     {data?.executionError&&<p className="exchange-inline-error">{data.executionError}</p>}
     {data?.errors.accountStream&&<p className="exchange-inline-error">{data.errors.accountStream}</p>}
@@ -76,12 +78,12 @@ export default function ExchangeOverview({venue}:{venue:ExchangeVenue}){
     <div role="tabpanel" id={`exchange-${venue}-${tab}`} aria-labelledby={`${idPrefix}-${tab}`} className="exchange-activity-content">
       {tab==='positions'&&(positions?.length?
         <>
-          <PositionTable positions={positions} disabled={tableDisabled} onClose={()=>void closePosition()} protection={protection} onEditProtection={setEditingProtection}/>
-          {editingProtection&&(editingProtection.side==='long'||editingProtection.side==='short')&&<PositionProtection venue={venue} side={editingProtection.side} quantity={editingProtection.quantity} entryPrice={editingProtection.entryPrice} price={editingProtection.markPrice??data?.market?.last} disabled={tableDisabled} onRun={run} onClose={()=>setEditingProtection(null)}/>}
+          <PositionTable asset={asset} positions={positions} disabled={tableDisabled} onClose={()=>void closePosition()} protection={protection} onEditProtection={setEditingProtection}/>
+          {editingProtection&&(editingProtection.side==='long'||editingProtection.side==='short')&&<PositionProtection venue={venue} asset={asset} side={editingProtection.side} quantity={editingProtection.quantity} entryPrice={editingProtection.entryPrice} price={editingProtection.markPrice??data?.market?.last} disabled={tableDisabled} onRun={run} onClose={()=>setEditingProtection(null)}/>}
         </>:
-        !sectionError&&<EmptyState compact title={positions?'No open XAG positions':'Loading positions'} description={positions?'Your exchange positions will appear here automatically.':'Waiting for a verified account snapshot.'}/>)}
+        !sectionError&&<EmptyState compact title={positions?`No open ${asset} positions`:'Loading positions'} description={positions?'Your exchange positions will appear here automatically.':'Waiting for a verified account snapshot.'}/>)}
       {tab==='orders'&&(orders?.length?
-        <OrderTable orders={orders}/>:
+        <OrderTable asset={asset} orders={orders}/>:
         !sectionError&&<EmptyState compact title={orders?'No standard open orders':'Loading orders'} description="Conditional and protective stops may be listed separately on the exchange."/>)}
       {tab==='assets'&&<AssetTable balance={data?.balance}/>}
       {tab==='history'&&<LiveTradeHistory venue={venue}/>}

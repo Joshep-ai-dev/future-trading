@@ -5,6 +5,7 @@ import type {ExchangeVenue} from '../../shared/api/exchangeVenue';
 import {liveNumber as number,useExchangeStream} from '../../shared/api/useExchangeStream';
 import BotSelector from '../strategy/BotSelector';
 import type {SavedSetup} from '../strategy/SetupPicker';
+import {instrumentDetails,useExchangeInstrument} from '../../shared/api/exchangeInstrument';
 
 type Props={venue:ExchangeVenue;settings:BacktestSettings;onSettingsChange?:(settings:BacktestSettings)=>void;onConfigure?:()=>void;
   profiles?:SavedSetup[];onApplySetup?:(setup:SavedSetup)=>void;bot:BotStatus;connected:boolean;busy:boolean;blocked:boolean;
@@ -12,6 +13,7 @@ type Props={venue:ExchangeVenue;settings:BacktestSettings;onSettingsChange?:(set
 
 /** Live bot controls, laid out like the paper bot: model and saved parameters, timeframe, sizing, start/stop. */
 export default function LiveBotPanel({venue,settings,onSettingsChange,onConfigure,profiles=[],onApplySetup,bot,connected,busy,blocked,positionOpen,leverage,onLeverageChange,onRun}:Props){
+  const asset=instrumentDetails(useExchangeInstrument()).base;
   const {data,connected:streamConnected}=useExchangeStream(venue);
   const [confirmed,setConfirmed]=useState(false);
   const available=data?.balance?.free;
@@ -52,7 +54,7 @@ export default function LiveBotPanel({venue,settings,onSettingsChange,onConfigur
       </>}
     </form>
     {hint&&<p className="ticket-help">{hint}</p>}
-    {active&&<p className="ticket-help">{bot.position?`${bot.position.direction.toUpperCase()} · ${number(bot.position.quantity)} XAG · stop ${number(bot.position.stop,3)}`:'Waiting for a signal. Readiness is shown below and on the chart.'}</p>}
+    {active&&<p className="ticket-help">{bot.position?`${bot.position.direction.toUpperCase()} · ${number(bot.position.quantity)} ${asset} · stop ${number(bot.position.stop,3)}`:'Waiting for a signal. Readiness is shown below and on the chart.'}</p>}
     {bot.error&&<p className="error" role="alert">{bot.error}</p>}
     <div className="strategy-card"><div><span className="strategy-icon">⌁</span><div><strong>{mlSelected?'ML Ensemble':'BB Outer Band Reversal'}</strong><small>{mlSelected?'Backtest and paper only':'Trailing SL · Both directions · Live'}</small></div></div><button type="button" className="text-button" onClick={onConfigure}>Strategy settings ↗</button></div>
   </div>;

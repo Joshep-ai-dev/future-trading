@@ -14,6 +14,53 @@ class ExchangeConnectionTests(unittest.TestCase):
         self.market = {'symbol': 'XAG/USDT:USDT', 'contractSize': 1}
         self.exchange.fetch_balance.return_value = {'total': {'USDT': 25}}
 
+    def test_market_selector_supports_xag_and_stable_perpetuals(self) -> None:
+        self.exchange.markets = {
+            'XAG/USDT:USDT': {'symbol': 'XAG/USDT:USDT', 'base': 'XAG', 'quote': 'USDT', 'settle': 'USDT', 'swap': True, 'linear': True, 'active': True},
+            'STABLE/USDT:USDT': {'symbol': 'STABLE/USDT:USDT', 'base': 'STABLE', 'quote': 'USDT', 'settle': 'USDT', 'swap': True, 'linear': True, 'active': True},
+            'STABLE/USDT': {'symbol': 'STABLE/USDT', 'base': 'STABLE', 'quote': 'USDT', 'spot': True, 'active': True},
+        }
+        self.assertEqual(self.service._market(self.exchange, 'xag')['symbol'], 'XAG/USDT:USDT')
+        self.assertEqual(self.service._market(self.exchange, 'stable')['symbol'], 'STABLE/USDT:USDT')
+
+    def test_market_selector_rejects_an_unlisted_perpetual(self) -> None:
+        self.exchange.markets = {}
+        with self.assertRaisesRegex(ValueError, 'STABLE/USDT'):
+            self.service._market(self.exchange, 'stable')
+
+    def test_htx_rejects_stable_before_opening_a_connection(self) -> None:
+        with self.assertRaisesRegex(ValueError, 'does not currently list'):
+            self.service.connect('htx', 'key', 'secret', instrument='stable')
+
+    def test_hyperliquid_uses_api_wallet_and_usdc_stable_market(self) -> None:
+        market = {'symbol': 'STABLE/USDC:USDC', 'base': 'STABLE', 'quote': 'USDC',
+                  'settle': 'USDC', 'contractSize': 1}
+        self.exchange.fetch_balance.return_value = {'total': {'USDC': 25}}
+        with patch.object(ccxt, 'hyperliquid', return_value=self.exchange) as adapter, patch.object(
+            self.service, '_market', return_value=market
+        ) as select_market:
+            result = self.service.connect('hyperliquid', '0xwallet', 'agent-private-key', instrument='stable')
+        credentials = adapter.call_args.args[0]
+        self.assertEqual(credentials['walletAddress'], '0xwallet')
+        self.assertEqual(credentials['privateKey'], 'agent-private-key')
+        self.assertNotIn('apiKey', credentials)
+        select_market.assert_called_once_with(self.exchange, 'stable')
+        self.assertEqual((result['symbol'], result['usdtBalance']), ('STABLE/USDC:USDC', 25))
+
+    def test_market_selector_finds_xyz_hip3_silver_market(self) -> None:
+        self.exchange.id = 'hyperliquid'
+        self.exchange.options = {}
+        silver = {'symbol': 'XYZ-SILVER/USDC:USDC', 'base': 'XYZ-SILVER', 'baseId': '110001',
+                  'quote': 'USDC', 'settle': 'USDC', 'swap': True, 'linear': True,
+                  'active': True, 'baseName': 'xyz:SILVER', 'info': {'name': 'xyz:SILVER'}}
+        self.exchange.markets = {silver['symbol']: silver}
+        self.assertIs(self.service._market(self.exchange, 'silver'), silver)
+        self.assertEqual(self.exchange.options['fetchMarkets']['hip3']['dexes'], ['xyz'])
+
+    def test_hyperliquid_rejects_unlisted_xag(self) -> None:
+        with self.assertRaisesRegex(ValueError, 'does not currently list an XAG'):
+            self.service.connect('hyperliquid', '0xwallet', 'agent-private-key', instrument='xag')
+
     def test_htx_reads_linear_perpetual_balance(self) -> None:
         with patch.object(ccxt, 'htx', return_value=self.exchange) as adapter, patch.object(
             self.service, '_market', return_value=self.market

@@ -25,6 +25,7 @@ export type ModelReport = {
   medianTarget: number|null; medianRoundTripCost: number|null;
 };
 export type BacktestSettings = {
+  market: 'xag'|'stable';
   atr_active: boolean; atr_period: number; atr_multiplier: number;
   ema_fast: number; ema_slow: number; rsi_period: number; rsi_threshold: number; rsi_active: boolean;
   strategy: 'sweep'|'mtf'|'chartart_v12'|'bb_outer_reversal'|'ml_ensemble'; ml: MLConfig; bb_period: number; chartart_stop_pct: number;

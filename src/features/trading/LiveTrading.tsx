@@ -51,7 +51,7 @@ export default function LiveTrading({settings,controls}:{settings:BacktestSettin
   const venue=useExchangeVenue();
   const bot=useLiveBot(),botHere=!!bot?.running&&bot.venue===venue;
   return <div id="page-paper" role="tabpanel" aria-labelledby="tab-paper">
-    <ExchangeMarketHeader venue={venue}/>
+    <ExchangeMarketHeader venue={venue} botRunning={!!bot?.running}/>
     <div className="terminal-grid live-terminal-grid">
       <div className="terminal-main"><LiveMarketChart key={venue} venue={venue} settings={settings} overlay={<BotChartBadge state={botHere?bot?.strategyState:null} running={botHere}/>}/><TerminalSplitter/><ExchangeOverview venue={venue}/></div>
       <aside className="terminal-sidebar" aria-label="Live execution"><PaperSessionNotice/><Panel className="live-terminal-controls">{controls}</Panel><BotStatusPanel state={botHere?bot?.strategyState:null} running={botHere} timeLabel={botHere&&bot?.strategyState?.timestamp?new Date(bot.strategyState.timestamp*1000).toISOString().slice(0,16).replace('T',' ')+' UTC':undefined} emptyHint={bot?.running?`The strategy is running on ${bot.venue?.toUpperCase()}. Switch to that exchange to see its status.`:'Start the strategy in the Bots tab to see live buy and sell readiness.'}/><LiveAssets venue={venue}/></aside>

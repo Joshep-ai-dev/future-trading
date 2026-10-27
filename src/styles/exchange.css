@@ -20,6 +20,103 @@
   font-size: 18px;
 }
 
+.exchange-instrument h1 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.market-picker {
+  position: relative;
+}
+
+.market-picker summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #eef4fc;
+  cursor: pointer;
+  list-style: none;
+  white-space: nowrap;
+}
+
+.market-picker summary::-webkit-details-marker {
+  display: none;
+}
+
+.market-picker summary[aria-disabled=true] {
+  cursor: default;
+  opacity: .7;
+}
+
+.market-picker summary i {
+  width: 6px;
+  height: 6px;
+  margin: -3px 2px 0 1px;
+  border-right: 1.5px solid #718096;
+  border-bottom: 1.5px solid #718096;
+  transform: rotate(45deg);
+}
+
+.market-picker[open] summary i {
+  margin-top: 3px;
+  transform: rotate(225deg);
+}
+
+.market-picker > div {
+  position: absolute;
+  z-index: 80;
+  top: calc(100% + 10px);
+  left: -8px;
+  width: 220px;
+  padding: 6px;
+  border: 1px solid #2d3949;
+  border-radius: 8px;
+  background: #111821;
+  box-shadow: 0 14px 36px #0009;
+}
+
+.market-picker button {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #dce6f4;
+  text-align: left;
+}
+
+.market-picker button:hover:not(:disabled),
+.market-picker button[aria-selected=true] {
+  background: #1b2634;
+}
+
+.market-picker button span {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.market-picker button small {
+  grid-column: 1;
+  margin-top: 3px;
+  color: #718096;
+  font-size: 10px;
+}
+
+.market-picker button b {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  color: #4d8dff;
+}
+
+.market-picker button:disabled {
+  cursor: not-allowed;
+  opacity: .4;
+}
+
 .exchange-instrument h1>span {
   font-size: 9px;
   padding: 3px 5px;

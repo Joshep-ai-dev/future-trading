@@ -4,12 +4,16 @@ import numpy as np
 import pandas as pd
 
 CSV = Path(__file__).resolve().parents[2] / 'data' / 'OKX_XAG-USDT-SWAP_1m.csv'
+STABLE_CSV = CSV.with_name('HYPERLIQUID_STABLE-USDC-PERP_1m.csv')
 TIMEFRAMES = {'1m': 60, '3m': 180, '5m': 300, '10m': 600, '15m': 900, '30m': 1800, '1h': 3600, '4h': 14400, '1d': 86400}
 
 
-def load_bars(timeframe='1m', path=CSV):
+def load_bars(timeframe='1m', path=None, instrument='xag'):
     if timeframe not in TIMEFRAMES:
         raise ValueError('Unsupported timeframe.')
+    if instrument not in ('xag', 'stable'):
+        raise ValueError('Unsupported backtest market.')
+    path = Path(path) if path is not None else (CSV if instrument == 'xag' else STABLE_CSV)
     df = pd.read_csv(path)
     # Only the default instrument includes the downloaded overlay. Test/custom
     # CSVs stay independent. Atomic replacement lets readers see a whole cache.
@@ -21,6 +25,8 @@ def load_bars(timeframe='1m', path=CSV):
         parts += [df] + ([pd.read_csv(cache)] if cache.exists() else [])
         if len(parts) > 1:
             df = pd.concat(parts, ignore_index=True).drop_duplicates('timestamp_ms', keep='last')
+    if 'volume_contracts' not in df.columns and 'volume' in df.columns:
+        df = df.rename(columns={'volume': 'volume_contracts'})
     cols = ['timestamp_ms', 'open', 'high', 'low', 'close', 'volume_contracts']
     if not set(cols).issubset(df.columns) or df.empty:
         raise ValueError('CSV is empty or missing required OHLCV columns.')

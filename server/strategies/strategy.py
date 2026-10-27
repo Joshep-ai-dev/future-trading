@@ -15,6 +15,7 @@ class BacktestRequest(BaseModel):
     end_date: date
     validation_date: date | None = None  # Accepted only for older saved settings.
     strategy: Literal['bb_outer_reversal', 'ml_ensemble'] = 'bb_outer_reversal'
+    market: Literal['xag', 'stable'] = 'xag'
     bb_reversal: dict = Field(default_factory=dict)
     ml: dict = Field(default_factory=dict)
     direction_active: bool = True

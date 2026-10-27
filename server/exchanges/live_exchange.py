@@ -21,6 +21,7 @@ VENUES = {
     'htx': 'htx',
     'mexc': 'mexc',
     'binance': 'binanceusdm',
+    'hyperliquid': 'hyperliquid',
 }
 
 
@@ -77,38 +78,60 @@ class LiveExchange:
         self.auto_bot = None
 
     @staticmethod
-    def _market(exchange):
+    def _market(exchange, instrument: str = 'xag'):
+        if getattr(exchange, 'id', '') == 'hyperliquid':
+            # SILVER is deployed by XYZ as a HIP-3 market, so explicitly load that DEX.
+            exchange.options.setdefault('fetchMarkets', {}).setdefault('hip3', {})['dexes'] = ['xyz']
         exchange.load_markets()
+        base = instrument.upper()
+        collateral = 'USDC' if getattr(exchange, 'id', '') == 'hyperliquid' else 'USDT'
         candidates = [market for market in exchange.markets.values()
                       if market.get('swap') and market.get('linear')
-                      and market.get('quote') == 'USDT'
-                      and market.get('settle') == 'USDT'
-                      and (market.get('base') == 'XAG'
-                           or 'XAG' in str(market.get('baseId', '')).upper()
-                           or 'XAG' in str(market.get('id', '')).upper())]
+                      and market.get('quote') == collateral
+                      and market.get('settle') == collateral
+                      and (str(market.get('base', '')).upper() == base
+                           or str(market.get('baseId', '')).upper() == base
+                           or (getattr(exchange, 'id', '') == 'hyperliquid'
+                               and (str(market.get('base', '')).upper().endswith('-' + base)
+                                    or str(market.get('baseName', '')).upper() == f'XYZ:{base}')))]
         candidates = [market for market in candidates if market.get('active') is not False]
         if not candidates:
-            raise ValueError('This exchange account does not expose an active linear XAG/USDT perpetual contract through its API')
-        return sorted(candidates, key=lambda market: (market.get('base') != 'XAG', market['symbol']))[0]
+            raise ValueError(f'This exchange does not expose an active linear {base}/{collateral} perpetual contract through its API')
+        return sorted(candidates, key=lambda market: market['symbol'])[0]
 
-    def connect(self, venue: str, api_key: str, secret: str, passphrase: str | None = None):
+    def connect(self, venue: str, api_key: str, secret: str, passphrase: str | None = None,
+                instrument: str = 'xag'):
+        if self.auto_bot and self.auto_bot.running and self.auto_bot.venue == venue:
+            raise ValueError('Stop the live bot before changing its exchange market')
+        if instrument == 'stable' and venue == 'htx':
+            raise ValueError('HTX does not currently list a STABLE/USDT linear perpetual; choose OKX, MEXC or Binance')
+        if instrument == 'silver' and venue != 'hyperliquid':
+            raise ValueError('SILVER/USDC is only available on Hyperliquid')
+        if venue == 'hyperliquid' and instrument not in ('silver', 'stable'):
+            raise ValueError('Hyperliquid supports SILVER/USDC and STABLE/USDC perpetuals; it does not currently list an XAG perpetual')
         if venue not in VENUES:
             raise ValueError('Choose OKX, HTX, MEXC or Binance USDⓈ-M Futures')
         if not api_key.strip() or not secret.strip():
-            raise ValueError('API key and secret are required')
+            raise ValueError('Wallet address and private key are required' if venue == 'hyperliquid' else 'API key and secret are required')
         import ccxt
         exchange_type = getattr(ccxt, VENUES[venue])
-        credentials = dict(apiKey=api_key.strip(), secret=secret.strip(), enableRateLimit=True)
+        credentials = (dict(walletAddress=api_key.strip(), privateKey=secret.strip(), enableRateLimit=True)
+                       if venue == 'hyperliquid' else
+                       dict(apiKey=api_key.strip(), secret=secret.strip(), enableRateLimit=True))
         if passphrase:
             credentials['password'] = passphrase
         if venue == 'okx' and not passphrase:
             raise ValueError('OKX requires the API key passphrase')
         if venue == 'htx':
             credentials['options'] = {'defaultType': 'swap', 'defaultSubType': 'linear'}
+        if venue == 'hyperliquid':
+            credentials['options'] = {'fetchMarkets': {'hip3': {'dexes': ['xyz']}}}
         exchange = exchange_type(credentials)
-        stage = 'loading XAG/USDT markets'
+        base = instrument.upper()
+        collateral = 'USDC' if venue == 'hyperliquid' else 'USDT'
+        stage = f'loading {base}/{collateral} markets'
         try:
-            market = self._market(exchange)
+            market = self._market(exchange, instrument)
             if not exchange.has.get('fetchPositions'):
                 raise ValueError(f'{venue.upper()} adapter does not support position checks required for safe live orders')
             stage = 'reading the futures account balance'
@@ -131,12 +154,16 @@ class LiveExchange:
         with self.lock:
             previous = self.clients.pop(venue, None)
             self.markets.pop(venue, None)
+            for key in (venue, f'{venue}:long', f'{venue}:short'):
+                self.protective_orders.pop(key, None)
+                self.take_profit_orders.pop(key, None)
+                self.protection_prices.pop(key, None)
             self.clients[venue] = exchange
             self.markets[venue] = market
             if previous:
                 previous.close()
-        total = balance.get('total', {}).get('USDT')
-        return dict(venue=venue, connected=True, symbol=market['symbol'],
+        total = balance.get('total', {}).get(collateral)
+        return dict(venue=venue, connected=True, symbol=market['symbol'], instrument=instrument,
                     contractSize=market.get('contractSize'), usdtBalance=total)
 
     def disconnect(self, venue: str):
@@ -171,7 +198,7 @@ class LiveExchange:
                         row['position']=dict(side=p.get('side'),quantity=abs(float(p.get('contracts') or 0))*float(market.get('contractSize') or 1),
                                              entryPrice=p.get('entryPrice'),markPrice=p.get('markPrice'),unrealizedPnl=p.get('unrealizedPnl'))
                     elif len(active)>1:
-                        row['position']={'error':'Multiple XAG positions detected; reconcile at exchange'}
+                        row['position']={'error':f'Multiple {self.markets[venue].get("base", "contract")} positions detected; reconcile at exchange'}
                 except Exception as error:
                     row['position']={'error':f'Position query failed: {type(error).__name__}'}
                 rows.append(row)
@@ -211,9 +238,10 @@ class LiveExchange:
                                        ('last', 'bid', 'ask', 'high', 'low', 'percentage', 'quoteVolume', 'timestamp')}
                 elif section == 'balance':
                     balance = self.account_balance(exchange, venue)
-                    if balance.get('total', {}).get('USDT') is None:
-                        raise ValueError('USDT balance unavailable')
-                    result[section] = {key: balance.get(key, {}).get('USDT') for key in ('total', 'free', 'used')}
+                    collateral = market.get('settle') or market.get('quote') or 'USDT'
+                    if balance.get('total', {}).get(collateral) is None:
+                        raise ValueError(f'{collateral} balance unavailable')
+                    result[section] = {key: balance.get(key, {}).get(collateral) for key in ('total', 'free', 'used')}
                 elif section == 'positions':
                     result[section] = [dict(side=p.get('side'),
                         quantity=abs(float(p.get('contracts') or 0)) * contract_size,
@@ -237,7 +265,7 @@ class LiveExchange:
     def market_order(self, venue: str, side: Literal['buy', 'sell'], quantity: float,
                      *, reduce_only: bool = False):
         if side not in ('buy', 'sell') or not isinstance(quantity, (int, float)) or quantity <= 0:
-            raise ValueError('Order side and XAG quantity must be valid and positive')
+            raise ValueError('Order side and quantity must be valid and positive')
         exchange, market = self.execution_client(venue)
         size = float(quantity) / float(market.get('contractSize') or 1)
         amount = float(exchange.amount_to_precision(market['symbol'], size))
@@ -301,7 +329,7 @@ class LiveExchange:
         exchange, market = self._get(venue)
         positions = self.positions(venue)
         if any(float(position.get('contracts') or 0) != 0 for position in positions):
-            raise ValueError('Close the existing XAG/USDT position before opening another from this terminal')
+            raise ValueError('Close the existing position before opening another from this terminal')
         ticker = exchange.fetch_ticker(market['symbol'])
         last = float(ticker.get('last') or 0)
         if not last:
@@ -502,9 +530,9 @@ class LiveExchange:
         positions = self.positions(venue)
         active = [position for position in positions if float(position.get('contracts') or 0) != 0]
         if not active:
-            return dict(venue=venue, closed=False, message='No open XAG/USDT position')
+            return dict(venue=venue, closed=False, message='No open position')
         if len(active) != 1:
-            raise ValueError('Multiple XAG/USDT positions detected. Reconcile the account position mode before closing here')
+            raise ValueError('Multiple positions detected. Reconcile the account position mode before closing here')
         position = active[0]
         contracts = float(position.get('contracts') or 0)
         side = 'sell' if position.get('side') == 'long' else 'buy'
@@ -826,10 +854,10 @@ class AutomaticLiveBot:
         if fresh.empty:return
         active=[p for p in self.service.positions(venue) if float(p.get('contracts') or 0)!=0]
         if self.position is None and active:
-            raise RuntimeError('An unmanaged XAG position appeared; live automation has paused')
+            raise RuntimeError('An unmanaged position appeared; live automation has paused')
         if self.position is not None:
             if len(active)>1:
-                raise RuntimeError('Multiple XAG positions detected; live automation has paused')
+                raise RuntimeError('Multiple positions detected; live automation has paused')
             if not active:
                 # The exchange stop may have filled. Stay flat until a fresh strategy entry signal.
                 with self.lock:self.position=None

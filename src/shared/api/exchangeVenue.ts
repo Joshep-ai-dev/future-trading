@@ -1,10 +1,11 @@
 import {useSyncExternalStore} from 'react';
 
 export const EXCHANGES=[
-  {id:'okx',name:'OKX',passphrase:true},
-  {id:'htx',name:'HTX',passphrase:false},
-  {id:'mexc',name:'MEXC',passphrase:false},
-  {id:'binance',name:'Binance USDⓈ-M',passphrase:false},
+  {id:'okx',name:'OKX',passphrase:true,wallet:false},
+  {id:'htx',name:'HTX',passphrase:false,wallet:false},
+  {id:'mexc',name:'MEXC',passphrase:false,wallet:false},
+  {id:'binance',name:'Binance USDⓈ-M',passphrase:false,wallet:false},
+  {id:'hyperliquid',name:'Hyperliquid',passphrase:false,wallet:true},
 ] as const;
 export type ExchangeVenue=typeof EXCHANGES[number]['id'];
 

@@ -6,6 +6,7 @@ import {TIMEFRAMES} from '../../shared/charts/chartTimeframe';
 import type {ExchangeVenue} from '../../shared/api/exchangeVenue';
 import type {Analysis,BacktestSettings} from '../../shared/types/types';
 import {useExchangeStream} from '../../shared/api/useExchangeStream';
+import {instrumentDetails,useExchangeInstrument} from '../../shared/api/exchangeInstrument';
 
 type Candle=Analysis['candles'][number];
 const StreamingPriceChart=memo(PaperPriceChart);
@@ -13,6 +14,7 @@ const emptyStops:[]=[];
 const emptyTrades:[]=[];
 export default function LiveMarketChart({venue,settings,overlay}:{venue:ExchangeVenue;settings:BacktestSettings;overlay?:ReactNode}){
   const {data,connected}=useExchangeStream(venue);
+  const asset=instrumentDetails(useExchangeInstrument()).base;
   const [timeframe,setTimeframe]=useState<BacktestSettings['entry_timeframe']>(settings.entry_timeframe);
   const [candles,setCandles]=useState<Candle[]>([]),[error,setError]=useState(''),[loaded,setLoaded]=useState(false);
   const duration=TIMEFRAMES[timeframe];
@@ -68,6 +70,6 @@ export default function LiveMarketChart({venue,settings,overlay}:{venue:Exchange
   },[venue,timeframe,duration]);
   return <section className="terminal-panel price-panel live-price-panel"><TradingChartHeader timeframe={timeframe} onTimeframeChange={changeTimeframe} mode={`${venue.toUpperCase()} LIVE MARKET`} caption={`${timeframe} exchange candles · streaming updates`}/>{overlay}
     {(error||data?.errors.connection||data?.errors.candleStream||!connected)&&<p className="exchange-inline-error" role="status">{error||data?.errors.connection||data?.errors.candleStream||'Connecting to exchange stream…'}</p>}
-    {candles.length?<StreamingPriceChart key={`${venue}-${timeframe}`} sessionId={0} allowLocalHistory={false} loadHistory={loadHistory} historyLabel="Pan left to load exchange history" showSma={settings.bb_reversal.use_sma_trend_adjustment} timeframe={timeframe} atrLength={settings.bb_reversal.atr_length} adxLength={settings.bb_reversal.adx_length} candles={candles} indicators={indicators} stops={emptyStops} trades={emptyTrades} position={null} indicatorClock={(data?.sectionTimes.candle??data?.sectionTimes.market??0)/1000}/>:<div className="chart-empty"><h3>{error?'Exchange chart unavailable':'Connecting to live market'}</h3><p>{venue.toUpperCase()} XAG/USDT perpetual candles</p></div>}
+    {candles.length?<StreamingPriceChart key={`${venue}-${asset}-${timeframe}`} sessionId={0} allowLocalHistory={false} loadHistory={loadHistory} historyLabel="Pan left to load exchange history" showSma={settings.bb_reversal.use_sma_trend_adjustment} timeframe={timeframe} atrLength={settings.bb_reversal.atr_length} adxLength={settings.bb_reversal.adx_length} candles={candles} indicators={indicators} stops={emptyStops} trades={emptyTrades} position={null} indicatorClock={(data?.sectionTimes.candle??data?.sectionTimes.market??0)/1000}/>:<div className="chart-empty"><h3>{error?'Exchange chart unavailable':'Connecting to live market'}</h3><p>{venue.toUpperCase()} {asset}/USDT perpetual candles</p></div>}
   </section>;
 }
