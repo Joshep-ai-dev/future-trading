@@ -321,6 +321,8 @@ class ExchangeProtectionRequest(BaseModel):
 class ExchangeCloseRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
     venue: Literal['okx','htx','mexc','binance','hyperliquid']
+    side: Literal['long','short'] | None = None
+    margin_mode: Literal['isolated','cross'] | None = None
     confirmation: Literal['CLOSE LIVE POSITION']
 
 
@@ -440,12 +442,9 @@ def exchange_forget(parameters: ExchangeDisconnectRequest, request: Request):
 def exchange_order(parameters: ExchangeOrderRequest, request: Request):
     ws = workspace(request)
     try:
-        # Margin mode and leverage cannot change while a position is open: check that first.
-        if any(float(position.get('contracts') or 0) != 0 for position in ws.exchange.positions(parameters.venue)):
-            raise ValueError('A position is already open. Close it (Close tab) before opening another.')
-        ws.exchange.prepare_account(parameters.venue, parameters.leverage)
         return ws.exchange.open_with_stop(parameters.venue,parameters.direction,parameters.quantity,
-                                            parameters.stop_price,parameters.take_profit_price)
+                                            parameters.stop_price,parameters.take_profit_price,
+                                            leverage=parameters.leverage)
     except ValueError as error:
         raise HTTPException(status_code=400,detail=str(error)) from error
     except (OrderStepError, RuntimeError) as error:
@@ -483,7 +482,7 @@ def exchange_update_protection(parameters: ExchangeProtectionRequest, request: R
 def exchange_close(parameters: ExchangeCloseRequest, request: Request):
     ws = workspace(request)
     try:
-        return ws.exchange.close_position(parameters.venue)
+        return ws.exchange.close_position(parameters.venue, side=parameters.side, margin_mode=parameters.margin_mode)
     except ValueError as error:
         raise HTTPException(status_code=400,detail=str(error)) from error
     except Exception as error:

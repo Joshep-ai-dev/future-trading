@@ -4,8 +4,8 @@ import unittest
 import ccxt
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from server.exchanges.exchange_stream import ExchangeStreams, classic_auth
-from server.exchanges.htx_account import classic_balance, classic_positions, rejection_reason, normalize_htx_balance
+from server.exchanges.exchange_stream import ExchangeFeed, ExchangeStreams, classic_auth
+from server.exchanges.htx_account import classic_balance, classic_positions, rejection_reason, normalize_htx_balance, classic_conditional_orders
 from server.exchanges.live_exchange import LiveExchange
 
 
@@ -93,6 +93,38 @@ class HTXAccountTests(unittest.TestCase):
             classic_balance(exchange)
         self.assertNotIn('private-secret', str(caught.exception))
 
+    def test_conditional_orders_cover_both_modes_and_all_pending_types(self) -> None:
+        exchange = MagicMock()
+        calls = []
+        def request(path, api, method, params):
+            calls.append((path, params['page_index']))
+            return {'status': 'ok', 'data': {'orders': [
+                dict(contract_code='XAG-USDT', order_id_str='123', direction='sell',
+                     volume='2', trigger_price='54.12', order_price='0'),
+                dict(contract_code='BTC-USDT', order_id_str='other')], 'total_page': 1}}
+        exchange.request.side_effect = request
+        orders = classic_conditional_orders(exchange, {'id': 'XAG-USDT'})
+        self.assertEqual(len(orders), 6)
+        self.assertEqual(len({order['id'] for order in orders}), 6)
+        self.assertEqual({order['marginMode'] for order in orders}, {'isolated', 'cross'})
+        self.assertEqual({order['type'] for order in orders}, {'tpsl', 'trigger', 'track'})
+        self.assertEqual(orders[0]['triggerPrice'], 54.12)
+        self.assertEqual(orders[0]['amount'], 2)
+
+    def test_conditional_orders_read_later_pages(self) -> None:
+        exchange = MagicMock()
+        def request(path, api, method, params):
+            return {'status': 'ok', 'data': {'orders': [dict(contract_code='XAG-USDT',
+                order_id_str=str(params['page_index']), volume=1)], 'total_page': 2}}
+        exchange.request.side_effect = request
+        self.assertEqual(len(classic_conditional_orders(exchange, {'id': 'XAG-USDT'})), 12)
+
+    def test_conditional_order_failure_is_not_an_empty_list(self) -> None:
+        exchange = MagicMock()
+        exchange.request.return_value = {'status': 'error'}
+        with self.assertRaises(ValueError):
+            classic_conditional_orders(exchange, {'id': 'XAG-USDT'})
+
     def test_classic_auth_is_deterministic_and_does_not_include_secret(self) -> None:
         message = classic_auth('test-key', 'private-secret', '2026-10-16T00:00:00')
         self.assertEqual(message['op'], 'auth')
@@ -102,6 +134,39 @@ class HTXAccountTests(unittest.TestCase):
 
 
 class ExchangeStreamTests(unittest.IsolatedAsyncioTestCase):
+    async def test_position_refresh_publishes_without_waiting_for_balance(self) -> None:
+        feed = ExchangeFeed.__new__(ExchangeFeed)
+        feed.venue = 'okx'
+        feed.loop = asyncio.get_running_loop()
+        feed.position_changed = asyncio.Event()
+        feed.position_burst_until = 0
+        feed.changed = asyncio.Event()
+        feed.state = {'errors': {}, 'sectionTimes': {}}
+        feed.service = MagicMock()
+        feed.service.overview.return_value = {'positions': [{'side': 'long', 'quantity': 2}], 'errors': {}}
+        worker = asyncio.create_task(feed.reconcile_positions())
+        try:
+            feed.position_changed.set()
+            await asyncio.wait_for(feed.changed.wait(), 1)
+            self.assertEqual(feed.state['positions'][0]['quantity'], 2)
+            feed.service.overview.assert_called_once_with('okx', sections=('positions',))
+        finally:
+            worker.cancel()
+            await asyncio.gather(worker, return_exceptions=True)
+
+    async def test_execution_wakes_position_worker_and_enables_short_burst(self) -> None:
+        service = MagicMock()
+        streams = ExchangeStreams(service)
+        feed = MagicMock()
+        feed.loop = asyncio.get_running_loop()
+        feed.position_changed = asyncio.Event()
+        feed.account_changed = asyncio.Event()
+        streams.feeds['okx'] = feed
+        service.on_execution('okx')
+        await asyncio.wait_for(feed.position_changed.wait(), 1)
+        self.assertTrue(feed.account_changed.is_set())
+        self.assertGreater(feed.position_burst_until, feed.loop.time())
+
     async def test_shared_feed_streams_market_and_closes_after_last_subscriber(self) -> None:
         source = MagicMock(apiKey='private-key', secret='private-secret', password=None)
         source.options = {}

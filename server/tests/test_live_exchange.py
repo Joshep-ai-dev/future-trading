@@ -14,6 +14,35 @@ class ExchangeConnectionTests(unittest.TestCase):
         self.market = {'symbol': 'XAG/USDT:USDT', 'contractSize': 1}
         self.exchange.fetch_balance.return_value = {'total': {'USDT': 25}}
 
+    def test_status_does_not_hold_registry_lock_during_network_call(self) -> None:
+        import threading
+        self.service.clients['okx'] = self.exchange
+        self.service.markets['okx'] = self.market
+        acquired = threading.Event()
+
+        def positions(venue):
+            def read_registry():
+                self.service._get(venue)
+                acquired.set()
+            worker = threading.Thread(target=read_registry)
+            worker.start()
+            self.assertTrue(acquired.wait(1), 'Status blocked execution registry access')
+            worker.join(1)
+            return []
+
+        with patch.object(self.service, 'positions', side_effect=positions):
+            self.assertEqual(len(self.service.status()), 1)
+
+    def test_selected_overview_skips_unrelated_network_calls(self) -> None:
+        self.service.clients['okx'] = self.exchange
+        self.service.markets['okx'] = self.market
+        self.exchange.fetch_positions.return_value = []
+        result = self.service.overview('okx', sections=('positions',))
+        self.assertEqual(result['positions'], [])
+        self.exchange.fetch_ticker.assert_not_called()
+        self.exchange.fetch_balance.assert_not_called()
+        self.exchange.fetch_open_orders.assert_not_called()
+
     def test_market_selector_supports_xag_and_stable_perpetuals(self) -> None:
         self.exchange.markets = {
             'XAG/USDT:USDT': {'symbol': 'XAG/USDT:USDT', 'base': 'XAG', 'quote': 'USDT', 'settle': 'USDT', 'swap': True, 'linear': True, 'active': True},
@@ -113,6 +142,24 @@ class ExchangeConnectionTests(unittest.TestCase):
         self.assertEqual(result['balance']['total'], 25)
         self.assertNotIn('info', result['market'])
         self.assertEqual(result['errors'], {})
+
+    def test_conditional_order_snapshot_converts_contract_quantity(self) -> None:
+        self.service.clients['htx'] = self.exchange
+        self.service.markets['htx'] = {**self.market, 'contractSize': 0.1}
+        with patch('server.exchanges.live_exchange.classic_conditional_orders', return_value=[
+            dict(id='isolated:tpsl:1', side='sell', type='sl', amount=20, triggerPrice=54, marginMode='isolated')]):
+            result = self.service.overview('htx', sections=('conditionalOrders',))
+        self.assertEqual(result['conditionalOrders'][0]['quantity'], 2)
+        self.assertEqual(result['conditionalOrders'][0]['triggerPrice'], 54)
+        self.exchange.fetch_open_orders.assert_not_called()
+
+    def test_conditional_order_failure_is_reported_separately(self) -> None:
+        self.service.clients['htx'] = self.exchange
+        self.service.markets['htx'] = self.market
+        with patch('server.exchanges.live_exchange.classic_conditional_orders', side_effect=ValueError('private-secret')):
+            result = self.service.overview('htx', sections=('conditionalOrders',))
+        self.assertIn('conditionalOrders', result['errors'])
+        self.assertNotIn('private-secret', str(result))
 
     def test_overview_partial_failure_is_not_an_empty_position_list(self) -> None:
         self.service.clients['htx'] = self.exchange
@@ -253,6 +300,87 @@ class LiveOrderSafetyTests(unittest.TestCase):
         self.service.clients['htx'] = self.exchange
         self.service.markets['htx'] = self.market
 
+    def test_accepted_entry_and_close_notify_position_refresh(self) -> None:
+        self.exchange.amount_to_precision.side_effect = lambda symbol, amount: amount
+        self.exchange.create_order.return_value = {'id': 'accepted', 'amount': 2}
+        callback = MagicMock()
+        self.service.on_execution = callback
+        self.service.market_order('htx', 'buy', 2)
+        self.service.market_order('htx', 'sell', 2, reduce_only=True)
+        self.assertEqual(callback.call_count, 2)
+        callback.assert_called_with('htx')
+
+    def test_close_targets_each_classic_margin_account(self) -> None:
+        self.market['id'] = 'XAG-USDT'
+        self.exchange.options = {'localAccountApi': 'classic'}
+        self.exchange.amount_to_precision.side_effect = lambda symbol, amount: amount
+        positions = [dict(side='long', contracts=amount, marginMode=mode,
+                          info=dict(contract_code='XAG-USDT', margin_mode=mode,
+                                    position_mode='dual_side', lever_rate=20))
+                     for mode, amount in [('isolated', 23), ('cross', 6)]]
+        self.exchange.request.return_value = {'status': 'ok', 'data': {'order_id_str': 'close-1'}}
+        self.service.protective_orders['htx'] = 'other-stop'
+        with patch.object(self.service, 'positions', return_value=positions):
+            for mode, amount, endpoint in [('isolated', 23, 'swap_order'), ('cross', 6, 'swap_cross_order')]:
+                result = self.service.close_position('htx', side='long', margin_mode=mode)
+                self.assertTrue(result['closed'])
+                args = self.exchange.request.call_args.args
+                self.assertEqual(args[0], 'linear-swap-api/v1/' + endpoint)
+                self.assertEqual(args[3]['volume'], amount)
+                self.assertEqual(args[3]['direction'], 'sell')
+                self.assertEqual(args[3]['offset'], 'close')
+                self.assertEqual(args[3]['reduce_only'], 1)
+        self.assertEqual(self.service.protective_orders['htx'], 'other-stop')
+        self.exchange.create_order.assert_not_called()
+
+    def test_close_missing_target_never_falls_back_to_other_position(self) -> None:
+        with patch.object(self.service, 'positions', return_value=[dict(side='long', contracts=6, marginMode='cross')]), \
+             patch.object(self.service, 'market_order') as order:
+            result = self.service.close_position('htx', side='long', margin_mode='isolated')
+        self.assertFalse(result['closed'])
+        order.assert_not_called()
+
+    def test_ambiguous_close_requires_target(self) -> None:
+        with patch.object(self.service, 'positions', return_value=[
+            dict(side='long', contracts=23, marginMode='isolated'),
+            dict(side='long', contracts=6, marginMode='cross')]), \
+             patch.object(self.service, 'market_order') as order:
+            with self.assertRaisesRegex(ValueError, 'Multiple positions'):
+                self.service.close_position('htx')
+        order.assert_not_called()
+
+    def test_classic_one_way_close_uses_reduce_only_both(self) -> None:
+        self.market['id'] = 'XAG-USDT'
+        self.exchange.amount_to_precision.side_effect = lambda symbol, amount: amount
+        self.exchange.request.return_value = {'status': 'ok', 'data': {'order_id': 12}}
+        position = dict(side='short', contracts=6, marginMode='cross', info=dict(
+            contract_code='XAG-USDT', margin_mode='cross', position_mode='single_side', lever_rate=20))
+        with patch.object(self.service, 'positions', return_value=[position]):
+            self.service.close_position('htx', side='short', margin_mode='cross')
+        params = self.exchange.request.call_args.args[3]
+        self.assertEqual((params['direction'], params['offset'], params['reduce_only']), ('buy', 'both', 1))
+
+    def test_targeted_unified_close_preserves_other_position_and_margin_mode(self) -> None:
+        self.service.protective_orders['htx'] = 'other-stop'
+        with patch.object(self.service, 'positions', return_value=[
+            dict(side='long', contracts=23, marginMode='isolated'),
+            dict(side='long', contracts=6, marginMode='cross')]), \
+             patch.object(self.service, 'market_order', return_value={'id': 'close-2'}) as order:
+            self.service.close_position('htx', side='long', margin_mode='cross')
+        order.assert_called_once_with('htx', 'sell', 6, reduce_only=True, margin_mode='cross')
+        self.assertEqual(self.service.protective_orders['htx'], 'other-stop')
+
+    def test_classic_close_rejection_is_not_reported_as_success(self) -> None:
+        self.market['id'] = 'XAG-USDT'
+        self.exchange.amount_to_precision.side_effect = lambda symbol, amount: amount
+        self.exchange.request.return_value = {'status': 'error', 'data': {}}
+        position = dict(side='long', contracts=6, marginMode='cross', info=dict(
+            contract_code='XAG-USDT', margin_mode='cross', position_mode='dual_side', lever_rate=20))
+        with patch.object(self.service, 'positions', return_value=[position]):
+            with self.assertRaisesRegex(RuntimeError, 'did not confirm'):
+                self.service.close_position('htx', side='long', margin_mode='cross')
+        self.exchange.create_order.assert_not_called()
+
     def test_update_protection_replaces_and_removes_orders(self) -> None:
         self.market['id'] = 'XAG-USDT'
         self.exchange.amount_to_precision.side_effect = lambda symbol, amount: amount
@@ -385,6 +513,24 @@ class LiveOrderSafetyTests(unittest.TestCase):
         self.service.set_stop('htx', 'long', 2, 56.)
         for call in self.exchange.create_order.call_args_list:
             self.assertEqual(call.args[5]['marginMode'], 'isolated')
+
+    def test_manual_entry_checks_position_once_before_preparing_account(self) -> None:
+        self.exchange.fetch_positions.return_value = []
+        self.exchange.fetch_ticker.return_value = {'last': 57.}
+        with patch.object(self.service, 'prepare_account') as prepare, \
+             patch.object(self.service, 'market_order', return_value={'filled': 2}):
+            self.service.open_with_stop('htx', 'long', 2, None, leverage=12)
+        prepare.assert_called_once_with('htx', 12)
+        self.exchange.fetch_positions.assert_called_once()
+
+    def test_existing_position_prevents_manual_leverage_change(self) -> None:
+        self.exchange.fetch_positions.return_value = [{'contracts': 2}]
+        with patch.object(self.service, 'prepare_account') as prepare, \
+             patch.object(self.service, 'market_order') as entry:
+            with self.assertRaisesRegex(ValueError, 'existing position'):
+                self.service.open_with_stop('htx', 'long', 2, None, leverage=12)
+        prepare.assert_not_called()
+        entry.assert_not_called()
 
     def test_order_without_stop_places_no_stop_order(self) -> None:
         self.exchange.fetch_positions.return_value = []

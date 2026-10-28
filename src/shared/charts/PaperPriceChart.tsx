@@ -19,7 +19,7 @@ import type {PaperTrade,Position} from '../../features/trading/PaperTrading';
 import {chartVolume} from './chartVolume';
 
 type Point={time:number;bbBasis:number|null;bbUpper:number|null;bbLower:number|null;trendSma:number|null};
-type Data={candles:Analysis['candles'];indicators:Point[];stops:{time:number;price:number|null}[];trades:PaperTrade[];position:Position|null;indicatorClock:number};
+type Data={livePositions?:{side:string;quantity:number;entryPrice:number|null}[]|null;candles:Analysis['candles'];indicators:Point[];stops:{time:number;price:number|null}[];trades:PaperTrade[];position:Position|null;indicatorClock:number};
 type HistoryPage={candles:Analysis['candles'];hasMore:boolean};
 type Props=Data&{sessionId:number;showSma:boolean;timeframe:string;atrLength:number;adxLength:number;allowLocalHistory?:boolean;loadHistory?:(before:number)=>Promise<HistoryPage>;historyLabel?:string};
 
@@ -69,6 +69,8 @@ export default function PaperPriceChart(props:Props) {
     const overlays=([['bbBasis','#63d6d0','BB middle'],['bbUpper','#7d8da5','BB upper'],['bbLower','#7d8da5','BB lower'],['trendSma','#d7ad69','Trend SMA']] as const).filter(([key])=>key!=='trendSma'||props.showSma).map(([key,color,title])=>({key,series:chart.addSeries(LineSeries,{color,lineWidth:1,title,priceLineVisible:false,lastValueVisible:false})}));
     updateStrategyVisibility.current=()=>{for(const {series} of overlays)series.applyOptions({visible:strategyVisibleRef.current});};
     const stopOverlay=new StopOverlay();price.attachPrimitive(stopOverlay);
+    let liveEntryLines:ReturnType<typeof price.createPriceLine>[]=[];
+    let liveEntryKey='';
     const entry=chart.addSeries(LineSeries,{color:'#88bfff',lineWidth:2,title:'Open entry',priceLineVisible:false});
     let oscillatorData:ReturnType<typeof chartOscillators>=[],oscillatorKey='',panelConfig=configRef.current;
     const oscillatorSeries=new Map<IndicatorKind,ISeriesApi<'Line'>>();
@@ -182,6 +184,15 @@ export default function PaperPriceChart(props:Props) {
       const completed=data.candles.filter(c=>c.time+duration<=data.indicatorClock);
       const nextKey=`${completed.length}:${completed[0]?.time}:${completed.at(-1)?.time}`;
       if(nextKey!==oscillatorKey){oscillatorKey=nextKey;oscillatorData=chartOscillators(completed,duration,panelConfig.atrLength,panelConfig.adxLength,panelConfig.atrSmoothing,panelConfig.rsiLength);paintOscillators();}
+      const nextLiveEntryKey=JSON.stringify(data.livePositions??[]);
+      if(nextLiveEntryKey!==liveEntryKey){
+        liveEntryKey=nextLiveEntryKey;
+        liveEntryLines.forEach(line=>price.removePriceLine(line));
+        liveEntryLines=(data.livePositions??[]).filter(position=>position.entryPrice!=null&&Number.isFinite(position.entryPrice)&&position.entryPrice>0).map(position=>price.createPriceLine({
+          price:position.entryPrice!,color:position.side==='long'?'#26a69a':'#ef5350',lineWidth:2,lineStyle:LineStyle.Dashed,
+          axisLabelVisible:true,title:`${position.side.toUpperCase()} ${position.quantity} entry`,
+        }));
+      }
       const p=data.position,first=data.candles[0]?.time;
       if(p&&stamp!==undefined&&first!==undefined){
         const from=Math.max(first,p.entry_time);

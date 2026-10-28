@@ -26,6 +26,7 @@ export default function ManualOrderTicket({venue,asset,connected,busy,blocked,bo
   const positionOpen=(data?.positions?.length??0)>0;
   const accountVerified=streamConnected&&data?.positions!=null&&!data.errors.positions&&!data.errors.connection;
   const disabled=!connected||busy||blocked||botRunning||!accountVerified;
+  const closeDisabled=!connected||busy||botRunning||!accountVerified||(venue!=='htx'&&blocked);
   const validPrice=price!=null&&Number.isFinite(price)&&price>0;
   const stopValid=!useStop||(Number.isFinite(Number(stop))&&Number(stop)>0);
   const takeProfitValid=!useTakeProfit||(Number.isFinite(Number(takeProfit))&&Number(takeProfit)>0);
@@ -53,7 +54,7 @@ export default function ManualOrderTicket({venue,asset,connected,busy,blocked,bo
   }
   async function close(){
     if(!position||!window.confirm(`Close the entire ${position.side} ${asset}/${collateral} position with a reduce-only market order?`))return;
-    await onRun('/api/exchange/close',{venue,confirmation:'CLOSE LIVE POSITION'});
+    await onRun('/api/exchange/close',{venue,side:position.side,margin_mode:position.marginMode,confirmation:'CLOSE LIVE POSITION'});
   }
 
   return <div className="order-ticket" id="manual-ticket-panel" role="tabpanel" aria-labelledby="execution-tab-manual">
@@ -78,7 +79,7 @@ export default function ManualOrderTicket({venue,asset,connected,busy,blocked,bo
       {!busy&&openBlockReason&&<p className="ticket-help">{openBlockReason}</p>}
     </>:<div className="ticket-close-panel">
       <div className="ticket-order-type"><strong>Market close</strong><StatusBadge>Reduce only</StatusBadge></div>
-      {position?<><div className="ticket-position"><StatusBadge tone={position.side==='long'?'positive':'negative'}>{position.side.toUpperCase()}</StatusBadge><strong>{number(position.quantity)} {asset}</strong></div><dl><div><dt>Entry price</dt><dd>{number(position.entryPrice,3)}</dd></div><div><dt>Mark price</dt><dd>{number(position.markPrice,3)}</dd></div><div><dt>Unrealized PnL</dt><dd className={(position.unrealizedPnl??0)<0?'negative':'positive'}>{number(position.unrealizedPnl,4)} USDT</dd></div></dl><Button variant="danger" disabled={disabled} onClick={()=>void close()}>Close entire {position.side} position</Button>{(position.side==='long'||position.side==='short')&&<><Button variant="secondary" disabled={disabled} onClick={()=>setEditingProtection(true)}>Edit TP/SL</Button>{editingProtection&&<PositionProtection venue={venue} asset={asset} side={position.side} quantity={position.quantity} entryPrice={position.entryPrice} price={position.markPrice??price} disabled={disabled} onRun={onRun} onClose={()=>setEditingProtection(false)}/>}</>}</>:<p className="ticket-help">{!accountVerified?'Waiting for verified position data.':positionOpen?'Multiple positions detected. Manage them on the exchange.':`No open ${asset} position to close.`}</p>}
+      {position?<><div className="ticket-position"><StatusBadge tone={position.side==='long'?'positive':'negative'}>{position.side.toUpperCase()}</StatusBadge><strong>{number(position.quantity)} {asset}</strong></div><dl><div><dt>Entry price</dt><dd>{number(position.entryPrice,3)}</dd></div><div><dt>Mark price</dt><dd>{number(position.markPrice,3)}</dd></div><div><dt>Unrealized PnL</dt><dd className={(position.unrealizedPnl??0)<0?'negative':'positive'}>{number(position.unrealizedPnl,4)} USDT</dd></div></dl><Button variant="danger" disabled={closeDisabled} onClick={()=>void close()}>Close entire {position.side} position</Button>{(position.side==='long'||position.side==='short')&&<><Button variant="secondary" disabled={disabled} onClick={()=>setEditingProtection(true)}>Edit TP/SL</Button>{editingProtection&&<PositionProtection venue={venue} asset={asset} side={position.side} quantity={position.quantity} entryPrice={position.entryPrice} price={position.markPrice??price} disabled={disabled} onRun={onRun} onClose={()=>setEditingProtection(false)}/>}</>}</>:<p className="ticket-help">{!accountVerified?'Waiting for verified position data.':positionOpen?'Multiple positions detected. Use the Close button on each row in Positions.':`No open ${asset} position to close.`}</p>}
     </div>}
     {botRunning&&<p className="ticket-help">Stop the running strategy to enable manual orders.</p>}
   </div>;

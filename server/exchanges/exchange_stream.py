@@ -33,6 +33,7 @@ def position_view(position: dict, contract_size: float) -> dict:
 
 def order_view(order: dict, contract_size: float) -> dict:
     return dict(id=order.get('id'), side=order.get('side'), type=order.get('type'),
+                marginMode=order.get('marginMode') or (order.get('info') or {}).get('margin_mode'),
                 price=order.get('price'), triggerPrice=order.get('triggerPrice') or order.get('stopPrice'),
                 quantity=None if order.get('amount') is None else float(order['amount']) * contract_size,
                 filled=None if order.get('filled') is None else float(order['filled']) * contract_size,
@@ -40,6 +41,7 @@ def order_view(order: dict, contract_size: float) -> dict:
 
 
 RECONCILE_SECONDS = 5
+POSITION_RECONCILE_SECONDS = 2
 
 
 class ExchangeFeed:
@@ -47,10 +49,12 @@ class ExchangeFeed:
         self.service, self.venue = service, venue
         self.source, self.market = service._get(venue)
         self.state = dict(venue=venue, symbol=self.market['symbol'], market=None, balance=None,
-                          positions=None, orders=None, candle=None, errors={},
+                          positions=None, orders=None, conditionalOrders=None, candle=None, errors={},
                           streams={'market': 'connecting', 'account': 'connecting'}, sectionTimes={})
         self.changed = asyncio.Event()
         self.account_changed = asyncio.Event()
+        self.position_changed = asyncio.Event()
+        self.position_burst_until = 0.0
         self.loop = asyncio.get_running_loop()
         self.queues: set[asyncio.Queue] = set()
         self.client = None
@@ -89,6 +93,8 @@ class ExchangeFeed:
             else:
                 self.tasks.extend(asyncio.create_task(self.watch(section)) for section in ('balance', 'positions', 'orders'))
             self.tasks.append(asyncio.create_task(self.reconcile()))
+            self.tasks.append(asyncio.create_task(self.reconcile_positions()))
+            self.account_changed.set()
             await self.publish()
         except asyncio.CancelledError:
             raise
@@ -220,6 +226,7 @@ class ExchangeFeed:
                                     self.account_changed.set()
                             elif authenticated and message.get('op') == 'notify':
                                 self.account_changed.set()
+                                self.position_changed.set()
                             elif message.get('op') in ('error', 'close'):
                                 raise ConnectionError('Private WebSocket reported an error')
                         raise ConnectionError('Private WebSocket closed')
@@ -231,23 +238,34 @@ class ExchangeFeed:
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, 30)
 
+    async def refresh_section(self, section: str) -> None:
+        snapshot = await asyncio.to_thread(self.service.overview, self.venue, sections=(section,))
+        if section in snapshot['errors']:
+            self.state['errors'][section] = snapshot['errors'][section]
+            self.changed.set()
+        else:
+            self.update(section, snapshot[section])
+
+    async def reconcile_positions(self) -> None:
+        # One worker prevents overlapping polls; balance/orders never block it.
+        while True:
+            interval = 0.5 if self.loop.time() < self.position_burst_until else POSITION_RECONCILE_SECONDS
+            try:
+                await asyncio.wait_for(self.position_changed.wait(), timeout=interval)
+            except asyncio.TimeoutError:
+                pass
+            self.position_changed.clear()
+            await self.refresh_section('positions')
+
     async def reconcile(self) -> None:
         while True:
             try:
-                # Short timeout: some venues (HTX) push no private account events, so this poll is the update.
                 await asyncio.wait_for(self.account_changed.wait(), timeout=RECONCILE_SECONDS)
             except asyncio.TimeoutError:
                 pass
             self.account_changed.clear()
-            await asyncio.sleep(0.3)
-            # Keep positions/orders authoritative after reconnects and missed events.
-            snapshot = await asyncio.to_thread(self.service.overview, self.venue)
-            for section in ('balance', 'positions', 'orders'):
-                if section in snapshot['errors']:
-                    self.state['errors'][section] = snapshot['errors'][section]
-                    self.changed.set()
-                else:
-                    self.update(section, snapshot[section])
+            for section in ('orders', 'balance', 'conditionalOrders'):
+                await self.refresh_section(section)
 
     async def publish(self) -> None:
         while True:
@@ -274,6 +292,7 @@ class ExchangeStreams:
     def __init__(self, service: LiveExchange):
         self.service = service
         self.feeds: dict[str, ExchangeFeed] = {}
+        self.service.on_execution = self.refresh
 
     async def events(self, venue: str):
         source, _ = self.service._get(venue)
@@ -302,12 +321,19 @@ class ExchangeStreams:
                     self.feeds.pop(venue, None)
 
     def refresh(self, venue: str) -> None:
-        """Re-read balance/positions/orders now and again shortly after (call from any thread after an order)."""
+        """Wake account refresh and briefly accelerate position polling after execution."""
         feed = self.feeds.get(venue)
         if feed is None:
             return
-        feed.loop.call_soon_threadsafe(feed.account_changed.set)
-        feed.loop.call_soon_threadsafe(feed.loop.call_later, 1.5, feed.account_changed.set)
+        def wake() -> None:
+            feed.position_burst_until = feed.loop.time() + 5
+            feed.position_changed.set()
+            feed.account_changed.set()
+        try:
+            feed.loop.call_soon_threadsafe(wake)
+        except RuntimeError:
+            # A completed order must still succeed if the stream is shutting down.
+            pass
 
     async def close(self) -> None:
         tasks = [feed.runner for feed in self.feeds.values()]

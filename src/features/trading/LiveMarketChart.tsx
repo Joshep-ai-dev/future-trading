@@ -40,7 +40,7 @@ export default function LiveMarketChart({venue,settings,overlay}:{venue:Exchange
       }catch(reason){if(!abort.signal.aborted)setError(String(reason));}
     }
     void load();return()=>abort.abort();
-  },[venue,timeframe,duration,available]);
+  },[venue,timeframe,duration,available,data?.symbol]);
   useEffect(()=>{
     if(!loaded||!data?.candle)return;
     const [timestamp,open,high,low,close,volume=0]=data.candle;
@@ -57,6 +57,23 @@ export default function LiveMarketChart({venue,settings,overlay}:{venue:Exchange
       return updated.slice(-1000);
     });
   },[data?.candle,loaded,duration]);
+  useEffect(()=>{
+    const lastPrice=data?.market?.last;
+    const timestamp=data?.market?.timestamp??data?.sectionTimes.market;
+    if(!loaded||!connected||lastPrice==null||!Number.isFinite(lastPrice)||lastPrice<=0||!timestamp)return;
+    // Prefer exchange candle updates when they are newer than the ticker.
+    if((data?.sectionTimes.candle??0)>(data?.sectionTimes.market??0))return;
+    const time=Math.floor(timestamp/1000/duration)*duration;
+    setCandles(previous=>{
+      const last=previous.at(-1);
+      if(!last||time<last.time)return previous;
+      if(time===last.time){
+        if(last.close===lastPrice)return previous;
+        return [...previous.slice(0,-1),{...last,close:lastPrice,high:Math.max(last.high,lastPrice),low:Math.min(last.low,lastPrice)}];
+      }
+      return [...previous,{time,open:lastPrice,high:lastPrice,low:lastPrice,close:lastPrice,volume:0}].slice(-1000);
+    });
+  },[loaded,connected,data?.market?.last,data?.market?.timestamp,data?.sectionTimes.market,data?.sectionTimes.candle,duration]);
   const indicators=useMemo(()=>candles.map((c,index)=>{
     const length=settings.bb_reversal.bb_length,rows=candles.slice(Math.max(0,index-length+1),index+1);
     const basis=rows.length===length?rows.reduce((sum,row)=>sum+row.close,0)/length:null;
@@ -73,8 +90,8 @@ export default function LiveMarketChart({venue,settings,overlay}:{venue:Exchange
     }
     return {candles:[...buckets.values()].filter(c=>c.time<before).sort((a,b)=>a.time-b.time),hasMore:result.hasMore};
   },[venue,timeframe,duration]);
-  return <section className="terminal-panel price-panel live-price-panel"><TradingChartHeader timeframe={timeframe} onTimeframeChange={changeTimeframe} mode={`${venue.toUpperCase()} LIVE MARKET`} caption={`${timeframe} exchange candles · streaming updates`}/>{overlay}
+  return <section className="terminal-panel price-panel live-price-panel"><TradingChartHeader symbol={data?.symbol??`${asset}/${venue==='hyperliquid'?'USDC':'USDT'}`} timeframe={timeframe} onTimeframeChange={changeTimeframe} mode={`${venue.toUpperCase()} LIVE MARKET`} caption={`${timeframe} exchange candles · streaming updates`}/>{overlay}
     {(error||data?.errors.connection||data?.errors.candleStream||!connected)&&<p className="exchange-inline-error" role="status">{error||data?.errors.connection||data?.errors.candleStream||'Connecting to exchange stream…'}</p>}
-    {candles.length?<StreamingPriceChart key={`${venue}-${asset}-${timeframe}`} sessionId={0} allowLocalHistory={false} loadHistory={loadHistory} historyLabel="Pan left to load exchange history" showSma={settings.bb_reversal.use_sma_trend_adjustment} timeframe={timeframe} atrLength={settings.bb_reversal.atr_length} adxLength={settings.bb_reversal.adx_length} candles={candles} indicators={indicators} stops={emptyStops} trades={emptyTrades} position={null} indicatorClock={(data?.sectionTimes.candle??data?.sectionTimes.market??0)/1000}/>:<div className="chart-empty"><h3>{error?'Exchange chart unavailable':'Connecting to live market'}</h3><p>{venue.toUpperCase()} {asset}/USDT perpetual candles</p></div>}
+    {candles.length?<StreamingPriceChart key={`${venue}-${asset}-${timeframe}`} sessionId={0} allowLocalHistory={false} loadHistory={loadHistory} historyLabel="Pan left to load exchange history" showSma={settings.bb_reversal.use_sma_trend_adjustment} timeframe={timeframe} atrLength={settings.bb_reversal.atr_length} adxLength={settings.bb_reversal.adx_length} candles={candles} indicators={indicators} stops={emptyStops} trades={emptyTrades} position={null} livePositions={data?.positions} indicatorClock={(data?.sectionTimes.candle??data?.sectionTimes.market??0)/1000}/>:<div className="chart-empty"><h3>{error?'Exchange chart unavailable':'Connecting to live market'}</h3><p>{venue.toUpperCase()} {asset}/USDT perpetual candles</p></div>}
   </section>;
 }

@@ -1,4 +1,4 @@
-import {useEffect,useState} from 'react';
+import {useEffect,useRef,useState} from 'react';
 import {api} from '../../shared/api/api';
 import {disconnectExchangeStream,reconnectExchangeStream,syncExchangeConnection} from '../../shared/api/useExchangeStream';
 import ManualOrderTicket from './ManualOrderTicket';
@@ -26,16 +26,22 @@ export default function LiveExecution({view,settings,onSettingsChange,onConfigur
   const positionCheckFailed=!!account?.position?.error||!!account?.executionError;
   const botForVenue=bot.running&&bot.venue===venue;
 
+  const refreshing=useRef(false);
+  const submitting=useRef(false);
   async function refresh(){
+    if(refreshing.current)return;
+    refreshing.current=true;
     try{
       const value=await api<{venues:VenueStatus[];bot:BotStatus;savedVenues:Venue[]}>('/api/exchange/status');
       EXCHANGES.forEach(exchange=>syncExchangeConnection(exchange.id,value.venues.some(account=>account.venue===exchange.id&&account.connected)));
       setStatuses(value.venues);setBot(value.bot);setSavedVenues(value.savedVenues??[]);
-    }catch{/* Keep the last known account display while the backend restarts. */}
+    }catch{/* Keep the last known account display while the backend restarts. */}finally{refreshing.current=false;}
   }
   useEffect(()=>{void refresh();const timer=setInterval(()=>void refresh(),3000);return()=>clearInterval(timer);},[]);
   useEffect(()=>{if(bot.running&&bot.venue===venue)setMode('bot');},[bot.running,bot.venue,venue]);
   async function run(path:string,body?:unknown){
+    if(submitting.current)return false;
+    submitting.current=true;
     setBusy(true);setMessage('');
     try{
       const result=await api<any>(path,{method:'POST',headers:{'Content-Type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});
@@ -44,11 +50,13 @@ export default function LiveExecution({view,settings,onSettingsChange,onConfigur
       if(path==='/api/exchange/connect'||path==='/api/exchange/reconnect')reconnectExchangeStream(venue);
       if(path==='/api/exchange/auto/start'){setMode('bot');}
       if(path==='/api/exchange/order'||path==='/api/exchange/close'||path==='/api/exchange/protection'){
+        if(result.order)setMessage(`Order ${result.order.id} | ${result.order.side} | ${result.order.status??'accepted'}${result.takeProfitError?` | ${result.takeProfitError}`:''}. See Positions for filled market orders.`);
+        window.dispatchEvent(new CustomEvent('exchange-order-updated',{detail:{venue}}));
         void refresh();
         return true;
       }
       await refresh();return true;
-    }catch(error){setMessage(String(error));return false;}finally{setBusy(false);}
+    }catch(error){setMessage(String(error));return false;}finally{submitting.current=false;setBusy(false);}
   }
   function changeVenue(value:Venue){
     saveExchangeInstrument(defaultInstrumentForVenue(value));

@@ -23,17 +23,24 @@ export default function ExchangeOverview({venue}:{venue:ExchangeVenue}){
   const section=tab==='assets'?'balance':tab==='history'||tab==='botlog'||tab==='patterns'?'orders':tab;
   const sectionError=data?.errors[section];
   const positions=data?.positions;
-  const orders=data?.orders;
+  const orders=data?.orders||data?.conditionalOrders?[...(data?.orders??[]),...(data?.conditionalOrders??[])]:null;
+  const collateral=venue==='hyperliquid'?'USDC':'USDT';
   const lastUpdate=data?.sectionTimes[section];
   const idPrefix=`exchange-tab-${venue}`;
 
-  async function closePosition(){
-    if(!window.confirm(`Close the ${asset}/USDT position with a reduce-only market order?`))return;
+  useEffect(()=>{
+    const updated=(event:Event)=>{if((event as CustomEvent<{venue:ExchangeVenue}>).detail.venue===venue){setTab('positions');setProtectionRevision(value=>value+1);}};
+    window.addEventListener('exchange-order-updated',updated);
+    return()=>window.removeEventListener('exchange-order-updated',updated);
+  },[venue]);
+
+  async function closePosition(position:LivePosition){
+    if(!window.confirm(`Close the ${position.marginMode??''} ${position.side} ${position.quantity} ${asset}/USDT position with a reduce-only market order?`))return;
     setBusy(true);setMessage('');
     try{
       const result=await api<{message?:string}>('/api/exchange/close',{
         method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({venue,confirmation:'CLOSE LIVE POSITION'}),
+        body:JSON.stringify({venue,side:position.side,margin_mode:position.marginMode,confirmation:'CLOSE LIVE POSITION'}),
       });
       setMessage(result.message??'Close submitted. Waiting for exchange confirmation.');
     }catch(reason){setMessage(String(reason));}finally{setBusy(false);}
@@ -70,21 +77,23 @@ export default function ExchangeOverview({venue}:{venue:ExchangeVenue}){
       {value:'assets',label:'Assets',controls:`exchange-${venue}-assets`},
       {value:'botlog',label:'Bot log',controls:`exchange-${venue}-botlog`},
       {value:'patterns',label:'Patterns',controls:`exchange-${venue}-patterns`},
-    ]} value={tab} onChange={setTab} label="Exchange activity" idPrefix={idPrefix} trailing={<span>{venue.toUpperCase()} · {asset}USDT</span>}/>
+    ]} value={tab} onChange={setTab} label="Exchange activity" idPrefix={idPrefix} trailing={<span>{venue.toUpperCase()} · {asset}{collateral}</span>}/>
     {(error||data?.errors.connection)&&<p className="exchange-inline-error" role="status">{error||data?.errors.connection} Displayed values may be stale.</p>}
     {data?.executionError&&<p className="exchange-inline-error">{data.executionError}</p>}
     {data?.errors.accountStream&&<p className="exchange-inline-error">{data.errors.accountStream}</p>}
+    {tab==='orders'&&venue==='htx'&&data?.conditionalOrders==null&&!data?.errors.conditionalOrders&&<p className="ticket-help" role="status">Loading TP/SL, trigger and trailing orders for this market...</p>}
+    {tab==='orders'&&data?.errors.conditionalOrders&&<p className="exchange-inline-error" role="status">Conditional orders could not be refreshed. The order list may be incomplete.</p>}
     {sectionError&&<p className="exchange-inline-error" role="status">{sectionError} Account data is unverified.</p>}
     <div role="tabpanel" id={`exchange-${venue}-${tab}`} aria-labelledby={`${idPrefix}-${tab}`} className="exchange-activity-content">
       {tab==='positions'&&(positions?.length?
         <>
-          <PositionTable asset={asset} positions={positions} disabled={tableDisabled} onClose={()=>void closePosition()} protection={protection} onEditProtection={setEditingProtection}/>
+          <PositionTable asset={asset} positions={positions} disabled={tableDisabled} closeDisabled={busy||!connected||!!data?.errors.positions||!!data?.errors.connection||(venue!=='htx'&&!!data?.executionError)} onClose={position=>void closePosition(position)} protection={protection} onEditProtection={setEditingProtection}/>
           {editingProtection&&(editingProtection.side==='long'||editingProtection.side==='short')&&<PositionProtection venue={venue} asset={asset} side={editingProtection.side} quantity={editingProtection.quantity} entryPrice={editingProtection.entryPrice} price={editingProtection.markPrice??data?.market?.last} disabled={tableDisabled} onRun={run} onClose={()=>setEditingProtection(null)}/>}
         </>:
         !sectionError&&<EmptyState compact title={positions?`No open ${asset} positions`:'Loading positions'} description={positions?'Your exchange positions will appear here automatically.':'Waiting for a verified account snapshot.'}/>)}
       {tab==='orders'&&(orders?.length?
-        <OrderTable asset={asset} orders={orders}/>:
-        !sectionError&&<EmptyState compact title={orders?'No standard open orders':'Loading orders'} description="Conditional and protective stops may be listed separately on the exchange."/>)}
+        <OrderTable asset={asset} collateral={collateral} orders={orders}/>:
+        !sectionError&&<EmptyState compact title={orders?'No open orders for this market':'Loading orders'} description={venue==='htx'?'Includes standard, TP/SL, trigger and trailing orders from isolated and cross accounts.':'Orders are shown for the selected exchange and market.'}/>)}
       {tab==='assets'&&<AssetTable balance={data?.balance}/>}
       {tab==='history'&&<LiveTradeHistory venue={venue}/>}
       {tab==='botlog'&&<BotEventLog/>}

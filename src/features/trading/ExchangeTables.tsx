@@ -1,7 +1,7 @@
 import {liveNumber as number,type LiveOrder,type LivePosition} from '../../shared/api/useExchangeStream';
 import {Button,StatusBadge,TableFrame} from '../../shared/ui/ui';
 
-export function PositionTable({asset,positions,disabled,onClose,onEditProtection,protection}:{asset:string;positions:LivePosition[];disabled:boolean;onClose:()=>void;onEditProtection?:(position:LivePosition)=>void;protection?:Partial<Record<string,{stop:number|null;takeProfit:number|null}>>}){
+export function PositionTable({asset,positions,disabled,closeDisabled=disabled,onClose,onEditProtection,protection}:{asset:string;positions:LivePosition[];disabled:boolean;closeDisabled?:boolean;onClose:(position:LivePosition)=>void;onEditProtection?:(position:LivePosition)=>void;protection?:Partial<Record<string,{stop:number|null;takeProfit:number|null}>>}){
   const priceDigits=asset==='STABLE'?5:3;
   return <TableFrame label={`Open ${asset} positions`} columns={['Contract','Mark price','Entry price','Margin (USDT)','Unrealized PnL','PnL (%)','Liquidation',`Size (${asset})`,'TP / SL','Action']}>
     {positions.map((position,index)=><tr key={`${position.side}-${position.marginMode}-${index}`}>
@@ -11,15 +11,15 @@ export function PositionTable({asset,positions,disabled,onClose,onEditProtection
       <td className={(position.percentage??0)<0?'negative':'positive'}>{number(position.percentage,2)}{position.percentage!=null?'%':''}</td>
       <td>{number(position.liquidationPrice,priceDigits)}</td><td>{number(position.quantity)}</td>
       <td><div className="position-tpsl"><span className="positive">{protection?.[position.side]?.takeProfit!=null?number(protection[position.side]!.takeProfit,priceDigits):'--'}</span><span className="negative">{protection?.[position.side]?.stop!=null?number(protection[position.side]!.stop,priceDigits):'--'}</span></div></td>
-      <td><div className="exchange-position-actions">{onEditProtection&&<Button variant="secondary" disabled={disabled} onClick={()=>onEditProtection(position)}>TP/SL</Button>}<Button variant="danger" disabled={disabled||positions.length!==1} onClick={onClose}>Close {position.side}</Button></div></td>
+      <td><div className="exchange-position-actions">{onEditProtection&&<Button variant="secondary" disabled={disabled} onClick={()=>onEditProtection(position)}>TP/SL</Button>}<Button variant="danger" disabled={closeDisabled} onClick={()=>onClose(position)}>Close {position.side}</Button></div></td>
     </tr>)}
   </TableFrame>;
 }
 
-export function OrderTable({asset,orders}:{asset:string;orders:LiveOrder[]}){
+export function OrderTable({asset,orders,collateral='USDT'}:{asset:string;orders:LiveOrder[];collateral?:string}){
   const priceDigits=asset==='STABLE'?5:3;
-  return <TableFrame label={`Open ${asset} orders`} columns={['Contract','Side','Type',`Size (${asset})`,'Filled','Price','Trigger','Status']}>
-    {orders.map((order,index)=><tr key={order.id??index}><td><strong>{asset}USDT</strong></td><td><StatusBadge tone={order.side==='buy'?'positive':'negative'}>{order.side?.toUpperCase()}</StatusBadge></td><td>{order.type??'—'}</td><td>{number(order.quantity)}</td><td>{number(order.filled)}</td><td>{number(order.price,priceDigits)}</td><td>{number(order.triggerPrice,priceDigits)}</td><td>{order.status??'—'}</td></tr>)}
+  return <TableFrame label={`Open ${asset} orders`} columns={['Contract','Side','Margin','Type',`Size (${asset})`,'Filled','Price','Trigger','Status']}>
+    {orders.map((order,index)=><tr key={order.id??index}><td><strong>{asset}{collateral}</strong></td><td><StatusBadge tone={order.side==='buy'?'positive':'negative'}>{order.side?.toUpperCase()}</StatusBadge></td><td>{order.marginMode??'--'}</td><td>{order.type??'—'}</td><td>{number(order.quantity)}</td><td>{number(order.filled)}</td><td>{number(order.price,priceDigits)}</td><td>{number(order.triggerPrice,priceDigits)}</td><td>{order.status??'—'}</td></tr>)}
   </TableFrame>;
 }
 

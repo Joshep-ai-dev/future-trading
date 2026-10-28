@@ -120,3 +120,34 @@ def classic_orders(exchange: Any, market: dict) -> list[dict]:
             if page > 100:
                 raise ValueError('HTX open order result exceeded the supported page limit')
     return orders
+
+
+def classic_conditional_orders(exchange: Any, market: dict) -> list[dict]:
+    """Read pending TP/SL, trigger and trailing orders in both margin accounts."""
+    orders = []
+    for mode, prefix in (('isolated', 'swap_'), ('cross', 'swap_cross_')):
+        for kind in ('tpsl', 'trigger', 'track'):
+            page = 1
+            while True:
+                data = classic_request(exchange, prefix + kind + '_openorders',
+                                       dict(contract_code=market['id'], page_index=page, page_size=50))
+                if not isinstance(data, dict) or not isinstance(data.get('orders'), list):
+                    raise ValueError('HTX returned an unrecognized conditional orders response')
+                for row in data['orders']:
+                    if row.get('contract_code') != market['id']:
+                        continue
+                    order_id = row.get('order_id_str') or row.get('order_id')
+                    if order_id is None:
+                        raise ValueError('HTX returned a conditional order without an id')
+                    orders.append(dict(id=f'{mode}:{kind}:{order_id}', side=row.get('direction'),
+                        type=row.get('tpsl_order_type') or kind, marginMode=mode,
+                        price=None if not row.get('order_price') else float(row['order_price']),
+                        triggerPrice=None if row.get('trigger_price') is None else float(row['trigger_price']),
+                        amount=None if row.get('volume') is None else float(row['volume']),
+                        filled=0, status='open'))
+                if page >= int(data.get('total_page', 1)):
+                    break
+                page += 1
+                if page > 100:
+                    raise ValueError('HTX conditional orders exceeded the supported page limit')
+    return orders

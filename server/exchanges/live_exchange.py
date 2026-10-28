@@ -13,7 +13,7 @@ from server.strategies.bb_outer_reversal import Settings, run_backtest
 from server.strategies.readiness import strategy_readiness
 from server.strategies.indicators import rsi
 from server.market.data import TIMEFRAMES
-from server.exchanges.htx_account import classic_balance, classic_positions, classic_orders, rejection_reason, normalize_htx_balance
+from server.exchanges.htx_account import classic_balance, classic_positions, classic_orders, classic_conditional_orders, rejection_reason, normalize_htx_balance
 
 
 VENUES = {
@@ -76,6 +76,7 @@ class LiveExchange:
         self.take_profit_orders = {}
         self.protection_prices: dict[str, dict] = {}
         self.auto_bot = None
+        self.on_execution = None
 
     @staticmethod
     def _market(exchange, instrument: str = 'xag'):
@@ -186,23 +187,24 @@ class LiveExchange:
 
     def status(self):
         with self.lock:
-            rows=[]
-            for venue in self.clients:
-                row=dict(venue=venue, connected=True, symbol=self.markets[venue]['symbol'],
-                         contractSize=self.markets[venue].get('contractSize'),position=None,
-                         executionError=self.execution_error(self.clients[venue]))
-                try:
-                    active=[p for p in self.positions(venue) if float(p.get('contracts') or 0)!=0]
-                    if len(active)==1:
-                        p=active[0]; market=self.markets[venue]
-                        row['position']=dict(side=p.get('side'),quantity=abs(float(p.get('contracts') or 0))*float(market.get('contractSize') or 1),
-                                             entryPrice=p.get('entryPrice'),markPrice=p.get('markPrice'),unrealizedPnl=p.get('unrealizedPnl'))
-                    elif len(active)>1:
-                        row['position']={'error':f'Multiple {self.markets[venue].get("base", "contract")} positions detected; reconcile at exchange'}
-                except Exception as error:
-                    row['position']={'error':f'Position query failed: {type(error).__name__}'}
-                rows.append(row)
-            return rows
+            connections = [(venue, client, self.markets[venue]) for venue, client in self.clients.items()]
+        rows=[]
+        for venue, client, market in connections:
+            row=dict(venue=venue, connected=True, symbol=market['symbol'],
+                     contractSize=market.get('contractSize'),position=None,
+                     executionError=self.execution_error(client))
+            try:
+                active=[p for p in self.positions(venue) if float(p.get('contracts') or 0)!=0]
+                if len(active)==1:
+                    p=active[0]
+                    row['position']=dict(side=p.get('side'),quantity=abs(float(p.get('contracts') or 0))*float(market.get('contractSize') or 1),
+                                         entryPrice=p.get('entryPrice'),markPrice=p.get('markPrice'),unrealizedPnl=p.get('unrealizedPnl'))
+                elif len(active)>1:
+                    row['position']={'error':f'Multiple {market.get("base", "contract")} positions detected; reconcile at exchange'}
+            except Exception as error:
+                row['position']={'error':f'Position query failed: {type(error).__name__}'}
+            rows.append(row)
+        return rows
 
     def _get(self, venue: str):
         with self.lock:
@@ -214,7 +216,7 @@ class LiveExchange:
     @staticmethod
     def execution_error(exchange) -> str | None:
         if exchange.options.get('localAccountApi') == 'classic':
-            return 'HTX classic account detected. Account monitoring is available; manage orders on HTX until classic execution is supported.'
+            return 'HTX classic account detected. For new entries and TP/SL, manage orders on HTX. Existing positions can be closed from Positions.'
         return None
 
     def execution_client(self, venue: str):
@@ -224,13 +226,13 @@ class LiveExchange:
             raise ValueError(error)
         return exchange, market
 
-    def overview(self, venue: str) -> dict:
+    def overview(self, venue: str, sections: tuple[str, ...] = ('market', 'balance', 'positions', 'orders')) -> dict:
         exchange, market = self._get(venue)
         result = dict(venue=venue, symbol=market['symbol'], market=None,
                       balance=None, positions=None, orders=None, errors={})
         contract_size = float(market.get('contractSize') or 1)
         # Isolate failures so a missing endpoint never looks like a flat account.
-        for section in ('market', 'balance', 'positions', 'orders'):
+        for section in sections:
             try:
                 if section == 'market':
                     ticker = exchange.fetch_ticker(market['symbol'])
@@ -247,12 +249,15 @@ class LiveExchange:
                         quantity=abs(float(p.get('contracts') or 0)) * contract_size,
                         **{key: p.get(key) for key in ('entryPrice', 'markPrice', 'unrealizedPnl', 'leverage', 'liquidationPrice', 'marginMode', 'initialMargin', 'percentage')})
                         for p in self.positions(venue) if float(p.get('contracts') or 0) != 0]
+                elif section == 'conditionalOrders':
+                    rows = classic_conditional_orders(exchange, market) if venue == 'htx' else []
+                    result[section] = [dict(row, quantity=None if row['amount'] is None else row['amount'] * contract_size) for row in rows]
                 else:
                     if not exchange.has.get('fetchOpenOrders'):
                         result['errors'][section] = 'Open orders are unavailable through this exchange adapter.'
                         continue
                     result[section] = [dict(id=o.get('id'), side=o.get('side'), type=o.get('type'),
-                        price=o.get('price'), triggerPrice=o.get('triggerPrice') or o.get('stopPrice'),
+                        price=o.get('price'), marginMode=o.get('marginMode') or (o.get('info') or {}).get('margin_mode'), triggerPrice=o.get('triggerPrice') or o.get('stopPrice'),
                         quantity=None if o.get('amount') is None else float(o['amount']) * contract_size,
                         filled=None if o.get('filled') is None else float(o['filled']) * contract_size,
                         status=o.get('status')) for o in self.open_orders(venue)]
@@ -263,7 +268,7 @@ class LiveExchange:
         return result
 
     def market_order(self, venue: str, side: Literal['buy', 'sell'], quantity: float,
-                     *, reduce_only: bool = False):
+                     *, reduce_only: bool = False, margin_mode: str | None = None):
         if side not in ('buy', 'sell') or not isinstance(quantity, (int, float)) or quantity <= 0:
             raise ValueError('Order side and quantity must be valid and positive')
         exchange, market = self.execution_client(venue)
@@ -272,6 +277,10 @@ class LiveExchange:
         if amount <= 0 or amount < float(market.get('limits', {}).get('amount', {}).get('min') or 0):
             raise ValueError('Quantity is below this contract’s minimum order size')
         params = {**margin_params(venue), **({'reduceOnly': True} if reduce_only else {})}
+        if margin_mode is not None:
+            if margin_mode not in ('isolated', 'cross'):
+                raise ValueError('Unrecognized margin mode')
+            params['marginMode'] = margin_mode
         if venue == 'htx':
             # The position being opened or closed: buy opens long / closes short.
             hedge_side = ('long' if side == 'buy' else 'short') if not reduce_only else ('short' if side == 'buy' else 'long')
@@ -282,6 +291,8 @@ class LiveExchange:
             order = exchange.create_order(market['symbol'], 'market', side, amount, None, params)
         if not order.get('id'):
             raise RuntimeError(f'The exchange returned no order id, so the order was not placed. Exchange reply: {_reply(exchange, order)}')
+        if self.on_execution is not None:
+            self.on_execution(venue)
         if not reduce_only:
             self.last_entry_id = order.get('id')
         return dict(id=order.get('id'), status=order.get('status'), side=side,
@@ -320,16 +331,18 @@ class LiveExchange:
                 raise OrderStepError(step, error) from error
 
     def open_with_stop(self, venue: str, direction: Literal['long', 'short'],
-                       quantity: float, stop_price: float | None, take_profit_price: float | None = None):
+                       quantity: float, stop_price: float | None, take_profit_price: float | None = None, *, leverage: int | None = None):
         with self.trade_lock:
-            return self._open_with_stop_locked(venue,direction,quantity,stop_price,take_profit_price)
+            return self._open_with_stop_locked(venue,direction,quantity,stop_price,take_profit_price,leverage=leverage)
 
     def _open_with_stop_locked(self, venue: str, direction: Literal['long', 'short'],
-                               quantity: float, stop_price: float, take_profit_price: float | None = None):
+                               quantity: float, stop_price: float | None, take_profit_price: float | None = None, *, leverage: int | None = None):
         exchange, market = self._get(venue)
         positions = self.positions(venue)
         if any(float(position.get('contracts') or 0) != 0 for position in positions):
             raise ValueError('Close the existing position before opening another from this terminal')
+        if leverage is not None:
+            self.prepare_account(venue, leverage)
         ticker = exchange.fetch_ticker(market['symbol'])
         last = float(ticker.get('last') or 0)
         if not last:
@@ -519,25 +532,43 @@ class LiveExchange:
                     self.protection_prices.setdefault(storage_key, {})[key] = order.get('triggerPrice')
             return self.protection(venue, side)
 
-    def close_position(self, venue: str):
+    def close_position(self, venue: str, *, side: str | None = None, margin_mode: str | None = None):
         with self.trade_lock:
-            return self._close_position_locked(venue)
+            return self._close_position_locked(venue, side=side, margin_mode=margin_mode)
 
-    def _close_position_locked(self, venue: str):
+    def _close_position_locked(self, venue: str, *, side: str | None = None, margin_mode: str | None = None):
         if self.auto_bot and self.auto_bot.running and self.auto_bot.venue == venue:
             raise ValueError('Stop the automated strategy before manually closing its position')
-        exchange, market = self.execution_client(venue)
+        exchange, market = self._get(venue)
         positions = self.positions(venue)
         active = [position for position in positions if float(position.get('contracts') or 0) != 0]
-        if not active:
-            return dict(venue=venue, closed=False, message='No open position')
-        if len(active) != 1:
-            raise ValueError('Multiple positions detected. Reconcile the account position mode before closing here')
-        position = active[0]
-        contracts = float(position.get('contracts') or 0)
-        side = 'sell' if position.get('side') == 'long' else 'buy'
-        base_quantity = abs(contracts) * float(market.get('contractSize') or 1)
-        result = self.market_order(venue, side, base_quantity, reduce_only=True)
+        targeted = side is not None or margin_mode is not None
+        candidates = [p for p in active if (side is None or p.get('side') == side)
+                      and (margin_mode is None or p.get('marginMode') == margin_mode)]
+        if not candidates:
+            return dict(venue=venue, closed=False, message='The selected position is no longer open' if targeted else 'No open position')
+        if len(candidates) != 1:
+            raise ValueError('Multiple positions match. Select a position by side and margin mode')
+        position = candidates[0]
+        if position.get('side') not in ('long', 'short'):
+            raise ValueError('Position side could not be verified')
+        contracts = abs(float(position.get('contracts') or 0))
+        order_side = 'sell' if position['side'] == 'long' else 'buy'
+        info = position.get('info') or {}
+        if venue == 'htx' and info.get('contract_code') == market.get('id') and info.get('margin_mode') in ('isolated', 'cross'):
+            # Classic positions must close on the matching classic account API,
+            # even when the balance was read from the unified V5 API.
+            result = self._close_htx_classic(exchange, market, position, order_side, contracts)
+            if self.on_execution is not None:
+                self.on_execution(venue)
+            return dict(venue=venue, closed=True, order=result,
+                        message='Close submitted for the selected position. Existing reduce-only TP/SL orders were kept.')
+        base_quantity = contracts * float(market.get('contractSize') or 1)
+        result = self.market_order(venue, order_side, base_quantity, reduce_only=True,
+                                   **({'margin_mode': position.get('marginMode')} if targeted else {}))
+        if len(active) > 1:
+            # Venue-wide protection tracking cannot identify the other position's orders.
+            return dict(venue=venue, closed=True, order=result)
         with self.lock:
             stop_id = self.protective_orders.pop(venue, None)
             take_profit_id = self.take_profit_orders.pop(venue, None)
@@ -559,6 +590,30 @@ class LiveExchange:
                     # The remaining reduce-only stop cannot increase exposure.
                     pass
         return dict(venue=venue, closed=True, order=result)
+
+    def _close_htx_classic(self, exchange, market: dict, position: dict, side: str, contracts: float) -> dict:
+        info = position['info']
+        mode = info['margin_mode']
+        position_mode = info.get('position_mode')
+        if position_mode not in ('single_side', 'dual_side'):
+            raise ValueError('HTX position mode is unavailable. Refresh the account before closing')
+        leverage = float(info.get('lever_rate') or position.get('leverage') or 0)
+        if not math.isfinite(leverage) or leverage <= 0 or not leverage.is_integer():
+            raise ValueError('HTX position leverage could not be verified')
+        amount = float(exchange.amount_to_precision(market['symbol'], contracts))
+        if not math.isfinite(amount) or amount <= 0 or amount > contracts:
+            raise ValueError('HTX close quantity could not be verified')
+        params = dict(contract_code=market['id'], volume=amount, direction=side,
+                      offset='both' if position_mode == 'single_side' else 'close',
+                      reduce_only=1, lever_rate=int(leverage), order_price_type='market')
+        endpoint = 'swap_cross_order' if mode == 'cross' else 'swap_order'
+        reply = exchange.request('linear-swap-api/v1/' + endpoint, ['contract', 'private'], 'POST', params)
+        data = reply.get('data') or {}
+        order_id = data.get('order_id_str') or data.get('order_id')
+        if reply.get('status') != 'ok' or not order_id:
+            raise RuntimeError('HTX did not confirm the close order. Check exchange orders before retrying')
+        return dict(id=str(order_id), side=side, status='accepted', amount=amount, filled=None,
+                    average=None, symbol=market['symbol'], reduceOnly=True)
 
     def set_stop(self, venue: str, direction: Literal['long', 'short'], quantity: float, trigger: float,
                  *, take_profit: bool = False):
@@ -689,8 +744,12 @@ class LiveExchange:
 
     def open_orders(self, venue: str) -> list[dict]:
         exchange, market = self._get(venue)
-        if venue == 'htx' and exchange.options.get('localAccountApi') == 'classic':
-            return classic_orders(exchange, market)
+        if venue == 'htx':
+            try:
+                return classic_orders(exchange, market)
+            except Exception:
+                if exchange.options.get('localAccountApi') == 'classic':
+                    raise
         return exchange.fetch_open_orders(market['symbol'])
 
     def trade_history(self, venue: str) -> list[dict]:
