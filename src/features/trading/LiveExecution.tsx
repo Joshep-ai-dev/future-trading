@@ -43,6 +43,10 @@ export default function LiveExecution({view,settings,onSettingsChange,onConfigur
       if(path==='/api/exchange/disconnect')disconnectExchangeStream(venue);
       if(path==='/api/exchange/connect'||path==='/api/exchange/reconnect')reconnectExchangeStream(venue);
       if(path==='/api/exchange/auto/start'){setMode('bot');}
+      if(path==='/api/exchange/order'||path==='/api/exchange/close'||path==='/api/exchange/protection'){
+        void refresh();
+        return true;
+      }
       await refresh();return true;
     }catch(error){setMessage(String(error));return false;}finally{setBusy(false);}
   }

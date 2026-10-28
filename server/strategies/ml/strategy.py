@@ -87,7 +87,7 @@ class MLSettings:
                   (self.amount_unit in ('percent', 'price'), 'Invalid amount unit'),
                   (self.capacity in ('light', 'standard', 'rich'), 'Model capacity must be light, standard or rich'),
                   (self.exit_mode in ('learned', 'fixed'), 'Exit mode must be learned or fixed'),
-                  (.05 <= self.tp_quantile <= .95 and .05 <= self.sl_quantile <= .95, 'Exit quantiles must be 0.05-0.95'),
+                  (.0001 <= self.tp_quantile <= .95 and .0001 <= self.sl_quantile <= .95, 'Exit quantiles must be 0.0001-0.95'),
                   (0 <= self.min_reward_risk <= 10, 'Minimum reward/risk must be 0-10'),
                   (.1 <= self.trail_start <= 2 and .2 <= self.trail_noise <= 5, 'Trailing settings out of range'),
                   (bool(self.regimes) and all(name in REGIME_NAMES for name in self.regimes), 'Choose at least one valid market regime'),

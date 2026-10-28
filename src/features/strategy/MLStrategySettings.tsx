@@ -10,7 +10,7 @@ export default function MLStrategySettings({settings,onChange}:{settings:Backtes
   const config=settings.ml,{catalog,error}=useStrategyCatalog();
   const setMl=(patch:Partial<MLConfig>)=>onChange({...settings,ml:{...config,...patch}});
   const num=(key:NumberKey,label:string,min:number,max:number,step:number|'any',hint?:string,unit?:string)=>
-    <Field key={key} label={label} hint={hint} unit={unit}><input type="number" required min={min} max={max} step={step} value={config[key]} onChange={event=>setMl({[key]:Number(event.target.value)} as Partial<MLConfig>)}/></Field>;
+    <Field key={key} label={label} hint={hint} unit={unit}><input type="number" required min={min} max={max} step={step} value={config[key]} onChange={event=>setMl({[key]:Number(event.target.value)} as Partial<MLConfig>)} onBlur={event=>{const value=Number(event.target.value);if(!Number.isFinite(value)||value<min||value>max)setMl({[key]:Math.min(max,Math.max(min,Number.isFinite(value)?value:min))} as Partial<MLConfig>);}}/></Field>;
   const toggleGroup=(key:string)=>setMl({feature_groups:config.feature_groups.includes(key)?config.feature_groups.filter(item=>item!==key):[...config.feature_groups,key]});
   const activeModels=Object.values(config.models).filter(weight=>weight>0).length;
   const activeGpuModels=(catalog?.models??[]).filter(model=>model.device==='cuda'&&(config.models[model.key]??0)>0).length;
@@ -69,8 +69,8 @@ export default function MLStrategySettings({settings,onChange}:{settings:Backtes
     <SettingsCard step={5} id="settings-exits" title="Exits" description={config.exit_mode==='learned'?'The models learn how far price usually moves for and against each trade, and set take-profit, stop and trailing from that for every entry.':'Every trade uses the same ATR multiples for take-profit and stop.'}>
       <div className="exit-mode" role="radiogroup" aria-label="Exit mode">{(['learned','fixed'] as const).map(mode=><button key={mode} type="button" role="radio" aria-checked={config.exit_mode===mode} onClick={()=>setMl({exit_mode:mode})}><strong>{mode==='learned'?'Learned by the models':'Fixed ATR multiples'}</strong><small>{mode==='learned'?'Quantile models predict the favourable and adverse move per trade.':'Simple and predictable; tune them with the grid search.'}</small></button>)}</div>
       {config.exit_mode==='learned'?<div className="setup-grid">
-        {num('tp_quantile','Target quantile',.05,.95,'any','Lower = closer, more often reached.')}
-        {num('sl_quantile','Stop quantile',.05,.95,'any','Higher = wider, outside normal noise.')}
+        {num('tp_quantile','Target quantile',.0001,.95,'any','Lower = closer, more often reached.')}
+        {num('sl_quantile','Stop quantile',.0001,.95,'any','Higher = wider, outside normal noise.')}
         {num('min_reward_risk','Min reward ÷ risk',0,10,'any','Learned target ÷ learned stop needed to enter.','×')}
       </div>:null}
       <div className="setup-grid setup-grid--nested">

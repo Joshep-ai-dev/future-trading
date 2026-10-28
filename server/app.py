@@ -588,7 +588,7 @@ def run(parameters: Parameters):
 @app.get('/api/data-range')
 def data_range(market: Literal['xag', 'stable'] = 'xag'):
     try:
-        frame, _ = load_bars('1m', instrument=market)
+        frame, _ = load_bars('1h' if market == 'stable' else '1m', instrument=market)
         complete = frame.dropna(subset=['open','high','low','close'])
         if complete.empty:
             raise ValueError('No complete market candles available')

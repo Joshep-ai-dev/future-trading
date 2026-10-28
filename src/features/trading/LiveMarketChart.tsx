@@ -46,10 +46,15 @@ export default function LiveMarketChart({venue,settings,overlay}:{venue:Exchange
     const [timestamp,open,high,low,close,volume=0]=data.candle;
     const time=Math.floor(timestamp/1000/duration)*duration;
     setCandles(previous=>{
+      const index=previous.findIndex(candle=>candle.time===time);
+      const existing=index>=0?previous[index]:undefined;
       const last=previous.at(-1);
-      if(last&&time<last.time)return previous;
-      const next=last?.time===time?{...last,high:Math.max(last.high,high),low:Math.min(last.low,low),close,volume}:{time,open,high,low,close,volume};
-      return [...(last?.time===time?previous.slice(0,-1):previous),next].slice(-1000);
+      if(last&&time<last.time&&!existing)return previous;
+      // A stream update is a 1m candle. Seed a missing higher-timeframe bucket
+      // from that minute, then merge later minute updates into the same candle.
+      const next=existing?{...existing,high:Math.max(existing.high,high),low:Math.min(existing.low,low),close,volume:(existing.volume??0)+volume}:{time,open,high,low,close,volume};
+      const updated=existing?previous.map((candle,i)=>i===index?next:candle):[...previous,next];
+      return updated.slice(-1000);
     });
   },[data?.candle,loaded,duration]);
   const indicators=useMemo(()=>candles.map((c,index)=>{

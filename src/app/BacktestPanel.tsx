@@ -24,6 +24,12 @@ function initial(range:{startDate:string;endDate:string}):BacktestSettings {
 }
 const settingsKey='silver.bb.settings.v2';
 type SavedProfile={name:string;settings:BacktestSettings};
+function normalizeMlQuantiles(settings:BacktestSettings):BacktestSettings{
+  if(settings.strategy!=='ml_ensemble'||settings.ml.exit_mode!=='learned')return settings;
+  const tp=settings.ml.tp_quantile,sl=settings.ml.sl_quantile;
+  if(tp>=.0001&&tp<=.95&&sl>=.0001&&sl<=.95)return settings;
+  return {...settings,ml:{...settings.ml,tp_quantile:tp>=.0001&&tp<=.95?tp:mlDefaults.tp_quantile,sl_quantile:sl>=.0001&&sl<=.95?sl:mlDefaults.sl_quantile}};
+}
 function restoreSettings(raw:unknown,range:{startDate:string;endDate:string}){
   const defaults=initial(range);
   try{
@@ -35,7 +41,7 @@ function restoreSettings(raw:unknown,range:{startDate:string;endDate:string}){
     const bb=Object.fromEntries(Object.entries(defaults.bb_reversal).filter(([key,value])=>typeof savedBb[key]===typeof value&&(typeof value!=='number'||Number.isFinite(savedBb[key]))).map(([key])=>[key,savedBb[key]]));
     const savedMl=(saved.ml??{}) as Record<string,unknown>;
     const ml=Object.fromEntries(Object.entries(defaults.ml).filter(([key,value])=>typeof savedMl[key]===typeof value&&(typeof value!=='number'||Number.isFinite(savedMl[key]))).map(([key])=>[key,savedMl[key]]));
-    const restored={...defaults,...values,strategy:saved.strategy,bb_reversal:{...defaults.bb_reversal,...bb},ml:{...defaults.ml,...ml}};
+    const restored=normalizeMlQuantiles({...defaults,...values,strategy:saved.strategy,bb_reversal:{...defaults.bb_reversal,...bb},ml:{...defaults.ml,...ml}});
     if(!/^\d{4}-\d{2}-\d{2}$/.test(restored.start_date)||restored.start_date<range.startDate||restored.start_date>range.endDate)restored.start_date=range.startDate;
     if(!/^\d{4}-\d{2}-\d{2}$/.test(restored.end_date)||restored.end_date<restored.start_date||restored.end_date>range.endDate)restored.end_date=range.endDate;
     return restored;
@@ -99,7 +105,8 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
   const [runId,setRunId]=useState(0);
   async function run(e?:FormEvent,override?:BacktestSettings){
     e?.preventDefault();setBusy(true);setError('');onViewChange('results');
-    try{setResult(await api<BacktestResult>('/api/backtest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(override??settings)}));setRunId(value=>value+1);}
+    const requestSettings=normalizeMlQuantiles(override??settings);setSettings(requestSettings);
+    try{setResult(await api<BacktestResult>('/api/backtest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(requestSettings)}));setRunId(value=>value+1);}
     catch(e){setError(String(e));}finally{setBusy(false);}
   }
   async function openRun(id:number){
@@ -115,10 +122,11 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
   }
   async function runFineTune(){
     setTuning(true);setTuneError('');setTuneResult(null);setTuneProgress({percent:0,message:'Connecting to the tuning worker'});
+    const requestSettings=normalizeMlQuantiles(settings);setSettings(requestSettings);
     const abort=new AbortController();tuneAbort.current=abort;
     try{
-      const response=await fetch('/api/backtest/fine-tune',{method:'POST',signal:abort.signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({settings,search_method:searchMethod,objective:searchObjective,validation_start:validationStart||null,forward_start:forwardStart||null})});
-      if(!response.ok)throw new Error(`Fine tuning request failed (${response.status})`);
+      const response=await fetch('/api/backtest/fine-tune',{method:'POST',signal:abort.signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({settings:requestSettings,search_method:searchMethod,objective:searchObjective,validation_start:validationStart||null,forward_start:forwardStart||null})});
+      if(!response.ok){let detail=`Fine tuning request failed (${response.status})`;try{const body=await response.json();if(Array.isArray(body.detail))detail=body.detail.map((item:{loc?:unknown[];msg?:string})=>`${Array.isArray(item.loc)?item.loc.slice(1).join('.')+': ':''}${item.msg??''}`).filter(Boolean).join(' · ')||detail;else if(typeof body.detail==='string')detail=body.detail;}catch{/* Keep the HTTP status if the server did not return JSON. */}throw new Error(detail);}
       if(!response.body)throw new Error('Fine tuning progress stream is unavailable.');
       const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='',finalResult:FineTuneResult|null=null;
       const receiveLine=(line:string)=>{
@@ -162,7 +170,7 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
       <form className="setup-layout" onSubmit={run}>
         <fieldset className="setup-main" disabled={busy||tuning}>
           <div className="strategy-picker" role="radiogroup" aria-label="Strategy">{([['bb_outer_reversal','BB Outer Band Reversal','Rule-based: buys and sells Bollinger band rebounds with a trailing stop. Paper and live.'],['ml_ensemble','ML Ensemble','Machine learning: indicator features and an ensemble of models predict the next move. Backtest and paper.']] as const).map(([key,label,text])=><button key={key} type="button" role="radio" aria-checked={settings.strategy===key} onClick={()=>setSettings({...settings,strategy:key})}><span className="strategy-picker-icon" aria-hidden="true">{key==='ml_ensemble'?'ML':'BB'}</span><span><strong>{label}</strong><small>{text}</small></span></button>)}</div>
-          <Field label="Backtest market"><select value={settings.market} onChange={event=>setSettings({...settings,market:event.target.value as BacktestSettings['market']})}><option value="xag">XAG / USDT · OKX</option><option value="stable">STABLE / USDC · Hyperliquid</option></select></Field>
+          <Field label="Backtest market"><select value={settings.market} onChange={event=>setSettings({...settings,market:event.target.value as BacktestSettings['market']})}><option value="xag">XAG / USDT · OKX</option><option value="stable">STABLE / USDT · OKX</option></select></Field>
           {settings.strategy==='ml_ensemble'?<MLStrategySettings settings={settings} onChange={setSettings}/>:<BBReversalSettings settings={settings} onChange={setSettings}/>}
           <TradingCostsCard settings={settings} onChange={setSettings} step={settings.strategy==='ml_ensemble'?8:4}/>
           <details className="setup-assumptions"><summary>How the simulation works</summary><p>Signals use completed candles and fill at close. Stops include adverse gaps; trailing stops never loosen. Position size is the allocated amount times leverage. A depleted balance blocks new trades. Fees, slippage, spread and prorated funding are included; liquidation is not modeled.</p></details>
@@ -238,6 +246,6 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
 
     </div>}
     {error&&view!=='paper'&&<p className="error" role="alert">{error}</p>}
-    {view==='results'&&<div id="page-results" role="tabpanel" aria-labelledby="tab-results" hidden={view!=='results'}><ResultsWorkspace key={runId} result={result} busy={busy} stale={stale} profiles={profiles} strategy={settings.strategy} onStrategyChange={strategy=>setSettings({...settings,strategy})} onRunSetup={setup=>{const next=restoreSettings(setup.settings,availableRange);setSettings(next);void run(undefined,next);}} onRun={()=>void run()} onConfigure={()=>onViewChange('strategy')} onExport={download} onOpenRun={id=>void openRun(id)} onApplySettings={()=>{if(result)setSettings(restoreSettings(result.settings,availableRange));}} summary={[['Market',settings.market==='stable'?'STABLE / USDC':'XAG / USDT'],['Period (UTC)',`${settings.start_date} → ${settings.end_date}`],['Timeframe',settings.entry_timeframe],['Starting balance',`$${fmt(settings.capital)}`],['Leverage',`${settings.max_leverage}×`],['Strategy',STRATEGY_LABELS[settings.strategy]??settings.strategy],['Per trade',(settings.strategy==='ml_ensemble'?settings.ml:settings.bb_reversal).amount_unit==='percent'?`${(settings.strategy==='ml_ensemble'?settings.ml:settings.bb_reversal).amount_per_trade}% of balance`:`$${fmt((settings.strategy==='ml_ensemble'?settings.ml:settings.bb_reversal).amount_per_trade)}`]]}/></div>}
+    {view==='results'&&<div id="page-results" role="tabpanel" aria-labelledby="tab-results" hidden={view!=='results'}><ResultsWorkspace key={runId} result={result} busy={busy} stale={stale} profiles={profiles} strategy={settings.strategy} onStrategyChange={strategy=>setSettings({...settings,strategy})} onRunSetup={setup=>{const next=restoreSettings(setup.settings,availableRange);setSettings(next);void run(undefined,next);}} onRun={()=>void run()} onConfigure={()=>onViewChange('strategy')} onExport={download} onOpenRun={id=>void openRun(id)} onApplySettings={()=>{if(result)setSettings(restoreSettings(result.settings,availableRange));}} summary={[['Market',settings.market==='stable'?'STABLE / USDT · OKX':'XAG / USDT · OKX'],['Period (UTC)',`${settings.start_date} → ${settings.end_date}`],['Timeframe',settings.entry_timeframe],['Starting balance',`$${fmt(settings.capital)}`],['Leverage',`${settings.max_leverage}×`],['Strategy',STRATEGY_LABELS[settings.strategy]??settings.strategy],['Per trade',(settings.strategy==='ml_ensemble'?settings.ml:settings.bb_reversal).amount_unit==='percent'?`${(settings.strategy==='ml_ensemble'?settings.ml:settings.bb_reversal).amount_per_trade}% of balance`:`$${fmt((settings.strategy==='ml_ensemble'?settings.ml:settings.bb_reversal).amount_per_trade)}`]]}/></div>}
   </Suspense></section>;
 }

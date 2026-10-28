@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 CSV = Path(__file__).resolve().parents[2] / 'data' / 'OKX_XAG-USDT-SWAP_1m.csv'
-STABLE_CSV = CSV.with_name('HYPERLIQUID_STABLE-USDC-PERP_1m.csv')
+STABLE_CSV = CSV.with_name('OKX_STABLE-USDT-SWAP_1m.csv')
 TIMEFRAMES = {'1m': 60, '3m': 180, '5m': 300, '10m': 600, '15m': 900, '30m': 1800, '1h': 3600, '4h': 14400, '1d': 86400}
 
 
@@ -13,7 +13,10 @@ def load_bars(timeframe='1m', path=None, instrument='xag'):
         raise ValueError('Unsupported timeframe.')
     if instrument not in ('xag', 'stable'):
         raise ValueError('Unsupported backtest market.')
-    path = Path(path) if path is not None else (CSV if instrument == 'xag' else STABLE_CSV)
+    source_seconds = 60
+    if path is None:
+        path = CSV if instrument == 'xag' else STABLE_CSV
+    path = Path(path)
     df = pd.read_csv(path)
     # Only the default instrument includes the downloaded overlay. Test/custom
     # CSVs stay independent. Atomic replacement lets readers see a whole cache.
@@ -33,8 +36,8 @@ def load_bars(timeframe='1m', path=None, instrument='xag'):
     df = df[cols].apply(pd.to_numeric, errors='raise')
     if not np.isfinite(df.to_numpy()).all():
         raise ValueError('CSV contains non-finite values.')
-    if df.timestamp_ms.duplicated().any() or (df.timestamp_ms % 60000 != 0).any():
-        raise ValueError('CSV timestamps must be unique minute boundaries.')
+    if df.timestamp_ms.duplicated().any() or (df.timestamp_ms % (source_seconds * 1000) != 0).any():
+        raise ValueError('CSV timestamps must be unique source candle boundaries.')
     invalid = ((df[['open', 'high', 'low', 'close']] <= 0).any(axis=1)
                | (df.high < df[['open', 'close', 'low']].max(axis=1))
                | (df.low > df[['open', 'close', 'high']].min(axis=1))
@@ -46,8 +49,8 @@ def load_bars(timeframe='1m', path=None, instrument='xag'):
     seconds = TIMEFRAMES[timeframe]
     bars = df.resample(f'{seconds}s').agg(open=('open', 'first'), high=('high', 'max'),
         low=('low', 'min'), close=('close', 'last'), volume=('volume_contracts', 'sum'), minutes=('close', 'count'))
-    complete = (bars.minutes == seconds // 60) & (bars.index + pd.Timedelta(seconds=seconds) <= pd.Timestamp.now(tz='UTC'))
-    quality = dict(minuteBars=len(df), missingMinutes=int((df.index[-1]-df.index[0]).total_seconds()/60+1-len(df)),
+    complete = (bars.minutes == seconds // source_seconds) & (bars.index + pd.Timedelta(seconds=seconds) <= pd.Timestamp.now(tz='UTC'))
+    quality = dict(sourceBars=len(df), missingBars=int((df.index[-1]-df.index[0]).total_seconds()/source_seconds+1-len(df)),
                    excludedBars=int((~complete).sum()), completeBars=int(complete.sum()))
     bars.loc[~complete, ['open', 'high', 'low', 'close', 'volume']] = np.nan
     return bars, quality
