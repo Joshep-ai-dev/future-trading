@@ -19,7 +19,7 @@ from server.strategies.rl.settings import RLSettings
 MODEL_ROOT = Path(__file__).resolve().parents[3]/'data'/'rl_models'
 TRAIN_LOCK = threading.RLock()
 CACHE: OrderedDict = OrderedDict()
-VERSION = 'ppo-target-position-v3-intrabar-drawdown'
+VERSION = 'ppo-target-position-v4-recent-ohlcv'
 
 
 class CashPolicy:

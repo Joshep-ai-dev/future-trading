@@ -22,4 +22,4 @@ export const REGIME_NAMES=['Trend up','Trend down','Range','Volatile'] as const;
 
 export const STRATEGY_LABELS:Record<string,string>={bb_outer_reversal:'BB Outer Band Reversal',ml_ensemble:'ML Strategy',rl_ppo:'RL PPO'};
 
-export const rlDefaults:BacktestSettings['rl']={train_bars:10000,retrain_every:1000,lookback:16,timesteps:51200,learning_rate:.0003,seed:7,min_atr:.03,stop_atr:3,max_drawdown_pct:20,drawdown_penalty:.1,turnover_penalty:.0001,amount_per_trade:100,amount_unit:'percent'};
+export const rlDefaults:BacktestSettings['rl']={train_bars:10000,retrain_every:1000,lookback:100,timesteps:51200,learning_rate:.0003,seed:7,min_atr:.03,stop_atr:3,max_drawdown_pct:20,drawdown_penalty:.1,turnover_penalty:.0001,amount_per_trade:100,amount_unit:'percent'};

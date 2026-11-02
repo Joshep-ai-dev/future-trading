@@ -6,7 +6,7 @@ import math
 class RLSettings:
     train_bars: int = 10000
     retrain_every: int = 1000
-    lookback: int = 16
+    lookback: int = 100
     timesteps: int = 51200
     learning_rate: float = .0003
     seed: int = 7
@@ -24,7 +24,7 @@ class RLSettings:
             if item.name != 'amount_unit' and (isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value)):
                 raise ValueError(f'{item.name} must be a finite number')
         for name, low, high in (('train_bars', 500, 200000), ('retrain_every', 50, 50000),
-                                ('lookback', 1, 64), ('timesteps', 256, 1000000), ('seed', 0, 2147483647)):
+                                ('lookback', 1, 100), ('timesteps', 256, 1000000), ('seed', 0, 2147483647)):
             value = getattr(self, name)
             if not isinstance(value, int) or not low <= value <= high:
                 raise ValueError(f'{name} must be an integer between {low} and {high}')

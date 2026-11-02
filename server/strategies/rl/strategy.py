@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from server.strategies.ml.features import build_features
+from server.strategies.rl.features import build_rl_features
 from server.strategies.ml.strategy import _atr
 from server.strategies.rl.environment import TradingEnv
 from server.strategies.rl.settings import RLSettings
@@ -14,7 +14,7 @@ def run_rl_backtest(frame: pd.DataFrame, settings: RLSettings, *, initial_capita
                     start=None, close_at_end=False, bar_seconds=300, min_tick=.01,
                     fee_bps=0., slippage=0., spread=0., funding_bps=0., progress=None) -> dict:
     clean = frame.dropna(subset=['open', 'high', 'low', 'close'])
-    features = build_features(clean, ['returns', 'volatility', 'trend', 'volume', 'candles'])
+    features = build_rl_features(clean)
     atr = _atr(clean, 14).to_numpy(float)
     first = int(clean.index.searchsorted(start)) if start is not None else settings.train_bars
     first = max(settings.lookback, first)

@@ -14,6 +14,25 @@ from server.tests.test_ml_strategy import bars, market
 
 
 class RLEnvironmentTests(unittest.TestCase):
+    def test_recent_candle_inputs_preserve_ohlc_and_are_causal(self):
+        from server.strategies.rl.features import build_rl_features
+
+        frame = market(150)
+        features = build_rl_features(frame)
+        for column in ('open', 'high', 'low', 'close'):
+            self.assertAlmostEqual(float(features[f'candle_{column}_relative'].iloc[100]),
+                                   frame[column].iloc[100]/frame.close.iloc[99]-1, places=6)
+        changed = frame.copy()
+        changed.loc[changed.index[101]:, ['open', 'high', 'low', 'close']] *= 2
+        pd.testing.assert_frame_equal(features.iloc[:101], build_rl_features(changed).iloc[:101])
+        cfg = RLSettings(lookback=4)
+        values = Normalizer.fit(features.iloc[:100].to_numpy()).transform(features.to_numpy())
+        env = TradingEnv(frame, values, np.ones(len(frame)), cfg, first_observation=100)
+        np.testing.assert_array_equal(env.observation()[:-6], values[97:101].reshape(-1))
+        if 'volume' in frame:
+            self.assertAlmostEqual(float(features.candle_log_volume.iloc[100]),
+                                   float(np.log1p(frame.volume.iloc[100])), places=5)
+
     def env(self, rows, atr=None, **kwargs):
         frame = bars(rows)
         settings = kwargs.pop('settings', RLSettings(lookback=1, drawdown_penalty=0.))
