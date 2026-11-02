@@ -18,7 +18,7 @@ def session_request(cfg: dict):
     """Attribute view of a saved session's settings for the strategy runner."""
     from types import SimpleNamespace
     bb = {key: value for key, value in cfg.get('bb_reversal', {}).items() if key not in ('reward_risk', 'risk_per_trade_pct')}
-    return SimpleNamespace(**{**cfg, 'bb_reversal': bb, 'ml': cfg.get('ml', {}), 'strategy': cfg.get('strategy', 'bb_outer_reversal')})
+    return SimpleNamespace(**{**cfg, 'bb_reversal': bb, 'ml': cfg.get('ml', {}), 'rl': cfg.get('rl', {}), 'strategy': cfg.get('strategy', 'bb_outer_reversal')})
 
 
 STATE = Path(__file__).resolve().parents[2] / 'data' / 'paper_trading.json'
@@ -253,7 +253,7 @@ class PaperTrading:
                 trades=trades, latestPrice=float(bars.close.iloc[-1]),
                 equityHistory=[dict(time=int(t.timestamp()),value=float(v)) for t,v in bars.equity.items()],
                 signals=int(bars[['long_signal','short_signal']].to_numpy().sum()),
-                halted=result['cash'] <= 0, completed=finished)
+                halted=bool(result.get('halted')) or result['cash'] <= 0, completed=finished)
             if state['halted'] or finished:
                 state['running'] = False
             self.error = None

@@ -416,7 +416,7 @@
 /* Strategy picker in the paper bot panel */
 .bot-picker {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
   margin-bottom: 14px;
   padding: 3px;

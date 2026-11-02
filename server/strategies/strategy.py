@@ -14,10 +14,11 @@ class BacktestRequest(BaseModel):
     start_date: date
     end_date: date
     validation_date: date | None = None  # Accepted only for older saved settings.
-    strategy: Literal['bb_outer_reversal', 'ml_ensemble'] = 'bb_outer_reversal'
+    strategy: Literal['bb_outer_reversal', 'ml_ensemble', 'rl_ppo'] = 'bb_outer_reversal'
     market: Literal['xag', 'stable'] = 'xag'
     bb_reversal: dict = Field(default_factory=dict)
     ml: dict = Field(default_factory=dict)
+    rl: dict = Field(default_factory=dict)
     direction_active: bool = True
     direction_timeframe: Literal['15m', '30m', '1h', '4h'] = '1h'
     setup_active: bool = True
@@ -69,6 +70,14 @@ class BacktestRequest(BaseModel):
                 raise ValueError(f'Invalid ML setting: {error}') from error
             if ml.amount_unit == 'price' and ml.amount_per_trade > self.capital:
                 raise ValueError('Amount per trade cannot exceed the starting account balance')
+        if self.strategy == 'rl_ppo':
+            from server.strategies.rl.settings import RLSettings
+            try:
+                rl = RLSettings(**self.rl)
+            except TypeError as error:
+                raise ValueError(f'Invalid RL setting: {error}') from error
+            if rl.amount_unit == 'price' and rl.amount_per_trade > self.capital:
+                raise ValueError('Amount per trade cannot exceed the starting account balance')
         self.exit_condition = 'none'
         self.stop_mode = 'trailing'
         return self
@@ -78,17 +87,27 @@ def split_points(index, validation_start=None, forward_start=None) -> tuple[int,
     """Positions where validation and forward test begin in ``index``.
 
     Chosen dates are used when given (everything before validation is training);
-    otherwise the range splits 60% / 20% / 20%. Each period must contain candles.
+    otherwise the range splits 60% / 20% / 20%. If only one date is given,
+    split the remaining range in the same proportions. Each period needs candles.
     """
     n = len(index)
     def position(day, fallback):
         if day is None:
             return fallback
         return int(index.searchsorted(pd.Timestamp(seconds(day), unit='s', tz='UTC')))
-    validation, forward = position(validation_start, int(n*.6)), position(forward_start, int(n*.8))
+    if validation_start is None and forward_start is not None:
+        forward = position(forward_start, 0)
+        validation = int(forward * .75)
+    elif forward_start is None and validation_start is not None:
+        validation = position(validation_start, 0)
+        forward = validation + (n - validation) // 2
+    else:
+        validation, forward = position(validation_start, int(n*.6)), position(forward_start, int(n*.8))
     if not 0 < validation < forward < n:
-        raise ValueError('Choose validation and forward-test start dates inside the range, with training before '
-                         'validation and validation before the forward test.')
+        available = f'{index[0].isoformat()} to {index[-1].isoformat()}' if n else 'no complete candles'
+        raise ValueError('Each tuning period needs complete candles: training before validation, then forward test. '
+                         f'Available candle range (UTC): {available}. '
+                         'Clear both split dates for automatic 60% / 20% / 20%, or choose dates inside this range.')
     return validation, forward
 
 

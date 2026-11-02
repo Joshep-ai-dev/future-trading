@@ -35,26 +35,26 @@ class GridSearchTests(unittest.TestCase):
 
 
 
-class ProfitRankingTests(unittest.TestCase):
-    def test_profit_objective_prefers_net_profit_over_win_rate(self):
+class WinRateRankingTests(unittest.TestCase):
+    def test_win_rate_precedes_profit(self):
         from server.strategies.fine_tuning import _ranking_key
         high_win = dict(trades=100, netPnl=10., maxDrawdownPct=-1., winRate=90., score=90.)
         high_profit = dict(trades=100, netPnl=100., maxDrawdownPct=-5., winRate=55., score=65.)
-        self.assertGreater(_ranking_key(high_profit, 'profit'), _ranking_key(high_win, 'profit'))
+        self.assertGreater(_ranking_key(high_win), _ranking_key(high_profit))
 
-    def test_profit_objective_discounts_one_trade_results(self):
+    def test_ranking_discounts_one_trade_results(self):
         from server.strategies.fine_tuning import _ranking_key
         adequate = dict(trades=30, netPnl=100., maxDrawdownPct=-5., winRate=55., score=65.)
         tiny = {**adequate, 'trades': 1, 'netPnl': 1000.}
-        self.assertGreater(_ranking_key(adequate, 'profit'), _ranking_key(tiny, 'profit'))
+        self.assertGreater(_ranking_key(adequate), _ranking_key(tiny))
 
 
 class MLRankingTests(unittest.TestCase):
     def test_lucky_small_sample_loses_to_steady_profit(self) -> None:
         from server.strategies.ml.tuning import _ml_ranking_key
-        metrics = lambda trades, pnl, drawdown=10.: dict(trades=trades, netPnl=pnl, maxDrawdownPct=drawdown, score=0.)
-        lucky = _ml_ranking_key(metrics(469, -5146.73, 92.1), metrics(3, 101.09, 1.4), 'profit')
-        steady = _ml_ranking_key(metrics(120, 300.), metrics(30, 40.), 'profit')
-        losing_train = _ml_ranking_key(metrics(120, -50.), metrics(30, 400.), 'profit')
+        metrics = lambda trades, pnl, drawdown=10.: dict(trades=trades, netPnl=pnl, maxDrawdownPct=drawdown, score=0., winRate=60.)
+        lucky = _ml_ranking_key(metrics(469, -5146.73, 92.1), metrics(3, 101.09, 1.4))
+        steady = _ml_ranking_key(metrics(120, 300.), metrics(30, 40.))
+        losing_train = _ml_ranking_key(metrics(120, -50.), metrics(30, 400.))
         self.assertGreater(steady, losing_train)
         self.assertGreater(losing_train, lucky)

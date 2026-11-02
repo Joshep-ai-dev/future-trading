@@ -24,10 +24,10 @@ export default function LiveBotPanel({venue,settings,onSettingsChange,onConfigur
   const locked=bot.running||busy||!onSettingsChange;
   const validAllocation=Number.isFinite(config.amount_per_trade)&&config.amount_per_trade>0&&(config.amount_unit==='percent'?config.amount_per_trade<=100:!validMargin||config.amount_per_trade<=available);
   const validLeverage=Number.isInteger(Number(leverage))&&Number(leverage)>=1&&Number(leverage)<=100;
-  const mlSelected=settings.strategy==='ml_ensemble';
-  const canStart=!mlSelected&&connected&&validMargin&&validAllocation&&!blocked&&!positionOpen&&!bot.running&&confirmed&&!busy&&validLeverage;
+  const simulationOnly=settings.strategy!=='bb_outer_reversal';
+  const canStart=!simulationOnly&&connected&&validMargin&&validAllocation&&!blocked&&!positionOpen&&!bot.running&&confirmed&&!busy&&validLeverage;
   // First reason the bot cannot start, shown under the button.
-  const hint=bot.running?null:!connected?'Connect an exchange account first.':mlSelected?'ML Ensemble runs in backtests and paper trading only; choose BB Reversal to trade live.'
+  const hint=bot.running?null:!connected?'Connect an exchange account first.':simulationOnly?'This strategy runs in backtests and paper trading only; choose BB Reversal to trade live.'
     :blocked?'Live trading is blocked until the position check succeeds.':positionOpen?'Close the open position to start.'
     :!validMargin?'Waiting for available margin.':!validAllocation?'Margin per trade exceeds the available margin.':!validLeverage?'Leverage must be a whole number from 1 to 100.'
     :!confirmed?'Tick the authorization box to enable the start button.':null;
@@ -49,13 +49,13 @@ export default function LiveBotPanel({venue,settings,onSettingsChange,onConfigur
         <div className="allocation-control"><label>Margin per trade<div className="input-with-unit"><input type="number" required min={.01} step="any" max={config.amount_unit==='percent'?100:undefined} value={config.amount_per_trade} onChange={event=>onSettingsChange?.({...settings,bb_reversal:{...config,amount_per_trade:Number(event.target.value)}})}/><select aria-label="Margin unit" value={config.amount_unit} onChange={event=>onSettingsChange?.({...settings,bb_reversal:{...config,amount_unit:event.target.value as 'price'|'percent'}})}><option value="percent">%</option><option value="price">$</option></select></div></label><small>≈ {number(amount,2)} USDT margin · {number(amount==null?null:amount*Number(leverage),2)} USDT position value.</small></div>
       </fieldset>
       {bot.running?<button className="bot-pause" type="button" disabled={busy||!active} onClick={()=>{if(window.confirm('Stop the live strategy? Open exchange positions and their stop stay active.'))void onRun('/api/exchange/auto/stop');}}>■ Stop live bot</button>:<>
-        <label className="ticket-confirm"><input type="checkbox" checked={confirmed} disabled={!connected||busy||blocked||positionOpen||!validMargin||mlSelected} onChange={event=>setConfirmed(event.target.checked)}/><span>I authorize this bot to place real orders.</span></label>
+        <label className="ticket-confirm"><input type="checkbox" checked={confirmed} disabled={!connected||busy||blocked||positionOpen||!validMargin||simulationOnly} onChange={event=>setConfirmed(event.target.checked)}/><span>I authorize this bot to place real orders.</span></label>
         <button className="bot-start" type="submit" disabled={!canStart}>{busy?'Starting…':'▶ Start live bot'}</button>
       </>}
     </form>
     {hint&&<p className="ticket-help">{hint}</p>}
     {active&&<p className="ticket-help">{bot.position?`${bot.position.direction.toUpperCase()} · ${number(bot.position.quantity)} ${asset} · stop ${number(bot.position.stop,3)}`:'Waiting for a signal. Readiness is shown below and on the chart.'}</p>}
     {bot.error&&<p className="error" role="alert">{bot.error}</p>}
-    <div className="strategy-card"><div><span className="strategy-icon">⌁</span><div><strong>{mlSelected?'ML Ensemble':'BB Outer Band Reversal'}</strong><small>{mlSelected?'Backtest and paper only':'Trailing SL · Both directions · Live'}</small></div></div><button type="button" className="text-button" onClick={onConfigure}>Strategy settings ↗</button></div>
+    <div className="strategy-card"><div><span className="strategy-icon">⌁</span><div><strong>{simulationOnly?'ML Ensemble':'BB Outer Band Reversal'}</strong><small>{simulationOnly?'Backtest and paper only':'Trailing SL · Both directions · Live'}</small></div></div><button type="button" className="text-button" onClick={onConfigure}>Strategy settings ↗</button></div>
   </div>;
 }

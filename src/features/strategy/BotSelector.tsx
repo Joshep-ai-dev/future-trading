@@ -1,6 +1,6 @@
 import SetupPicker,{type SavedSetup} from './SetupPicker';
 
-const BOTS=[['bb_outer_reversal','BB Reversal','Rules'],['ml_ensemble','ML Ensemble','Learned']] as const;
+const BOTS=[['bb_outer_reversal','BB Reversal','Rules'],['ml_ensemble','ML Strategy','Learned'],['rl_ppo','RL PPO','Policy']] as const;
 export type BotKey=typeof BOTS[number][0];
 
 /** Choose the bot model, then one of its saved parameter setups. Used on the Backtest and Trading pages. */

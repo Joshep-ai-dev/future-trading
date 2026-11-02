@@ -23,6 +23,7 @@ import pandas as pd
 from server.strategies.ml.exits import ExitModel, RegimeModel
 from server.strategies.ml.meta import MetaModel
 from server.strategies.ml.models import fit_model
+from server.strategies.ml.forecast import ForecastModel
 
 MIN_TRAIN_ROWS = 300
 WORKERS = max(1, min(8, (os.cpu_count() or 2)//3))  # blocks train in parallel; each model uses ~2 threads
@@ -38,6 +39,8 @@ class Fold:
     exits: object = None
     regimes: object = None
     meta: object = None
+    skip_reason: str | None = None
+    forecast: object = None
 
 
 @dataclass
@@ -75,16 +78,29 @@ def config_key(**parts) -> str:
 
 def _train_fold(features: pd.DataFrame, labels: pd.Series, train_slice: slice, models: dict[str, float], key: str,
                 capacity: str = 'standard', exit_targets: pd.DataFrame | None = None, quantiles=(.4, .7),
-                half_life: float = 0, meta: bool = False, device: str = 'auto') -> Fold | None:
+                half_life: float = 0, meta: bool = False, device: str = 'auto', learn_regimes: bool = True,
+                forecast_targets: pd.DataFrame | None = None) -> Fold | None:
     window_x, window_y = features.iloc[train_slice], labels.iloc[train_slice]
     mask = window_y.notna().to_numpy()
     if mask.sum() < MIN_TRAIN_ROWS:
         return None
+    if forecast_targets is None and window_y[mask].nunique() < 2:
+        # A single outcome cannot teach a directional decision. Abstain for this
+        # block and retry at the next causal training window, without synthetic
+        # labels, future data, or a constant 100%-confidence trading signal.
+        return Fold(0, 0, int(mask.sum()), [], [], skip_reason='single_outcome')
     first, last = window_x.index[0], window_x.index[-1]
-    cache_key = (key, int(first.timestamp()), int(last.timestamp()), int(mask.sum()))
+    cache_key = (key, int(first.timestamp()), int(last.timestamp()), int(mask.sum()), learn_regimes, forecast_targets is not None)
     cached = fold_cache.get(cache_key)
     if cached is not None:
         return cached
+    if forecast_targets is not None:
+        if np.isfinite(forecast_targets.iloc[train_slice].to_numpy()).all(axis=1).sum() < MIN_TRAIN_ROWS:
+            return None
+        model = ForecastModel.fit(features, forecast_targets, train_slice)
+        fold = Fold(0, 0, int(mask.sum()), [model], [1.], forecast=model)
+        fold_cache.put(cache_key, fold)
+        return fold
     trained, weights = [], []
     for name, weight in models.items():
         if weight > 0:
@@ -97,7 +113,8 @@ def _train_fold(features: pd.DataFrame, labels: pd.Series, train_slice: slice, m
                                        half_life=half_life, device=device)
         except ValueError:
             fold.exits = None  # Too little data in this window; the strategy falls back to fixed exits.
-    fold.regimes = RegimeModel.fit(features, train_slice)  # Market regimes are always learned.
+    if learn_regimes:
+        fold.regimes = RegimeModel.fit(features, train_slice)
     if meta:
         primary = next(name for name, weight in models.items() if weight > 0)
         fold.meta = MetaModel.fit(features, labels, train_slice, primary=primary, capacity=capacity, half_life=half_life,
@@ -109,7 +126,8 @@ def _train_fold(features: pd.DataFrame, labels: pd.Series, train_slice: slice, m
 def walk_forward(features: pd.DataFrame, labels: pd.Series, *, start_index: int, train_bars: int,
                  retrain_every: int, horizon: int, models: dict[str, float], key: str,
                  capacity: str = 'standard', progress=None, exit_targets: pd.DataFrame | None = None,
-                 quantiles=(.4, .7), half_life: float = 0, meta: bool = False, device: str = 'auto') -> WalkForwardResult:
+                 quantiles=(.4, .7), half_life: float = 0, meta: bool = False, device: str = 'auto',
+                 learn_regimes: bool = True, forecast_targets: pd.DataFrame | None = None) -> WalkForwardResult:
     """Out-of-sample probabilities (short, none, long) for every bar from ``start_index``.
 
     With ``exit_targets`` every block also learns take-profit / stop distances
@@ -123,6 +141,7 @@ def walk_forward(features: pd.DataFrame, labels: pd.Series, *, start_index: int,
     exits = np.full((n, 4), np.nan)
     regimes = np.full(n, -1)
     quality = np.full(n, np.nan)
+    forecasts = np.full((n, 3), np.nan)
     folds, importance = [], {}
     # Block boundaries are anchored at the evaluation start so they stay identical
     # when more candles arrive, which keeps cached folds valid for paper trading.
@@ -139,7 +158,7 @@ def walk_forward(features: pd.DataFrame, labels: pd.Series, *, start_index: int,
 
     def train(block_start):
         fold = _train_fold(features, labels, windows[block_start], models, key, capacity, exit_targets, quantiles, half_life,
-                           meta, device)
+                           meta, device, learn_regimes, forecast_targets)
         with lock:
             done[0] += 1
             if progress:
@@ -160,11 +179,19 @@ def walk_forward(features: pd.DataFrame, labels: pd.Series, *, start_index: int,
         fold = trained.get(block_start)
         if fold is None:
             continue
+        if fold.skip_reason:
+            folds.append(dict(start=int(features.index[block_start].timestamp()),
+                              end=int(features.index[block_end-1].timestamp()),
+                              trainRows=fold.train_rows, bars=block_end-block_start,
+                              accuracy=None, status='skipped', reason=fold.skip_reason))
+            continue
         rows = slice(block_start, block_end)
         total = sum(fold.weights)
         blended = sum(weight*np.nan_to_num(model.predict_rows(features, rows), nan=1/3)
                       for model, weight in zip(fold.models, fold.weights))/total
         probabilities[block_start:block_end] = blended
+        if fold.forecast is not None:
+            forecasts[block_start:block_end] = fold.forecast.forecast_rows(features, rows)
         if fold.exits is not None:
             exits[block_start:block_end] = fold.exits.predict(features, rows).to_numpy()
         if fold.regimes is not None:
@@ -187,4 +214,6 @@ def walk_forward(features: pd.DataFrame, labels: pd.Series, *, start_index: int,
     frame[['long_tp', 'long_sl', 'short_tp', 'short_sl']] = exits
     frame['regime'] = regimes
     frame['p_win'] = quality
+    if forecast_targets is not None:
+        frame[['forecast_up', 'forecast_down', 'forecast_trend']] = forecasts
     return WalkForwardResult(frame, folds, importance)

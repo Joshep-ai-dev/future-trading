@@ -1,4 +1,4 @@
-"""ML Ensemble strategy: indicator features -> walk-forward models -> ATR-bracketed trades.
+"""ML strategy: indicator features -> walk-forward model -> price-percentage or ATR exits.
 
 ``run_ml_backtest`` has the same output contract as the BB engine (bars,
 trades, open_position, cash) plus ``probabilities`` and a ``report`` with fold
@@ -13,23 +13,25 @@ import numpy as np
 import pandas as pd
 
 from server.strategies.execution import ExecutionSettings, run_signal_backtest
-from server.strategies.ml.features import DEFAULT_GROUPS, FEATURE_GROUPS, build_features
+from server.strategies.ml.features import FEATURE_GROUPS, build_features
 from server.strategies.ml.exits import REGIME_NAMES
 from server.strategies.ml.labels import excursions, triple_barrier
 from server.strategies.ml.models import MODELS
 from server.strategies.ml.walk_forward import config_key, walk_forward
 
-DEFAULT_MODELS = {'lightgbm': 1., 'xgboost': 0., 'hist_gbm': 0., 'random_forest': 0., 'extra_trees': .5,
-                  'logistic': 0., 'neural_net': 0.}
+DEFAULT_MODELS = {'extra_trees': 1.}
+ESSENTIAL_GROUPS = ('returns', 'volatility', 'trend', 'volume', 'candles')
 
 
 @dataclass
 class MLSettings:
-    feature_groups: list[str] = field(default_factory=lambda: list(DEFAULT_GROUPS))
+    feature_groups: list[str] = field(default_factory=lambda: list(ESSENTIAL_GROUPS))
     models: dict[str, float] = field(default_factory=lambda: dict(DEFAULT_MODELS))
     horizon: int = 24
     take_profit_atr: float = 1.5
     stop_atr: float = 1.0
+    take_profit_pct: float = 1.0
+    stop_loss_pct: float = .65
     atr_length: int = 14
     entry_threshold: float = .55
     min_edge: float = .15
@@ -37,32 +39,34 @@ class MLSettings:
     train_bars: int = 6000
     retrain_every: int = 2000
     trade_mode: str = 'Both'
-    reverse_on_signal: bool = True
+    reverse_on_signal: bool = False
     amount_per_trade: float = 100.
     amount_unit: str = 'percent'
-    capacity: str = 'standard'
-    # Learned exits: quantile models decide take-profit, stop and trailing per trade.
-    exit_mode: str = 'learned'
+    capacity: str = 'light'
+    # Percentage exits are the default; retain ATR modes for saved configurations.
+    exit_mode: str = 'forecast'
+    forecast_target_fraction: float = .8
+    forecast_stop_buffer: float = 1.
     tp_quantile: float = .5
     sl_quantile: float = .7
-    min_reward_risk: float = 1.2
-    trailing: bool = True
+    min_reward_risk: float = 0.
+    trailing: bool = False
     trail_start: float = .6
     trail_noise: float = 1.
     regimes: list[str] = field(default_factory=lambda: list(REGIME_NAMES))
     # Market size filters: skip quiet markets and trades whose target is too small to matter.
     min_atr: float = .03
-    min_target: float = .5
+    min_target: float = 0.
     # Let profits run: no fixed take-profit and no time exit; only the stop and the trailing stop close
     # a trade. Trailing starts once profit reaches max(min_target, trail_start × learned target).
-    let_profit_run: bool = True
+    let_profit_run: bool = False
     # Trade-quality filter: a second model learns when direction calls win; enter only above the threshold.
-    quality_filter: bool = True
+    quality_filter: bool = False
     quality_threshold: float = .5
     # Where models train: 'auto' (fastest per model), 'gpu' (CUDA wherever a model supports it) or 'cpu'.
     device: str = 'auto'
     # Recent candles matter more: training weights halve every ``recency_half_life`` candles back (0 = equal).
-    recency_half_life: int = 2000
+    recency_half_life: int = 0
 
     def __post_init__(self):
         unknown = [key for key in self.feature_groups if key not in FEATURE_GROUPS]
@@ -71,6 +75,8 @@ class MLSettings:
         self.models = {key: float(weight) for key, weight in self.models.items() if key in MODELS}
         if not any(weight > 0 for weight in self.models.values()):
             raise ValueError('Enable at least one model with a positive weight')
+        if self.exit_mode == 'forecast' and any(key != 'extra_trees' for key, weight in self.models.items() if weight > 0):
+            raise ValueError('Forecast mode uses one multi-output Extra Trees model')
         missing = [MODELS[key].label for key, weight in self.models.items() if weight > 0 and not MODELS[key].available()]
         if missing:
             raise ValueError(f'Install the packages for: {", ".join(missing)}')
@@ -86,7 +92,14 @@ class MLSettings:
                   (self.amount_per_trade > 0 and (self.amount_unit != 'percent' or self.amount_per_trade <= 100), 'Invalid amount per trade'),
                   (self.amount_unit in ('percent', 'price'), 'Invalid amount unit'),
                   (self.capacity in ('light', 'standard', 'rich'), 'Model capacity must be light, standard or rich'),
-                  (self.exit_mode in ('learned', 'fixed'), 'Exit mode must be learned or fixed'),
+                  (self.exit_mode in ('learned', 'fixed', 'percent', 'forecast'), 'Invalid exit mode'),
+                  (.1 <= self.forecast_target_fraction <= 1 and .5 <= self.forecast_stop_buffer <= 3,
+                   'Forecast target fraction must be 0.1-1 and stop buffer 0.5-3'),
+                  (self.exit_mode != 'forecast' or not (self.let_profit_run or self.trailing or self.reverse_on_signal or self.quality_filter),
+                   'Forecast mode manages entries and exits directly'),
+                  (0 < self.take_profit_pct < 100 and 0 < self.stop_loss_pct < 100, 'Price exit percentages must be between 0 and 100'),
+                  (self.exit_mode != 'percent' or not (self.let_profit_run or self.trailing or self.reverse_on_signal),
+                   'Percentage exits require fixed targets and stops without trailing or signal reversal'),
                   (.0001 <= self.tp_quantile <= .95 and .0001 <= self.sl_quantile <= .95, 'Exit quantiles must be 0.0001-0.95'),
                   (0 <= self.min_reward_risk <= 10, 'Minimum reward/risk must be 0-10'),
                   (.1 <= self.trail_start <= 2 and .2 <= self.trail_noise <= 5, 'Trailing settings out of range'),
@@ -108,7 +121,9 @@ class MLSettings:
         return config_key(groups=sorted(self.feature_groups), models=self.models, horizon=self.horizon,
                           tp=self.take_profit_atr, sl=self.stop_atr, atr=self.atr_length, capacity=self.capacity,
                           exits=self.exit_mode, quantiles=(self.tp_quantile, self.sl_quantile) if self.exit_mode == 'learned' else None,
-                          recency=self.recency_half_life, quality=self.quality_filter, device=self.device)
+                          percent=(self.take_profit_pct, self.stop_loss_pct) if self.exit_mode == 'percent' else None,
+                          recency=self.recency_half_life, quality=self.quality_filter, device=self.device,
+                          regimes=sorted(self.regimes))
 
 
 def _atr(frame: pd.DataFrame, length: int) -> pd.Series:
@@ -117,13 +132,20 @@ def _atr(frame: pd.DataFrame, length: int) -> pd.Series:
     return tr.ewm(alpha=1/length, adjust=False, min_periods=length).mean()
 
 
-def exit_plan(probabilities: pd.DataFrame, atr: pd.Series, settings: MLSettings) -> dict[str, np.ndarray]:
+def exit_plan(probabilities: pd.DataFrame, atr: pd.Series, settings: MLSettings,
+              close: pd.Series | None = None) -> dict[str, np.ndarray]:
     """Per-bar take-profit, stop and trailing distances (price units) for both sides.
+
+    Percent mode scales the close price; execution anchors it to the actual fill.
 
     Learned mode uses the block's quantile predictions (ATR units) and falls back
     to the fixed ATR multiples where a block has no exit model.
     """
     distance = atr.to_numpy(float)
+    if settings.exit_mode == 'percent':
+        if close is None:
+            raise ValueError('Percentage exits require close prices')
+        distance = close.to_numpy(float)/100
     n = len(distance)
     def learned(column, fallback):
         if settings.exit_mode == 'learned' and column in probabilities:
@@ -133,6 +155,14 @@ def exit_plan(probabilities: pd.DataFrame, atr: pd.Series, settings: MLSettings)
     plan = {}
     for side in ('long', 'short'):
         tp, sl = learned(f'{side}_tp', settings.take_profit_atr), learned(f'{side}_sl', settings.stop_atr)
+        if settings.exit_mode == 'percent':
+            tp, sl = settings.take_profit_pct, settings.stop_loss_pct
+        if settings.exit_mode == 'forecast':
+            # Missing forecasts block entries; never substitute fixed ATR exits.
+            up = probabilities.get('forecast_up', pd.Series(np.nan, index=probabilities.index)).to_numpy(float)
+            down = probabilities.get('forecast_down', pd.Series(np.nan, index=probabilities.index)).to_numpy(float)
+            tp = (up if side == 'long' else down)*settings.forecast_target_fraction
+            sl = (down if side == 'long' else up)*settings.forecast_stop_buffer
         plan[f'{side}_target'], plan[f'{side}_stop'] = tp*distance, sl*distance
         plan[f'{side}_rr'] = tp/np.maximum(sl, 1e-9)
         plan[f'{side}_trail_start'] = tp*settings.trail_start*distance if settings.trailing else np.full(n, np.nan)
@@ -155,7 +185,7 @@ def _funnel(probabilities: pd.DataFrame, plan: dict, settings: MLSettings, start
              (f'Probability ≥ {settings.entry_threshold:g}', best >= settings.entry_threshold),
              (f'Edge ≥ {settings.min_edge:g}', best-other >= settings.min_edge),
              (f'Reward/risk ≥ {settings.min_reward_risk:g}', plan['reward_risk'][window] >= settings.min_reward_risk),
-             (f'Win chance ≥ {settings.quality_threshold:g}', ~settings.quality_filter | ~np.isfinite(quality) | (quality >= settings.quality_threshold))]
+             (f'Win chance ≥ {settings.quality_threshold:g}', (not settings.quality_filter) | ~np.isfinite(quality) | (quality >= settings.quality_threshold))]
     alive, rows = np.ones(len(p), bool), []
     for step, passed in steps:
         alive &= np.asarray(passed, bool)
@@ -187,6 +217,7 @@ class Prepared:
     labels: pd.Series
     start_index: int
     walk: object
+    forecast_targets: pd.DataFrame | None = None
 
 
 def prepare(frame: pd.DataFrame, settings: MLSettings, start=None, progress=None) -> Prepared:
@@ -196,15 +227,26 @@ def prepare(frame: pd.DataFrame, settings: MLSettings, start=None, progress=None
         raise ValueError('Not enough candles for the ML strategy')
     atr = _atr(clean, settings.atr_length)
     features = build_features(clean, settings.feature_groups)
-    labels = triple_barrier(clean, atr, settings.horizon, settings.take_profit_atr, settings.stop_atr)
+    percent = settings.exit_mode == 'percent'
+    labels = None if settings.exit_mode == 'forecast' else triple_barrier(clean, clean.close/100 if percent else atr, settings.horizon,
+                            settings.take_profit_pct if percent else settings.take_profit_atr,
+                            settings.stop_loss_pct if percent else settings.stop_atr)
     start_index = int(np.searchsorted(clean.index, start)) if start is not None else 0
     targets = excursions(clean, atr, settings.horizon) if settings.exit_mode == 'learned' else None
+    forecast_targets = None
+    if settings.exit_mode == 'forecast':
+        ranges = excursions(clean, atr, settings.horizon)
+        future_trend = (clean.close.shift(-settings.horizon)-clean.close)/atr.replace(0, np.nan)
+        forecast_targets = pd.DataFrame(dict(up=ranges.long_mfe, down=ranges.long_mae, trend=future_trend))
+        # Trend truth is independent of any take-profit/stop settings.
+        labels = pd.Series(np.sign(future_trend), index=clean.index).where(future_trend.notna())
     result = walk_forward(features, labels, start_index=start_index, train_bars=settings.train_bars,
                           retrain_every=settings.retrain_every, horizon=settings.horizon,
                           models=settings.models, key=settings.model_key(), capacity=settings.capacity, progress=progress,
                           exit_targets=targets, quantiles=(settings.tp_quantile, settings.sl_quantile),
-                          half_life=settings.recency_half_life, meta=settings.quality_filter, device=settings.device)
-    return Prepared(clean, atr, features.shape[1], labels, start_index, result)
+                          half_life=settings.recency_half_life, meta=settings.quality_filter, device=settings.device,
+                          learn_regimes=set(settings.regimes) != set(REGIME_NAMES), forecast_targets=forecast_targets)
+    return Prepared(clean, atr, features.shape[1], labels, start_index, result, forecast_targets)
 
 
 def execute(prepared: Prepared, settings: MLSettings, *, initial_capital: float, leverage: float, start=None, end=None,
@@ -212,9 +254,13 @@ def execute(prepared: Prepared, settings: MLSettings, *, initial_capital: float,
     """Turn prepared probabilities into trades with the given entry rules (cheap)."""
     clean, atr, result = prepared.clean, prepared.atr, prepared.walk
     start_index = prepared.start_index
-    plan = exit_plan(result.probabilities, atr, settings)
+    plan = exit_plan(result.probabilities, atr, settings, clean.close)
     funnel = _funnel(result.probabilities, plan, settings, start_index)
     signals = signals_from(result.probabilities, settings)
+    if settings.exit_mode == 'forecast':
+        trend = result.probabilities.forecast_trend.to_numpy(float)
+        # Trade only when mean trend and tree agreement point in the same direction.
+        signals = np.where(np.isfinite(trend) & (signals*trend > 0), signals, 0.)
     raw_signals = signals.copy()
     distance = atr.to_numpy()
     # Learned risk/reward and regime filters.
@@ -231,8 +277,13 @@ def execute(prepared: Prepared, settings: MLSettings, *, initial_capital: float,
     affordable = target_for_signal >= settings.min_reward_cost*round_trip
     blocked_by_cost = int(((signals != 0) & ~affordable)[start_index:].sum())
     signals = np.where(affordable, signals, 0.)
+    if settings.exit_mode == 'forecast':
+        trend_move = np.abs(result.probabilities.forecast_trend.to_numpy(float))*distance
+        signals = np.where(trend_move > round_trip, signals, 0.)
     # Quiet market or too small a move: no new entry.
-    big_enough = (np.nan_to_num(distance) >= settings.min_atr) & (target_for_signal >= settings.min_target)
+    atr_allowed = ((np.isfinite(distance) & (distance > settings.min_atr))
+                   if settings.exit_mode == 'forecast' else np.nan_to_num(distance) >= settings.min_atr)
+    big_enough = atr_allowed & (target_for_signal >= settings.min_target)
     blocked_by_size = int(((signals != 0) & ~big_enough)[start_index:].sum())
     signals = np.where(big_enough, signals, 0.)
     stop_distance = np.where(signals == -1, plan['short_stop'], plan['long_stop'])
@@ -245,8 +296,10 @@ def execute(prepared: Prepared, settings: MLSettings, *, initial_capital: float,
         trail_distance = np.where(np.isfinite(trail_distance), trail_distance, stop_distance)
     execution = ExecutionSettings(initial_capital=initial_capital, leverage=leverage,
                                   amount_per_trade=settings.amount_per_trade, amount_unit=settings.amount_unit,
-                                  max_hold_bars=10**9 if settings.let_profit_run else settings.horizon,
+                                  max_hold_bars=10**9 if settings.let_profit_run or settings.exit_mode == 'forecast' else settings.horizon,
                                   reverse_on_signal=settings.reverse_on_signal,
+                                  take_profit_pct=settings.take_profit_pct if settings.exit_mode == 'percent' else None,
+                                  stop_loss_pct=settings.stop_loss_pct if settings.exit_mode == 'percent' else None,
                                   min_tick=min_tick)
     bars = clean.join(result.probabilities).assign(atr=atr)
     if end is not None:
@@ -257,7 +310,14 @@ def execute(prepared: Prepared, settings: MLSettings, *, initial_capital: float,
     output = run_signal_backtest(bars, signals, stop_distance, target_distance, execution,
                                  start=start, close_at_end=close_at_end, bar_seconds=bar_seconds,
                                  fee_bps=fee_bps, slippage=slippage, spread=spread, funding_bps=funding_bps,
-                                 trail_activation=trail_activation, trail_distance=trail_distance)
+                                 trail_activation=trail_activation, trail_distance=trail_distance,
+                                 adaptive_forecast=(dict(
+                                     high=bars.close.to_numpy()+bars.forecast_up.to_numpy()*bars.atr.to_numpy(),
+                                     low=bars.close.to_numpy()-bars.forecast_down.to_numpy()*bars.atr.to_numpy(),
+                                     trend=bars.forecast_trend.to_numpy()*bars.atr.to_numpy(),
+                                     target_fraction=settings.forecast_target_fraction,
+                                     stop_buffer=settings.forecast_stop_buffer)
+                                     if settings.exit_mode == 'forecast' else None))
     trades = output['trades']
     if len(trades):
         codes = bars['regime'].reindex(trades.entry_time).to_numpy() if 'regime' in bars else np.full(len(trades), -1)
@@ -283,15 +343,45 @@ def execute(prepared: Prepared, settings: MLSettings, *, initial_capital: float,
                             learnedExits={column: float(np.nanmedian(learned_window[column])) if column in learned_window and learned_window[column].notna().any() else None
                                           for column in ('long_tp', 'long_sl', 'short_tp', 'short_sl')},
                             blockedByCost=blocked_by_cost,
-                            medianTarget=float(np.nanmedian((distance*settings.take_profit_atr)[start_index:])) if len(evaluated_cost) else None,
+                            medianTarget=float(np.nanmedian(plan['long_target'][start_index:])) if len(evaluated_cost) else None,
                             medianRoundTripCost=float(np.nanmedian(evaluated_cost)) if len(evaluated_cost) else None,
                             folds=result.folds, importance=dict(list(result.importance.items())[:25]),
-                            featureCount=prepared.features_count, trainedBars=int(sum(f['bars'] for f in result.folds)),
+                            skippedTrainingBlocks=sum(f.get('status') == 'skipped' for f in result.folds),
+                            featureCount=prepared.features_count,
+                            trainedBars=int(sum(f['bars'] for f in result.folds if f.get('status') != 'skipped')),
                             labelBalance={name: float((labels.iloc[start_index:] == value).mean())
                                           for name, value in (('long', 1), ('none', 0), ('short', -1))},
                             accuracy=float((np.array([-1, 0, 1])[np.argmax(evaluated[known].to_numpy(), axis=1)]
                                             == labels.iloc[start_index:][known].to_numpy()).mean()) if known.any() else None,
                             settings=asdict(settings))
+    if settings.exit_mode == 'forecast':
+        predicted = result.probabilities.iloc[window]
+        outcome = labels.reindex(predicted.index)
+        evaluated_trend = outcome.notna() & predicted.p_long.notna()
+        if evaluated_trend.any():
+            truth_trend = outcome[evaluated_trend]
+            predicted_trend = np.array([-1, 0, 1])[np.argmax(predicted.loc[evaluated_trend, ['p_short', 'p_none', 'p_long']].to_numpy(), axis=1)]
+            output['report']['accuracy'] = float((predicted_trend == truth_trend.to_numpy()).mean())
+            output['report']['labelBalance'] = {name: float((truth_trend == value).mean())
+                                               for name, value in (('long', 1), ('none', 0), ('short', -1))}
+        valid_forecast = predicted[['forecast_up', 'forecast_down', 'forecast_trend']].notna().all(axis=1)
+        if valid_forecast.any():
+            last = predicted.loc[valid_forecast].iloc[-1]
+            price, scale = float(clean.loc[last.name, 'close']), float(atr.loc[last.name])
+            output['report']['forecast'] = dict(high=price+float(last.forecast_up)*scale,
+                                               low=price-float(last.forecast_down)*scale,
+                                               close=price+float(last.forecast_trend)*scale,
+                                               horizon=settings.horizon)
+        if prepared.forecast_targets is not None:
+            truth = prepared.forecast_targets.reindex(predicted.index)
+            estimate = predicted[['forecast_up', 'forecast_down', 'forecast_trend']].to_numpy()
+            valid = np.isfinite(estimate).all(axis=1) & np.isfinite(truth.to_numpy()).all(axis=1)
+            if valid.any():
+                pct_scale = (atr/clean.close*100).reindex(predicted.index).to_numpy()[valid, None]
+                error = np.abs(estimate[valid]-truth.to_numpy()[valid])*pct_scale
+                output['report']['forecastErrors'] = dict(samples=int(valid.sum()), highMaePct=float(error[:, 0].mean()),
+                                                         lowMaePct=float(error[:, 1].mean()), closeMaePct=float(error[:, 2].mean()))
+
     return output
 
 
@@ -311,7 +401,7 @@ def ml_readiness(bar, settings: MLSettings) -> dict:
         return number if np.isfinite(number) else None
     p_long, p_short, p_none = value('p_long'), value('p_short'), value('p_none')
     def side(probability, opposite):
-        checks = [dict(label='Probability', passed=probability is not None and probability >= settings.entry_threshold,
+        checks = [dict(label='Tree agreement' if settings.exit_mode == 'forecast' else 'Probability', passed=probability is not None and probability >= settings.entry_threshold,
                        value=probability, threshold=settings.entry_threshold),
                   dict(label='Edge vs opposite', passed=probability is not None and opposite is not None and probability-opposite >= settings.min_edge,
                        value=None if probability is None or opposite is None else probability-opposite, threshold=settings.min_edge)]
@@ -320,6 +410,7 @@ def ml_readiness(bar, settings: MLSettings) -> dict:
     regime = getattr(bar, 'regime', -1)
     regime_name = REGIME_NAMES[int(regime)] if regime is not None and np.isfinite(regime) and regime >= 0 else None
     return dict(indicators=dict(pLong=p_long, pShort=p_short, pNone=p_none, atr=value('atr'), regime=regime_name,
+                                forecastMode=1 if settings.exit_mode == 'forecast' else 0,
                                 longTp=value('long_tp'), longSl=value('long_sl'), shortTp=value('short_tp'), shortSl=value('short_sl')),
                 longReadiness=long['readiness'], shortReadiness=short['readiness'],
                 longChecks=long['checks'], shortChecks=short['checks'],

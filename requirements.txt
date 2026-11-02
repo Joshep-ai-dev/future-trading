@@ -10,3 +10,5 @@ python-dotenv>=1.0,<2
 lightgbm>=4.5,<5
 xgboost>=2.1,<4
 torch>=2.4  # For NVIDIA GPU wheels, use the command from https://pytorch.org/get-started/locally/
+gymnasium>=1.0,<2
+stable-baselines3>=2.4,<3

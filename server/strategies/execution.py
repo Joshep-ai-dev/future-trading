@@ -24,6 +24,8 @@ class ExecutionSettings:
     max_hold_bars: int = 12
     reverse_on_signal: bool = True
     min_tick: float = .01
+    take_profit_pct: float | None = None
+    stop_loss_pct: float | None = None
 
 
 def _seconds(time) -> float:
@@ -33,11 +35,16 @@ def _seconds(time) -> float:
 def run_signal_backtest(bars: pd.DataFrame, signals: np.ndarray, stop_distance: np.ndarray, target_distance: np.ndarray,
                         settings: ExecutionSettings, *, start=None, close_at_end=False, bar_seconds=None,
                         fee_bps=0., slippage=0., spread=0., funding_bps=0.,
-                        trail_activation: np.ndarray | None = None, trail_distance: np.ndarray | None = None):
+                        trail_activation: np.ndarray | None = None, trail_distance: np.ndarray | None = None,
+                        adaptive_forecast: dict | None = None):
     """Simulate trades. Optional per-bar trailing: after price moves ``trail_activation`` in favour,
     the stop follows the best price at ``trail_distance`` and never loosens (NaN disables trailing)."""
     if not all(np.isfinite(v) for v in (fee_bps, slippage, spread, funding_bps)) or min(fee_bps, slippage, spread) < 0:
         raise ValueError('Execution costs must be finite; fees, slippage and spread must be nonnegative')
+    percentages = (settings.take_profit_pct, settings.stop_loss_pct)
+    if any(value is not None for value in percentages):
+        if not all(value is not None and np.isfinite(value) and 0 < value < 100 for value in percentages):
+            raise ValueError('Both price exit percentages must be finite and between 0 and 100')
     signals = np.asarray(signals, float)
     n_all = len(signals)
     trail_activation = np.full(n_all, np.nan) if trail_activation is None else np.asarray(trail_activation, float)
@@ -47,6 +54,9 @@ def run_signal_backtest(bars: pd.DataFrame, signals: np.ndarray, stop_distance: 
         bars, signals = bars.loc[keep], signals[keep]
         stop_distance, target_distance = np.asarray(stop_distance)[keep], np.asarray(target_distance)[keep]
         trail_activation, trail_distance = trail_activation[keep], trail_distance[keep]
+        if adaptive_forecast is not None:
+            adaptive_forecast = {**adaptive_forecast, **{
+                key: np.asarray(adaptive_forecast[key])[keep] for key in ('high', 'low', 'trend')}}
     adverse = slippage+spread/2
     cash, position, trades, records = float(settings.initial_capital), None, [], []
 
@@ -86,6 +96,10 @@ def run_signal_backtest(bars: pd.DataFrame, signals: np.ndarray, stop_distance: 
         cash -= entry_fee
         stop_price = float(entry-direction*max(settings.min_tick, stop))
         target_price = float(entry+direction*max(settings.min_tick, target)) if np.isfinite(target) else direction*np.inf
+        if settings.take_profit_pct is not None:
+            # Percentages reference the actual entry fill, independently of leverage and ATR.
+            stop_price = float(entry*(1-direction*settings.stop_loss_pct/100))
+            target_price = float(entry*(1+direction*settings.take_profit_pct/100))
         position = dict(reference_entry=float(close), entry_fee=entry_fee, funding=0., funding_time=_seconds(time),
                         direction=direction, entry_time=time, entry_price=entry, quantity=float(quantity),
                         stop=stop_price, initial_stop=stop_price, target=target_price,
@@ -124,7 +138,29 @@ def run_signal_backtest(bars: pd.DataFrame, signals: np.ndarray, stop_distance: 
                                                       reason='activation' if activated else 'trailing'))
                     if direction*(bar.close-p['stop']) <= 0:
                         close_position(time, bar.close, 'trailing_stop_at_close')
-        signal = int(signals[i]) if np.isfinite(signals[i]) else 0
+        model_closed = False
+        if position is not None and adaptive_forecast is not None:
+            high, low, trend = (adaptive_forecast[key][i] for key in ('high', 'low', 'trend'))
+            if all(np.isfinite(value) for value in (high, low, trend)):
+                direction = position['direction']
+                # Forecasts are observed at this close, after existing intrabar
+                # stops/targets. New levels cannot fill earlier in this candle.
+                if direction*trend <= 0:
+                    close_position(time, bar.close, 'model_exit')
+                    model_closed = True
+                else:
+                    favourable = high-bar.close if direction == 1 else bar.close-low
+                    adverse_move = bar.close-low if direction == 1 else high-bar.close
+                    candidate = bar.close-direction*max(settings.min_tick, adverse_move*adaptive_forecast['stop_buffer'])
+                    previous = position['stop']
+                    position['stop'] = max(previous, candidate) if direction == 1 else min(previous, candidate)
+                    position['target'] = float(bar.close+direction*max(settings.min_tick, favourable*adaptive_forecast['target_fraction']))
+                    if position['stop'] != previous:
+                        position['stop_history'].append(dict(time=int(_seconds(time)), price=float(position['stop']), reason='forecast'))
+                    if direction*(bar.close-position['stop']) <= 0:
+                        close_position(time, bar.close, 'model_stop_at_close')
+                        model_closed = True
+        signal = int(signals[i]) if np.isfinite(signals[i]) and not model_closed else 0
         valid = signal and np.isfinite(stop_distance[i]) and not np.isnan(target_distance[i])
         if valid and position is not None and position['direction'] != signal and settings.reverse_on_signal:
             close_position(time, bar.close, 'reversal')

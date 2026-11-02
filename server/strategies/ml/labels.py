@@ -30,7 +30,11 @@ def first_touch(high: np.ndarray, low: np.ndarray, upper: np.ndarray, lower: np.
 
 
 def triple_barrier(frame: pd.DataFrame, atr: pd.Series, horizon: int, take_profit: float, stop: float) -> pd.Series:
-    """Class per candle: LONG, SHORT or NONE. The last ``horizon`` candles are NaN (unknown yet)."""
+    """Class per candle: LONG, SHORT or NONE; final horizon rows are unknown.
+
+    ``atr`` supplies the distance scale: ATR for multiples, close/100 for
+    percentage barriers. The same scale must be used by execution.
+    """
     close, high, low = (frame[column].to_numpy(float) for column in ('close', 'high', 'low'))
     distance = atr.to_numpy(float)
     long_up, long_down = first_touch(high, low, close+take_profit*distance, close-stop*distance, horizon)

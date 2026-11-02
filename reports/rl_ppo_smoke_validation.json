@@ -1,0 +1,78 @@
+{
+  "purpose": "PPO end-to-end smoke validation, not a profitability certification",
+  "seconds": 5.688,
+  "start": "2026-10-23",
+  "end": "2026-10-30",
+  "settings": {
+    "train_bars": 1000,
+    "retrain_every": 1000,
+    "timesteps": 2048
+  },
+  "costs": {
+    "fee_bps": 5,
+    "slippage": 0.005,
+    "spread": 0.01,
+    "funding_bps": 0
+  },
+  "result": {
+    "trades": 86,
+    "wins": 20,
+    "losses": 66,
+    "netPnl": -329.5643848194062,
+    "endingBalance": 1670.4356151805937,
+    "returnPct": -16.47821924097031,
+    "winRate": 23.25581395348837,
+    "profitFactor": 0.24566727636840577,
+    "maxDrawdownPct": -18.010513011633144,
+    "averageR": -0.2524731123507047,
+    "fees": 161.29697274075173,
+    "funding": 0.0,
+    "executionCost": 60.60003173148105,
+    "meets100Trades": false
+  },
+  "policyBlocks": 1,
+  "policies": [
+    {
+      "key": "e97c812073765e0defbae04b3c191e566224a55454579af19ae39dc02c08d569",
+      "algorithm": "PPO",
+      "trainStart": "2026-10-12T14:00:00+00:00",
+      "trainEnd": "2026-10-20T21:45:00+00:00",
+      "validationStart": "2026-10-20T22:00:00+00:00",
+      "validationEnd": "2026-10-22T23:45:00+00:00",
+      "steps": 2048,
+      "validation": {
+        "averageWin": 7.2602,
+        "averageLoss": 7.7311,
+        "payoffRatio": 0.939,
+        "score": 56.378,
+        "trades": 29,
+        "wins": 9,
+        "losses": 20,
+        "winRate": 31.03,
+        "netPnl": -89.281,
+        "returnPct": -4.464,
+        "maxDrawdownPct": -5.823,
+        "averageLossPct": 0.387
+      },
+      "checkpoints": [
+        {
+          "steps": 2048,
+          "metrics": {
+            "averageWin": 7.2602,
+            "averageLoss": 7.7311,
+            "payoffRatio": 0.939,
+            "score": 56.378,
+            "trades": 29,
+            "wins": 9,
+            "losses": 20,
+            "winRate": 31.03,
+            "netPnl": -89.281,
+            "returnPct": -4.464,
+            "maxDrawdownPct": -5.823,
+            "averageLossPct": 0.387
+          }
+        }
+      ]
+    }
+  ]
+}

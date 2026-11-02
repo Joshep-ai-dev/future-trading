@@ -107,7 +107,38 @@ class MLEnsemble(StrategyRunner):
         return result.get('report')
 
 
-STRATEGIES: dict[str, StrategyRunner] = {runner.key: runner for runner in (BBOuterReversal(), MLEnsemble())}
+class RLPPO(MLEnsemble):
+    key, label, signal_label = 'rl_ppo', 'RL PPO', 'PPO target position'
+
+    @staticmethod
+    def settings(request):
+        from server.strategies.rl.settings import RLSettings
+        return RLSettings(**getattr(request, 'rl', {}))
+
+    def warmup_bars(self, request):
+        config = self.settings(request)
+        return config.train_bars+config.lookback+200
+
+    def run(self, frame, request, *, start=None, close_at_end=False, bar_seconds=None):
+        from server.strategies.rl.strategy import run_rl_backtest
+        return run_rl_backtest(frame, self.settings(request), initial_capital=request.capital, leverage=request.max_leverage,
+                               start=start, close_at_end=close_at_end, bar_seconds=bar_seconds,
+                               min_tick=request.tick_size, **self.costs(request))
+
+    def readiness(self, bar, request, frame=None):
+        atr = float(getattr(bar, 'atr', np.nan))
+        settings = self.settings(request)
+        passed = bool(np.isfinite(atr) and atr > settings.min_atr)
+        check = dict(label='ATR entry filter', passed=passed, value=atr if np.isfinite(atr) else None, threshold=settings.min_atr)
+        accepted = bool(getattr(bar, 'rl_accepted', False))
+        validation = dict(label='Policy passed past validation', passed=accepted, value=int(accepted), threshold=1)
+        return dict(indicators=dict(pLong=None, pShort=None, pNone=None, atr=check['value'], rlMode=1, rlAccepted=int(accepted)),
+                    longReadiness=100 if passed and accepted else 0, shortReadiness=100 if passed and accepted else 0,
+                    longChecks=[validation, check], shortChecks=[validation, check],
+                    signal='long' if getattr(bar, 'long_signal', False) else 'short' if getattr(bar, 'short_signal', False) else None)
+
+
+STRATEGIES: dict[str, StrategyRunner] = {runner.key: runner for runner in (BBOuterReversal(), MLEnsemble(), RLPPO())}
 
 
 def get_strategy(key: str) -> StrategyRunner:

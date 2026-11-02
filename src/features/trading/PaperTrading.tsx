@@ -74,10 +74,10 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
   const balance=replay?.balance??s?.balance??settings.capital;
   const equity=replay?.equity??(s?(s.displayEquity??s.equity):settings.capital);
   const pnl=s?equity-s.settings.capital:0;
-  const ml=config.strategy==='ml_ensemble',sizing=ml?config.ml:config.bb_reversal;
-  const setSizing=(patch:Partial<BacktestSettings['ml']>)=>onChange(ml?{...settings,ml:{...settings.ml,...patch}}:{...settings,bb_reversal:{...settings.bb_reversal,...patch}});
+  const ml=config.strategy==='ml_ensemble',rl=config.strategy==='rl_ppo',sizing=rl?config.rl:ml?config.ml:config.bb_reversal;
+  const setSizing=(patch:Partial<BacktestSettings['ml']>)=>onChange(rl?{...settings,rl:{...settings.rl,...patch}}:ml?{...settings,ml:{...settings.ml,...patch}}:{...settings,bb_reversal:{...settings.bb_reversal,...patch}});
   const leverage=(s?.settings??settings).max_leverage,unrealized=equity-balance,margin=p?p.entry_price*p.quantity/Math.max(1,leverage):0;
-  const status=s?.halted?'Balance depleted':s?.completed?'Replay complete':s?.running?'Running':s?'Paused':'Ready to start';
+  const status=s?.halted?(balance>0?'Risk limit reached':'Balance depleted'):s?.completed?'Replay complete':s?.running?'Running':s?'Paused':'Ready to start';
   const chartDuration=TIMEFRAMES[chartTimeframe];
   const alternate=!!s&&chartTimeframe!==s.settings.entry_timeframe;
   const chartView=useChartTimeframe(s?chartTimeframe:settings.entry_timeframe,s?.startedAt??0,s?(s.mode==='replay'?displayClock:s.quoteTime??s.virtualTime??0):Date.now()/1000,visible,s?.animationMinutes??preview,(s?.settings??settings).bb_reversal,s?.mode==='replay');
@@ -133,7 +133,7 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
       {s?.running?<button className="bot-pause" type="button" disabled={busy} onClick={()=>void action('pause')}>Ⅱ Pause bot</button>:<><button className="bot-start" type="submit" disabled={busy}>{busy?'Starting…':s?'＋ Start new session':'▶ Start virtual bot'}</button>{s&&!s.halted&&!s.completed&&<button type="button" className="secondary resume-button" disabled={busy} onClick={()=>void action('resume')}>Resume saved session</button>}</>}
       </form>
       {(error||data.error||s?.quoteError)&&<p className="error" role="alert">{error||data.error||s?.quoteError}</p>}
-      <div className="strategy-card"><div><span className="strategy-icon">⌁</span><div><strong>{(s?.settings??settings).strategy==='ml_ensemble'?'ML Ensemble':'BB Outer Band Reversal'}</strong><small>{(s?.settings??settings).strategy==='ml_ensemble'?`${Object.values((s?.settings??settings).ml?.models??{}).filter(w=>w>0).length} models · ATR target and stop`:'Trailing SL · Both directions'}</small></div></div><button type="button" className="text-button" onClick={onConfigure}>Strategy settings ↗</button></div>
+      <div className="strategy-card"><div><span className="strategy-icon">⌁</span><div><strong>{(s?.settings??settings).strategy==='rl_ppo'?'RL PPO':(s?.settings??settings).strategy==='ml_ensemble'?'ML Strategy':'BB Outer Band Reversal'}</strong><small>{(s?.settings??settings).strategy==='rl_ppo'?'PPO policy / protective stop':(s?.settings??settings).strategy==='ml_ensemble'?`${Object.values((s?.settings??settings).ml?.models??{}).filter(w=>w>0).length} models · ATR target and stop`:'Trailing SL · Both directions'}</small></div></div><button type="button" className="text-button" onClick={onConfigure}>Strategy settings ↗</button></div>
     </section>
     <BotStatusPanel state={s?.strategyState} running={!!s?.running} timeLabel={s?.strategyState?.timestamp?date(s.strategyState.timestamp+duration,tradingTimeZone):undefined} emptyHint={s?'Readiness appears after the bot processes its first completed candle.':'Start a virtual session to see buy and sell readiness.'}/>
     <details className="terminal-help"><summary>How this simulation works</summary><p>Live quotes refresh approximately every second. Trading decisions use completed execution candles.</p><p>Keep the backend running. Live catches up missed candles. A balance at or below zero halts trading.</p><p>Fees, slippage, funding and liquidation are not modeled. Current equity follows the displayed price; the equity curve uses completed closes.</p>{s&&<p>Last execution check: {date(s.lastCheck,tradingTimeZone)}<br/>Last completed candle: {date(s.lastProcessed,tradingTimeZone)}</p>}</details>

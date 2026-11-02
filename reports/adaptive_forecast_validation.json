@@ -1,0 +1,422 @@
+{
+  "seconds": 11.562,
+  "timeframe": "15m",
+  "start": "2026-09-28",
+  "end": "2026-10-30",
+  "capital": 2000,
+  "leverage": 1,
+  "costs": {
+    "fee_bps": 5,
+    "slippage": 0.005,
+    "spread": 0.01,
+    "funding_bps": 0
+  },
+  "selectedMethod": "random",
+  "selectionUses": "earlier and validation only; forward reporting only",
+  "runs": [
+    {
+      "method": "grid",
+      "modelSelection": {
+        "selected": {
+          "parameters": {
+            "train_bars": 2000,
+            "horizon": 48
+          },
+          "metrics": {
+            "averageWin": 11.3402,
+            "averageLoss": 10.0091,
+            "payoffRatio": 1.133,
+            "score": 59.891,
+            "trades": 96,
+            "wins": 41,
+            "losses": 55,
+            "winRate": 42.71,
+            "netPnl": -85.5494,
+            "returnPct": -4.277,
+            "maxDrawdownPct": -8.792,
+            "averageLossPct": 0.5
+          }
+        },
+        "candidates": [
+          {
+            "parameters": {
+              "train_bars": 2000,
+              "horizon": 48
+            },
+            "metrics": {
+              "averageWin": 11.3402,
+              "averageLoss": 10.0091,
+              "payoffRatio": 1.133,
+              "score": 59.891,
+              "trades": 96,
+              "wins": 41,
+              "losses": 55,
+              "winRate": 42.71,
+              "netPnl": -85.5494,
+              "returnPct": -4.277,
+              "maxDrawdownPct": -8.792,
+              "averageLossPct": 0.5
+            }
+          },
+          {
+            "parameters": {
+              "train_bars": 1000,
+              "horizon": 48
+            },
+            "metrics": {
+              "averageWin": 11.5495,
+              "averageLoss": 9.5352,
+              "payoffRatio": 1.211,
+              "score": 59.962,
+              "trades": 90,
+              "wins": 38,
+              "losses": 52,
+              "winRate": 42.22,
+              "netPnl": -56.9504,
+              "returnPct": -2.848,
+              "maxDrawdownPct": -8.85,
+              "averageLossPct": 0.477
+            }
+          },
+          {
+            "parameters": {
+              "train_bars": 3000,
+              "horizon": 48
+            },
+            "metrics": {
+              "averageWin": 13.3028,
+              "averageLoss": 9.678,
+              "payoffRatio": 1.375,
+              "score": 59.367,
+              "trades": 93,
+              "wins": 37,
+              "losses": 56,
+              "winRate": 39.78,
+              "netPnl": -49.7627,
+              "returnPct": -2.488,
+              "maxDrawdownPct": -7.869,
+              "averageLossPct": 0.484
+            }
+          },
+          {
+            "parameters": {
+              "train_bars": 1000,
+              "horizon": 24
+            },
+            "metrics": {
+              "averageWin": 10.7134,
+              "averageLoss": 9.1087,
+              "payoffRatio": 1.176,
+              "score": 57.721,
+              "trades": 108,
+              "wins": 42,
+              "losses": 66,
+              "winRate": 38.89,
+              "netPnl": -151.2124,
+              "returnPct": -7.561,
+              "maxDrawdownPct": -10.11,
+              "averageLossPct": 0.455
+            }
+          },
+          {
+            "parameters": {
+              "train_bars": 3000,
+              "horizon": 24
+            },
+            "metrics": {
+              "averageWin": 11.7553,
+              "averageLoss": 9.0571,
+              "payoffRatio": 1.298,
+              "score": 56.009,
+              "trades": 106,
+              "wins": 38,
+              "losses": 68,
+              "winRate": 35.85,
+              "netPnl": -169.1849,
+              "returnPct": -8.459,
+              "maxDrawdownPct": -12.564,
+              "averageLossPct": 0.453
+            }
+          },
+          {
+            "parameters": {
+              "train_bars": 2000,
+              "horizon": 24
+            },
+            "metrics": {
+              "averageWin": 10.1538,
+              "averageLoss": 9.2129,
+              "payoffRatio": 1.102,
+              "score": 54.803,
+              "trades": 109,
+              "wins": 39,
+              "losses": 70,
+              "winRate": 35.78,
+              "netPnl": -248.9067,
+              "returnPct": -12.445,
+              "maxDrawdownPct": -14.978,
+              "averageLossPct": 0.461
+            }
+          }
+        ]
+      },
+      "bestParameters": {
+        "train_bars": 2000,
+        "horizon": 48,
+        "forecast_target_fraction": 0.6,
+        "forecast_stop_buffer": 1.2,
+        "entry_threshold": 0.4,
+        "min_edge": 0.2,
+        "reverse_on_signal": false
+      },
+      "reliable": false,
+      "periods": {
+        "train": {
+          "averageWin": 10.7229,
+          "averageLoss": 11.0046,
+          "payoffRatio": 0.974,
+          "score": 61.767,
+          "trades": 87,
+          "wins": 41,
+          "losses": 46,
+          "winRate": 47.13,
+          "netPnl": -66.5739,
+          "returnPct": -3.329,
+          "maxDrawdownPct": -7.947,
+          "averageLossPct": 0.55
+        },
+        "validation": {
+          "averageWin": 16.8864,
+          "averageLoss": 11.0148,
+          "payoffRatio": 1.533,
+          "score": 63.92,
+          "trades": 23,
+          "wins": 11,
+          "losses": 12,
+          "winRate": 47.83,
+          "netPnl": 53.5724,
+          "returnPct": 2.679,
+          "maxDrawdownPct": -3.662,
+          "averageLossPct": 0.551
+        },
+        "forwardTest": {
+          "averageWin": 17.6619,
+          "averageLoss": 12.1249,
+          "payoffRatio": 1.457,
+          "score": 60.246,
+          "trades": 28,
+          "wins": 11,
+          "losses": 17,
+          "winRate": 39.29,
+          "netPnl": -11.8424,
+          "returnPct": -0.592,
+          "maxDrawdownPct": -4.197,
+          "averageLossPct": 0.606
+        }
+      },
+      "candidatesEvaluated": 72
+    },
+    {
+      "method": "random",
+      "modelSelection": {
+        "selected": {
+          "parameters": {
+            "train_bars": 2000,
+            "horizon": 48
+          },
+          "metrics": {
+            "averageWin": 11.3402,
+            "averageLoss": 10.0091,
+            "payoffRatio": 1.133,
+            "score": 59.891,
+            "trades": 96,
+            "wins": 41,
+            "losses": 55,
+            "winRate": 42.71,
+            "netPnl": -85.5494,
+            "returnPct": -4.277,
+            "maxDrawdownPct": -8.792,
+            "averageLossPct": 0.5
+          }
+        },
+        "candidates": [
+          {
+            "parameters": {
+              "train_bars": 2000,
+              "horizon": 48
+            },
+            "metrics": {
+              "averageWin": 11.3402,
+              "averageLoss": 10.0091,
+              "payoffRatio": 1.133,
+              "score": 59.891,
+              "trades": 96,
+              "wins": 41,
+              "losses": 55,
+              "winRate": 42.71,
+              "netPnl": -85.5494,
+              "returnPct": -4.277,
+              "maxDrawdownPct": -8.792,
+              "averageLossPct": 0.5
+            }
+          },
+          {
+            "parameters": {
+              "train_bars": 1000,
+              "horizon": 48
+            },
+            "metrics": {
+              "averageWin": 11.5495,
+              "averageLoss": 9.5352,
+              "payoffRatio": 1.211,
+              "score": 59.962,
+              "trades": 90,
+              "wins": 38,
+              "losses": 52,
+              "winRate": 42.22,
+              "netPnl": -56.9504,
+              "returnPct": -2.848,
+              "maxDrawdownPct": -8.85,
+              "averageLossPct": 0.477
+            }
+          },
+          {
+            "parameters": {
+              "train_bars": 3000,
+              "horizon": 48
+            },
+            "metrics": {
+              "averageWin": 13.3028,
+              "averageLoss": 9.678,
+              "payoffRatio": 1.375,
+              "score": 59.367,
+              "trades": 93,
+              "wins": 37,
+              "losses": 56,
+              "winRate": 39.78,
+              "netPnl": -49.7627,
+              "returnPct": -2.488,
+              "maxDrawdownPct": -7.869,
+              "averageLossPct": 0.484
+            }
+          },
+          {
+            "parameters": {
+              "train_bars": 1000,
+              "horizon": 24
+            },
+            "metrics": {
+              "averageWin": 10.7134,
+              "averageLoss": 9.1087,
+              "payoffRatio": 1.176,
+              "score": 57.721,
+              "trades": 108,
+              "wins": 42,
+              "losses": 66,
+              "winRate": 38.89,
+              "netPnl": -151.2124,
+              "returnPct": -7.561,
+              "maxDrawdownPct": -10.11,
+              "averageLossPct": 0.455
+            }
+          },
+          {
+            "parameters": {
+              "train_bars": 3000,
+              "horizon": 24
+            },
+            "metrics": {
+              "averageWin": 11.7553,
+              "averageLoss": 9.0571,
+              "payoffRatio": 1.298,
+              "score": 56.009,
+              "trades": 106,
+              "wins": 38,
+              "losses": 68,
+              "winRate": 35.85,
+              "netPnl": -169.1849,
+              "returnPct": -8.459,
+              "maxDrawdownPct": -12.564,
+              "averageLossPct": 0.453
+            }
+          },
+          {
+            "parameters": {
+              "train_bars": 2000,
+              "horizon": 24
+            },
+            "metrics": {
+              "averageWin": 10.1538,
+              "averageLoss": 9.2129,
+              "payoffRatio": 1.102,
+              "score": 54.803,
+              "trades": 109,
+              "wins": 39,
+              "losses": 70,
+              "winRate": 35.78,
+              "netPnl": -248.9067,
+              "returnPct": -12.445,
+              "maxDrawdownPct": -14.978,
+              "averageLossPct": 0.461
+            }
+          }
+        ]
+      },
+      "bestParameters": {
+        "train_bars": 2000,
+        "horizon": 48,
+        "forecast_target_fraction": 0.8,
+        "forecast_stop_buffer": 0.8,
+        "entry_threshold": 0.6,
+        "min_edge": 0.05,
+        "reverse_on_signal": false
+      },
+      "reliable": false,
+      "periods": {
+        "train": {
+          "averageWin": 11.7882,
+          "averageLoss": 9.0819,
+          "payoffRatio": 1.298,
+          "score": 57.505,
+          "trades": 108,
+          "wins": 41,
+          "losses": 67,
+          "winRate": 37.96,
+          "netPnl": -125.1717,
+          "returnPct": -6.259,
+          "maxDrawdownPct": -10.706,
+          "averageLossPct": 0.454
+        },
+        "validation": {
+          "averageWin": 14.5874,
+          "averageLoss": 8.9118,
+          "payoffRatio": 1.637,
+          "score": 60.919,
+          "trades": 30,
+          "wins": 12,
+          "losses": 18,
+          "winRate": 40.0,
+          "netPnl": 14.6354,
+          "returnPct": 0.732,
+          "maxDrawdownPct": -3.324,
+          "averageLossPct": 0.446
+        },
+        "forwardTest": {
+          "averageWin": 12.5106,
+          "averageLoss": 10.2392,
+          "payoffRatio": 1.222,
+          "score": 61.982,
+          "trades": 34,
+          "wins": 15,
+          "losses": 19,
+          "winRate": 44.12,
+          "netPnl": -6.8861,
+          "returnPct": -0.344,
+          "maxDrawdownPct": -4.239,
+          "averageLossPct": 0.512
+        }
+      },
+      "candidatesEvaluated": 72
+    }
+  ]
+}

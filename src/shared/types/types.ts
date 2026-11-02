@@ -8,18 +8,23 @@ export type Analysis = {
 export const fmt = (v: number | null, digits=2) => v === null ? '—' : v.toLocaleString('en-US', {maximumFractionDigits: digits});
 
 export type MLConfig = {
-  feature_groups: string[]; models: Record<string, number>; horizon: number; take_profit_atr: number; stop_atr: number;
+  feature_groups: string[]; models: Record<string, number>; horizon: number; forecast_target_fraction: number; forecast_stop_buffer: number; take_profit_pct: number; stop_loss_pct: number; take_profit_atr: number; stop_atr: number;
   atr_length: number; entry_threshold: number; min_edge: number; min_reward_cost: number; train_bars: number;
   retrain_every: number; trade_mode: 'Both'|'Long Only'|'Short Only'; reverse_on_signal: boolean;
   amount_per_trade: number; amount_unit: 'price'|'percent'; capacity: 'light'|'standard'|'rich';
-  exit_mode: 'learned'|'fixed'; tp_quantile: number; sl_quantile: number; min_reward_risk: number;
+  exit_mode: 'learned'|'fixed'|'percent'|'forecast'; tp_quantile: number; sl_quantile: number; min_reward_risk: number;
   trailing: boolean; trail_start: number; trail_noise: number; regimes: string[]; recency_half_life: number; min_atr: number; min_target: number; let_profit_run: boolean; quality_filter: boolean; quality_threshold: number; device: 'auto'|'gpu'|'cpu';
 };
 export type RegimeStat = {name:string;share:number;trades:number;netPnl:number;winRate:number|null;allowed:boolean};
+export type RLConfig = {train_bars:number;retrain_every:number;lookback:number;timesteps:number;learning_rate:number;seed:number;min_atr:number;stop_atr:number;max_drawdown_pct:number;drawdown_penalty:number;turnover_penalty:number;amount_per_trade:number;amount_unit:'percent'|'price'};
 export type ModelReport = {
-  exitMode?: 'learned'|'fixed'; regimes?: RegimeStat[]; blockedBySize?: number; funnel?: {step:string;remaining:number;note?:string}[]; blockedByRewardRisk?: number; blockedByRegime?: number;
+  kind?:'rl';algorithm?:string;message?:string;rejectedPolicyBlocks?:number;
+  forecastErrors?:{samples:number;highMaePct:number;lowMaePct:number;closeMaePct:number};
+  forecast?:{high:number;low:number;close:number;horizon:number};
+  skippedTrainingBlocks?:number;
+  exitMode?: 'learned'|'fixed'|'percent'|'forecast'; regimes?: RegimeStat[]; blockedBySize?: number; funnel?: {step:string;remaining:number;note?:string}[]; blockedByRewardRisk?: number; blockedByRegime?: number;
   learnedExits?: {long_tp:number|null;long_sl:number|null;short_tp:number|null;short_sl:number|null};
-  folds: {start:number;end:number;trainRows:number;bars:number;accuracy:number|null}[];
+  folds: {start:number;end:number;trainRows:number;bars:number;accuracy:number|null;status?:'skipped';reason?:string;training?:{steps:number;accepted?:boolean;selectedCheckpointSteps?:number|null;selectionReason?:string;checkpoints?:{steps:number;accepted:boolean;reason:string|null;metrics:TuneMetrics&{transactionCosts?:number;positionChanges?:number;turnover?:number}}[];validation:TuneMetrics;trainStart:string;trainEnd:string;validationStart:string;validationEnd:string}}[];
   importance: Record<string, number>; featureCount: number; trainedBars: number; accuracy: number|null;
   labelBalance: {long:number;none:number;short:number}; blockedByCost: number;
   medianTarget: number|null; medianRoundTripCost: number|null;
@@ -28,7 +33,7 @@ export type BacktestSettings = {
   market: 'xag'|'stable';
   atr_active: boolean; atr_period: number; atr_multiplier: number;
   ema_fast: number; ema_slow: number; rsi_period: number; rsi_threshold: number; rsi_active: boolean;
-  strategy: 'sweep'|'mtf'|'chartart_v12'|'bb_outer_reversal'|'ml_ensemble'; ml: MLConfig; bb_period: number; chartart_stop_pct: number;
+  strategy: 'sweep'|'mtf'|'chartart_v12'|'bb_outer_reversal'|'ml_ensemble'|'rl_ppo'; rl:RLConfig; ml: MLConfig; bb_period: number; chartart_stop_pct: number;
   bb_reversal: {rsi_exit_enabled:boolean; rsi_exit_length:number; rsi_exit_move:number; rsi_exit_short:number; rsi_exit_long:number; amount_per_trade:number; amount_unit:'price'|'percent'; use_sma_trend_adjustment:boolean; trade_mode: 'Both'|'Long Only'|'Short Only'; bb_length:number; bb_mult:number; min_bb_width_pct:number; atr_length:number; min_atr:number; adx_length:number; adx_threshold:number; pullback_bars:number; initial_sl:number; trail_trigger:number; trail_distance:number; trail_multiplier:number; sma_length:number; sma_slope_bars:number; counter_profit_pct:number; counter_sl_pct:number; quantity:number};
   exit_condition: 'none'|'ema'|'rsi'|'either';
   stop_mode: 'none'|'fixed'|'breakeven'|'trailing'|'breakeven_trailing';
@@ -67,14 +72,15 @@ export type IndicatorPoint = {time: number; ema20: number | null; ema50: number 
 export type BacktestResult = {runId?: number|null; strategy?: string; model?: ModelReport|null; strategyName: string; executionTimeframe: string; barSeconds: number; indicators: IndicatorPoint[]; settings: BacktestSettings; backtest: PeriodResult; candles: Analysis['candles']};
 export type TuneMetrics = {averageWin?:number;averageLoss?:number;payoffRatio?:number|null;score:number;trades:number;wins:number;losses:number;winRate:number;netPnl:number;returnPct:number;maxDrawdownPct:number;averageLossPct:number};
 export type FineTuneCase = {
-  id:string;rank:number;reliable?:boolean;bestSettings:BacktestSettings;
+  id:string;rank:number;reliable?:boolean;reliabilityReasons?:string[];skippedTrainingBlocks?:number;bestSettings:BacktestSettings;
   bestParameters:Partial<BacktestSettings['bb_reversal']>&{leverage?:number};
   periods:{train:{metrics:TuneMetrics};validation:{metrics:TuneMetrics};forwardTest:{metrics:TuneMetrics}};
 };
-export type FineTuneResult = {searchMethod?:'grid'|'ml';gridAxes?:Record<string,number[]>|null;
+export type FineTuneResult = {searchMethod?:'grid'|'random'|'training';gridAxes?:Record<string,number[]>|null;
   bestSettings:BacktestSettings;bestParameters:Partial<BacktestSettings['bb_reversal']>&{leverage?:number};
   model:string;objective:string;candidatesEvaluated:number;seedCandidates:number;adaptiveCandidatesEvaluated:number;shortlisted:number;
   periods:{train:{start:number;end:number;metrics:TuneMetrics};validation:{start:number;end:number;metrics:TuneMetrics};forwardTest:{start:number;end:number;metrics:TuneMetrics}};
+  modelSelection?:{selected:{parameters:{train_bars:number;horizon?:number};metrics:TuneMetrics};candidates:{parameters:{train_bars:number;horizon?:number};metrics:TuneMetrics}[]};
   candidates?:FineTuneCase[];modelHyperparameters?:Record<string,number|number[]>|null;modelCrossValidationRmse?:number|null;
 };
 

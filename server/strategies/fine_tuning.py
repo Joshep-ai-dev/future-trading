@@ -1,13 +1,11 @@
-"""ML-assisted search across BB reversal settings with walk-forward scoring."""
+"""Grid or random search across BB reversal settings with fixed win-rate-first ranking."""
 from dataclasses import replace
 from itertools import product
 
 import numpy as np
 import pandas as pd
 from scipy.stats import randint
-from sklearn.ensemble import (ExtraTreesRegressor, HistGradientBoostingRegressor,
-                              RandomForestRegressor, VotingRegressor)
-from sklearn.model_selection import KFold, ParameterSampler, cross_val_score
+from sklearn.model_selection import ParameterSampler
 
 from server.strategies.bb_outer_reversal import Settings, calculate, run_backtest
 from server.market.data import TIMEFRAMES
@@ -15,9 +13,7 @@ from server.strategies.strategy import split_points, seconds
 
 
 TRIALS = 64
-ADAPTIVE_TRIALS = 16
 SHORTLIST = 4
-ML_HYPERPARAMETER_TRIALS = 6
 PARAMETERS = (
     'bb_length', 'bb_mult', 'min_bb_width_pct',
     'atr_length', 'min_atr', 'adx_length',
@@ -39,7 +35,9 @@ def _candidate_space(base):
     space = {}
     for name in PARAMETERS:
         value = getattr(base, name)
-        if name in CATEGORIES:
+        if name in ('amount_per_trade', 'amount_unit', 'leverage'):
+            space[name] = [value]
+        elif name in CATEGORIES:
             space[name] = list(CATEGORIES[name])
         elif isinstance(value, bool):
             space[name] = [False, True]
@@ -133,55 +131,6 @@ def _grid_candidates(base):
     return axes, candidates
 
 
-def _ensemble(config):
-    return VotingRegressor(estimators=[
-        ('random_forest', RandomForestRegressor(
-            n_estimators=config['rf_trees'], min_samples_leaf=config['rf_leaf'],
-            max_features=config['rf_max_features'], random_state=1729, n_jobs=1)),
-        ('extra_trees', ExtraTreesRegressor(
-            n_estimators=config['extra_trees'], min_samples_leaf=config['extra_leaf'],
-            max_features=config['extra_max_features'], random_state=1733, n_jobs=1)),
-        ('hist_gradient_boosting', HistGradientBoostingRegressor(
-            max_iter=config['hist_iterations'], max_leaf_nodes=config['hist_leaf_nodes'],
-            l2_regularization=config['hist_l2'], random_state=1741)),
-    ], weights=config['weights'])
-
-
-def _fit_ensemble(rows, config):
-    features = np.asarray([_parameter_key(params) for params, _ in rows], dtype=float)
-    scores = np.asarray([metrics['score'] for _, metrics in rows], dtype=float)
-    model = _ensemble(config)
-    model.fit(features, scores)
-    return model
-
-
-def _tune_model_hyperparameters(rows, progress):
-    features = np.asarray([_parameter_key(params) for params, _ in rows], dtype=float)
-    scores = np.asarray([metrics['score'] for _, metrics in rows], dtype=float)
-    choices = {
-        'rf_trees': [80, 140, 220], 'rf_leaf': [1, 2, 4],
-        'rf_max_features': [0.7, 1.0], 'extra_trees': [80, 140, 220],
-        'extra_leaf': [1, 2, 4], 'extra_max_features': [0.7, 1.0],
-        'hist_iterations': [80, 140], 'hist_leaf_nodes': [7, 15],
-        'hist_l2': [0.1, 1., 5.], 'weights': [(1, 1, 1), (2, 1, 1), (1, 2, 1)],
-    }
-    sampler_space = {name: randint(0, len(values)) for name, values in choices.items()}
-    configs = [{name: choices[name][index] for name, index in sample.items()}
-               for sample in ParameterSampler(sampler_space, n_iter=ML_HYPERPARAMETER_TRIALS,
-                                              random_state=4817)]
-    folds = KFold(n_splits=3, shuffle=True, random_state=4819)
-    scored = []
-    for index, config in enumerate(configs, start=1):
-        errors = -cross_val_score(_ensemble(config), features, scores, cv=folds,
-                                  scoring='neg_root_mean_squared_error', n_jobs=1)
-        rmse = float(errors.mean())
-        scored.append((rmse, config))
-        progress(48 + int(8 * index / len(configs)),
-                 f'Tuning model hyperparameters: configuration {index} of {len(configs)}')
-    rmse, best_config = min(scored, key=lambda item: item[0])
-    return best_config, round(rmse, 4)
-
-
 def _score(result, capital):
     trades = result['trades']
     count = len(trades)
@@ -215,18 +164,13 @@ def _score(result, capital):
                 maxDrawdownPct=round(drawdown, 3), averageLossPct=round(average_loss_pct, 3))
 
 
-def _ranking_key(metrics, objective):
-    meaningful = metrics['trades'] >= 20
-    if objective == 'profit':
-        return (meaningful, metrics['netPnl'], metrics['maxDrawdownPct'], metrics['winRate'])
-    return (metrics['netPnl'] > 0 and meaningful, metrics['score'],
-            metrics['netPnl'], metrics['maxDrawdownPct'])
+def _ranking_key(metrics: dict) -> tuple:
+    return (metrics['trades'] >= 20, metrics['netPnl'] > 0,
+            metrics['winRate'], metrics['netPnl'], metrics['maxDrawdownPct'])
 
 
-def fine_tune(frame, request, progress=None, search_method='grid', objective='profit', validation_start=None, forward_start=None):
+def fine_tune(frame, request, progress=None, search_method='grid', validation_start=None, forward_start=None):
     """Search strategy and allocation settings; validate before reporting holdout."""
-    if objective not in ('profit', 'balanced'):
-        raise ValueError('Objective must be profit or balanced')
     report = progress or (lambda percent, message: None)
     report(1, 'Preparing candles and indicator periods')
     duration = TIMEFRAMES[request.entry_timeframe]
@@ -270,65 +214,20 @@ def fine_tune(frame, request, progress=None, search_method='grid', objective='pr
         report(min(94, start_pct + int(span_pct * phase_counts[phase] / max(1, total))),
                f'{phase}: evaluated {phase_counts[phase]} settings')
 
-    if search_method not in ('grid', 'ml'):
-        raise ValueError('Search method must be grid or ml')
+    if search_method not in ('grid', 'random'):
+        raise ValueError('Search method must be grid or random')
     grid_axes = None
     if search_method == 'grid':
         grid_axes, initial_candidates = _grid_candidates(base)
     else:
         initial_candidates = _candidate_set(base, TRIALS, seed=1729)
-        original = {name: getattr(base, name) for name in PARAMETERS}
-        for allocation in (5., 10., 25.):
-            initial_candidates.append({**original, 'amount_unit': 'percent',
-                                       'amount_per_trade': allocation, 'leverage': 1.})
     report(3, f'Testing every one of {len(initial_candidates)} grid combinations' if search_method == 'grid' else f'Testing {len(initial_candidates)} starting settings')
     for params in initial_candidates:
         evaluate(params, 'Grid search' if search_method == 'grid' else 'Initial search', 3, 44, len(initial_candidates))
 
-    model_hyperparameters, model_cv_rmse, adaptive_evaluated = None, None, 0
-    if search_method == 'grid':
-        ranked = list(evaluated.values())
-    else:
-        report(48, 'Tuning the scikit-learn model hyperparameters')
-        model_hyperparameters, model_cv_rmse = _tune_model_hyperparameters(
-            list(evaluated.values()), report)
-        first_model = _fit_ensemble(list(evaluated.values()), model_hyperparameters)
-        first_pool = _candidate_set(base, 1024, seed=2731, excluded=evaluated)
-        adaptive_evaluated = 0
-        if first_pool:
-            features = np.asarray([_parameter_key(params) for params in first_pool], dtype=float)
-            predictions = first_model.predict(features)
-            proposals = sorted(zip(predictions, first_pool), key=lambda item: item[0], reverse=True)
-            for _, params in proposals[:ADAPTIVE_TRIALS]:
-                evaluate(params, 'ML guided search', 57, 15, min(ADAPTIVE_TRIALS, len(proposals)))
-                adaptive_evaluated += 1
-
-        report(74, 'Fitting the tuned ensemble to the expanded search')
-        model = _fit_ensemble(list(evaluated.values()), model_hyperparameters)
-        final_pool = _candidate_set(base, 2048, seed=3739, excluded=evaluated)
-        ranked = list(evaluated.values())
-        if final_pool:
-            features = np.asarray([_parameter_key(params) for params in final_pool], dtype=float)
-            predictions = model.predict(features)
-            ranked.extend((params, {'score': float(score), 'netPnl': 0., 'maxDrawdownPct': 0.})
-                          for score, params in zip(predictions, final_pool))
-        ranked.sort(key=lambda item: (item[1]['score'], item[1]['netPnl'],
-                                      item[1]['maxDrawdownPct']), reverse=True)
-    shortlist = []
-    seen_shortlist = set()
-    for params, _ in ranked:
-        key = _parameter_key(params)
-        if key not in seen_shortlist:
-            seen_shortlist.add(key)
-            shortlist.append(params)
-        if search_method != 'grid' and len(shortlist) == SHORTLIST:
-            break
-
-    report(75, 'Rechecking finalists and validating their settings')
-    for index, params in enumerate(shortlist):
-        if _parameter_key(params) not in evaluated:
-            evaluate(params, 'Finalist check', 75 + index * 2, 2, 1)
-
+    # Both search methods validate every sampled candidate. No surrogate models
+    # or blended score can override the win-rate-first order.
+    shortlist = [params for params, _ in evaluated.values()]
     validated = []
     for index, params in enumerate(shortlist):
         config = replace(base, **params)
@@ -338,7 +237,7 @@ def fine_tune(frame, request, progress=None, search_method='grid', objective='pr
                           evaluated[_parameter_key(params)][1], params))
         report(85 + int(8 * (index + 1) / len(shortlist)),
                f'Validation: checked {index + 1} of {len(shortlist)} finalists')
-    validated.sort(key=lambda item: _ranking_key(item[0], objective), reverse=True)
+    validated.sort(key=lambda item: _ranking_key(item[0]), reverse=True)
     validated = validated[:SHORTLIST]
     candidate_results = []
     for index, (validation_metrics, train_metrics, params) in enumerate(validated, start=1):
@@ -347,6 +246,8 @@ def fine_tune(frame, request, progress=None, search_method='grid', objective='pr
         forward_result = run_backtest(forward, config, close_at_end=True, prepared_bars=forward, **costs)
         candidate_results.append(dict(
             id=f'case-{index}', rank=index,
+            reliable=(_ranking_key(validation_metrics)[:2] == (True, True)
+                      and train_metrics['trades'] >= 20 and train_metrics['netPnl'] > 0),
             bestParameters=params,
             bestSettings=request.model_copy(update={
                 'bb_reversal': {**request.bb_reversal, **{key: value for key, value in params.items()
@@ -368,13 +269,12 @@ def fine_tune(frame, request, progress=None, search_method='grid', objective='pr
     return dict(
         bestSettings=best_settings, bestParameters=best_params,
         searchMethod=search_method, gridAxes=grid_axes,
-        model='Exhaustive grid search' if search_method == 'grid' else 'scikit-learn VotingRegressor ensemble',
-        objective=('Maximize validation net profit after configured costs; prefer at least 20 trades; drawdown breaks ties. Forward data is not used for selection. Exposure stays as configured.' if objective == 'profit' else '35% win rate, 35% profit, 20% drawdown control, 10% average loss control; small samples discounted.'),
-        rankingObjective=objective,
-        candidates=candidate_results, modelHyperparameters=model_hyperparameters,
-        modelCrossValidationRmse=model_cv_rmse,
+        model='Exhaustive grid search' if search_method == 'grid' else 'Random search',
+        objective='Win rate first, then net profit after costs; require at least 20 validation trades and positive profit. Forward data is reporting-only.',
+        rankingObjective='win_rate',
+        candidates=candidate_results, modelHyperparameters=None, modelCrossValidationRmse=None,
         candidatesEvaluated=len(evaluated), seedCandidates=len(initial_candidates),
-        adaptiveCandidatesEvaluated=adaptive_evaluated, shortlisted=len(validated),
+        adaptiveCandidatesEvaluated=0, shortlisted=len(validated),
         periods=dict(train=dict(start=timestamps[0], end=timestamps[1], metrics=train_metrics),
                      validation=dict(start=timestamps[1], end=timestamps[2], metrics=validation_metrics),
                      forwardTest=dict(start=timestamps[2], end=timestamps[3],

@@ -14,7 +14,8 @@ function SideReadiness({side,value,checks,signal}:{side:'long'|'short';value:num
 }
 
 function ProbabilityGrid({values}:{values:Record<string,number|null>}){
-  const rows:[string,number|null|undefined,string][]=[['Up (long win)',values.pLong,'is-long'],['Neither',values.pNone,'is-none'],['Down (short win)',values.pShort,'is-short']];
+  if(values.rlMode)return <p className="model-note">{values.rlAccepted==null?'PPO validation status is unavailable.':values.rlAccepted?'PPO passed past validation.':'PPO did not pass validation and stays flat.'} ATR {fmt(values.atr,3)} controls new-entry eligibility; it is not a win probability.</p>;
+  const rows:[string,number|null|undefined,string][]=[[values.forecastMode?'Up tree agreement':'Up (long win)',values.pLong,'is-long'],['Neither',values.pNone,'is-none'],[values.forecastMode?'Down tree agreement':'Down (short win)',values.pShort,'is-short']];
   return <div className="bot-probabilities">{rows.map(([label,value,tone])=><div key={label}><span>{label}</span><i><b className={tone} style={{width:`${(value??0)*100}%`}}/></i><strong>{value==null?'—':`${fmt(value*100,1)}%`}</strong></div>)}{(values as Record<string,unknown>).regime!=null&&<div className="bot-regime"><span>Market regime</span><b>{String((values as Record<string,unknown>).regime)}</b></div>}{values.longTp!=null&&<div className="bot-exits"><span>Learned exits × ATR</span><b className="positive">L {fmt(values.longTp,2)} / {fmt(values.longSl,2)}</b><b className="negative">S {fmt(values.shortTp,2)} / {fmt(values.shortSl,2)}</b></div>}{values.atr!=null&&<small>ATR {fmt(values.atr,3)}</small>}</div>;
 }
 
@@ -42,7 +43,7 @@ export default function BotStatusPanel({state,running,timeLabel,emptyHint}:{stat
       <SideReadiness side="long" value={state.longReadiness} checks={state.longChecks} signal={state.signal==='long'}/>
       <SideReadiness side="short" value={state.shortReadiness} checks={state.shortChecks} signal={state.signal==='short'}/>
       {close&&<div className="bot-status-position"><span className={`side-badge ${close.direction}`}>{close.direction.toUpperCase()}</span><dl><div><dt>Entry</dt><dd>{fmt(close.entryPrice,3)}</dd></div><div><dt>Stop</dt><dd>{fmt(close.stop,3)}</dd></div><div><dt>To stop</dt><dd>{fmt(close.stopDistance,3)}</dd></div><div><dt>Exit mode</dt><dd>{close.trailingActive?'Trailing':'Initial stop'}</dd></div></dl></div>}
-      <p className="bot-status-note">{state.indicators&&'pLong' in state.indicators?'Readiness is the model probability for each side on the last closed candle. Entries also need the edge over the opposite side.':'Readiness is the share of entry conditions met on the last closed candle, not a win probability.'}</p>
+      <p className="bot-status-note">{state.indicators&&'rlMode' in state.indicators?'The policy manages positions; the ATR filter only controls eligibility for new exposure.':state.indicators&&'pLong' in state.indicators?'Readiness shows model direction confidence. Forecast mode uses tree agreement, not a calibrated win probability. Entries also check trend, movement and costs.':'Readiness is the share of entry conditions met on the last closed candle, not a win probability.'}</p>
     </>:<p className="bot-status-empty">{emptyHint??'Start the bot to see live entry readiness.'}</p>}
   </section>;
 }

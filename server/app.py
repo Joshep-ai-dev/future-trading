@@ -134,8 +134,7 @@ class ProfileSaveRequest(BaseModel):
 
 
 class FineTuneRequest(BaseModel):
-    search_method: Literal['grid','ml'] = 'grid'
-    objective: Literal['profit','balanced'] = 'profit'
+    search_method: Literal['grid','random'] = 'grid'
     validation_start: date | None = None
     forward_start: date | None = None
     model_config = ConfigDict(extra='forbid')
@@ -701,8 +700,13 @@ def fine_tune_backtest(parameters: FineTuneRequest, request: Request):
     def work():
         try:
             frame, _ = load_bars(parameters.settings.entry_timeframe, instrument=parameters.settings.market)
-            tuner = ml_fine_tune if parameters.settings.strategy == 'ml_ensemble' else fine_tune
-            result = tuner(frame, parameters.settings, search_method=parameters.search_method, objective=parameters.objective,
+            if parameters.settings.strategy == 'rl_ppo':
+                from server.strategies.rl.tuning import rl_train_and_evaluate
+                tuner = rl_train_and_evaluate
+            else:
+                tuner = ml_fine_tune if parameters.settings.strategy == 'ml_ensemble' else fine_tune
+            result = tuner(frame, parameters.settings,
+                           **({} if parameters.settings.strategy == 'rl_ppo' else {'search_method': parameters.search_method}),
                            validation_start=parameters.validation_start, forward_start=parameters.forward_start,
                            progress=progress)
             updates.put({'type': 'result', 'result': result})
