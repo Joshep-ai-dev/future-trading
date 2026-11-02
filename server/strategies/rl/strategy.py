@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from server.strategies.rl.features import build_rl_features
+from server.strategies.rl.features import build_rl_features, regime_breakdown
 from server.strategies.ml.strategy import _atr
 from server.strategies.rl.environment import TradingEnv
 from server.strategies.rl.settings import RLSettings
@@ -59,6 +59,7 @@ def run_rl_backtest(frame: pd.DataFrame, settings: RLSettings, *, initial_capita
     result = env.result()
     rejected = sum(not fold['training'].get('accepted', False) for fold in folds)
     result['report'] = dict(kind='rl', algorithm='PPO', folds=folds, featureCount=features.shape[1],
+                            regimes=regime_breakdown(clean, result['bars'], result['trades']),
                             rejectedPolicyBlocks=rejected,
                             trainedBars=sum(f['bars'] for f in folds), accuracy=None, importance={},
                             labelBalance=dict(long=0., none=0., short=0.), blockedByCost=0,

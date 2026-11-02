@@ -14,6 +14,17 @@ from server.tests.test_ml_strategy import bars, market
 
 
 class RLEnvironmentTests(unittest.TestCase):
+    def test_regime_report_accounts_for_closed_trades_after_costs(self):
+        from server.strategies.rl.features import regime_breakdown
+
+        frame = market(150)
+        evaluated = frame.iloc[100:]
+        trades = pd.DataFrame({'entry_time': [frame.index[110], frame.index[120]], 'pnl': [10., -15.]})
+        report = regime_breakdown(frame, evaluated, trades)
+        self.assertEqual(sum(row['trades'] for row in report), 2)
+        self.assertAlmostEqual(sum(row['netPnl'] for row in report), -5.)
+        self.assertAlmostEqual(sum(row['share'] for row in report), 1.)
+
     def test_recent_candle_inputs_preserve_ohlc_and_are_causal(self):
         from server.strategies.rl.features import build_rl_features
 
@@ -168,11 +179,14 @@ class RLTrainingTests(unittest.TestCase):
         self.assertTrue(np.isfinite(scaler.transform(np.array([[100000., np.nan]]))).all())
         np.testing.assert_allclose(scaler.mean, [2., 0.])
 
-    def test_win_rate_first_checkpoint_selection_keeps_profit_and_sample_gates(self):
+    def test_risk_adjusted_checkpoint_selection_keeps_profit_and_sample_gates(self):
         metrics = dict(trades=20, netPnl=10., winRate=70., maxDrawdownPct=-5.)
         self.assertGreater(checkpoint_rank(metrics), checkpoint_rank({**metrics, 'trades': 1, 'winRate': 100.}))
         self.assertGreater(checkpoint_rank(metrics), checkpoint_rank({**metrics, 'netPnl': -10., 'winRate': 90.}))
-        self.assertGreater(checkpoint_rank(metrics), checkpoint_rank({**metrics, 'netPnl': 100., 'winRate': 60.}))
+        self.assertGreater(checkpoint_rank({**metrics, 'returnPct': 10., 'winRate': 60.}),
+                           checkpoint_rank({**metrics, 'returnPct': 5., 'winRate': 90.}))
+        self.assertGreater(checkpoint_rank({**metrics, 'returnPct': 5., 'maxDrawdownPct': -2.}),
+                           checkpoint_rank({**metrics, 'returnPct': 5., 'maxDrawdownPct': -10.}))
 
     def test_real_ppo_training_checkpoint_and_disk_cache(self):
         frame = market(600)
@@ -377,14 +391,14 @@ class RLTrainingTests(unittest.TestCase):
             self.assertEqual(int(model.predict(observation, deterministic=True)[0]),
                              int(restored.predict(observation, deterministic=True)[0]))
 
-    def test_training_restores_the_highest_win_rate_eligible_checkpoint(self):
+    def test_training_restores_the_best_risk_adjusted_eligible_checkpoint(self):
         import torch
 
         frame = market(600)
         features = pd.DataFrame({'a': np.arange(600, dtype=float)}, index=frame.index)
         cash = dict(trades=0, netPnl=0., winRate=0., maxDrawdownPct=0.)
-        first = dict(trades=20, netPnl=10., winRate=70., maxDrawdownPct=-2.)
-        second = dict(trades=30, netPnl=50., winRate=60., maxDrawdownPct=-2.)
+        first = dict(trades=20, netPnl=10., returnPct=1., winRate=60., maxDrawdownPct=-2.)
+        second = dict(trades=30, netPnl=50., returnPct=5., winRate=70., maxDrawdownPct=-20.)
         snapshots = []
         def validate(model, *args):
             if isinstance(model, CashPolicy):

@@ -14,12 +14,13 @@ import pandas as pd
 
 from server.strategies.fine_tuning import _score
 from server.strategies.rl.environment import TradingEnv
+from server.strategies.rl.features import regime_breakdown
 from server.strategies.rl.settings import RLSettings
 
 MODEL_ROOT = Path(__file__).resolve().parents[3]/'data'/'rl_models'
 TRAIN_LOCK = threading.RLock()
 CACHE: OrderedDict = OrderedDict()
-VERSION = 'ppo-target-position-v4-recent-ohlcv'
+VERSION = 'ppo-target-position-v5-market-context-risk-ranking'
 
 
 class CashPolicy:
@@ -62,10 +63,11 @@ def checkpoint_rejection(metrics: dict) -> str | None:
 
 def checkpoint_rank(metrics: dict) -> tuple:
     accepted = checkpoint_rejection(metrics) is None
-    # Win-rate priority applies only to eligible, profitable policies. A
-    # trading-count gate must never put an active loser above the cash baseline.
     profit = metrics['netPnl'] if accepted else min(0., metrics['netPnl'])
-    return (accepted, metrics['winRate'] if accepted else 0., profit, metrics['maxDrawdownPct'],
+    # Return and drawdown are both percentage points, with a 1-point floor
+    # so a tiny measured drawdown cannot dominate checkpoint selection.
+    risk_return = metrics.get('returnPct', 0.)/max(1., abs(metrics['maxDrawdownPct'])) if accepted else 0.
+    return (accepted, risk_return, profit, metrics['maxDrawdownPct'], metrics['winRate'] if accepted else 0.,
             0 if accepted else -metrics['trades'])
 
 
@@ -84,6 +86,7 @@ def evaluate(model, bars: pd.DataFrame, values: np.ndarray, atr: np.ndarray, set
     metrics.update(fees=total('fees'), executionCost=total('execution_cost'), funding=total('funding'),
                    transactionCosts=total('fees')+total('execution_cost'), grossPnl=total('gross_pnl'),
                    positionChanges=env.position_changes, turnover=env.turnover_notional/execution['capital'], halted=env.halted)
+    metrics['regimes'] = regime_breakdown(bars, result['bars'], trades)
     return metrics
 
 

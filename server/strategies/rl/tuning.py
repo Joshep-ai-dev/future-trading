@@ -60,8 +60,8 @@ def rl_train_and_evaluate(frame, request, progress=None, validation_start=None, 
     report(100, 'PPO training and evaluation complete')
     return dict(bestSettings=settings, bestParameters=parameters, searchMethod='training', gridAxes=None,
                 model='PPO training and evaluation',
-                objective='One configured PPO policy; checkpoints rank by win rate then net profit on past validation. Forward data is reporting-only.',
-                rankingObjective='win_rate', candidates=[case], candidatesEvaluated=1, seedCandidates=1,
+                objective='One configured PPO policy; eligible checkpoints rank by return divided by drawdown (1 percentage point floor), then net profit. Forward data is reporting-only.',
+                rankingObjective='risk_adjusted_return', candidates=[case], candidatesEvaluated=1, seedCandidates=1,
                 adaptiveCandidatesEvaluated=0, shortlisted=1, modelHyperparameters=None, modelCrossValidationRmse=None,
                 periods={name:dict(start=int(cuts[i].timestamp()), end=int(cuts[i+1].timestamp()), metrics=metrics[i])
                          for i, name in enumerate(('train', 'validation', 'forwardTest'))})
