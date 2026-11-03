@@ -4,6 +4,7 @@ import {PageHeader} from '../../shared/ui/ui';
 import {Field,TIMEFRAME_CHOICES} from '../strategy/BBReversalSettings';
 import {fmt} from '../../shared/types/types';
 import '../../styles/forecast.css';
+import ForwardForecastPanel from './ForwardForecastPanel';
 
 type Point={originTime:number;targetTime:number;originClose:number;predictedClose:number;predictedHigh:number;predictedLow:number;actualClose:number;actualHigh:number;actualLow:number};
 type Result={model:string;timeframe:string;horizon:number;trainStart:string;trainEnd:string;trainingRows:number;epochsTrained:number|null;note:string;dataQuality?:{incompleteCandles:number;continuousSegments:number;skippedTestOrigins:number};metrics:{samples:number;closeMae:number;closeRmse:number;baselineMae:number;directionAccuracy:number;highMae:number;lowMae:number};predictions:Point[]};
@@ -17,6 +18,7 @@ function PredictionChart({points}:{points:Point[]}){
 }
 
 export default function ForecastPage({range}:{range:{startDate:string;endDate:string}}){
+  const [mode,setMode]=useState<'forward'|'historical'>('forward');
   const [config,setConfig]=useState({model:'gru',timeframe:'15m',start_date:new Date(Math.max(Date.parse(range.startDate),Date.parse(range.endDate)-2*86400000)).toISOString().slice(0,10),end_date:range.endDate,train_bars:6000,lookback:100,horizon:12,epochs:30});
   const [result,setResult]=useState<Result|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[stale,setStale]=useState(false);
   const update=(patch:Partial<typeof config>)=>{setConfig({...config,...patch});if(result)setStale(true);};
@@ -24,7 +26,9 @@ export default function ForecastPage({range}:{range:{startDate:string;endDate:st
   function download(){if(!result)return;const url=URL.createObjectURL(new Blob([JSON.stringify(result,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download=`silver-forecast-${result.model}.json`;link.click();URL.revokeObjectURL(url);}
   const numeric=(key:'train_bars'|'lookback'|'horizon'|'epochs',label:string,min:number,max:number)=><Field key={key} label={label}><input type="number" required min={min} max={max} step={1} value={config[key]} onChange={event=>update({[key]:Number(event.target.value)})}/></Field>;
   return <section id="page-forecast" role="tabpanel" aria-labelledby="tab-forecast" className="forecast-page">
-    <PageHeader eyebrow="SILVER RESEARCH" title="Forecast" description="Train a prediction model on earlier silver candles, then compare its forecasts with actual prices in a historical test period."/>
+    <PageHeader eyebrow="SILVER RESEARCH" title="Forecast" description="Predict silver prices and compare forecasts with observed outcomes."/>
+    <div className="chip-group" role="group" aria-label="Forecast test mode"><button type="button" aria-pressed={mode==='forward'} onClick={()=>setMode('forward')}>Live forward test</button><button type="button" aria-pressed={mode==='historical'} onClick={()=>setMode('historical')}>Historical test</button></div>
+    {mode==='forward'?<ForwardForecastPanel/>:<>
     <form className="forecast-controls" onSubmit={event=>void run(event)}><fieldset disabled={busy}><legend>Prediction experiment · XAG / USDT · OKX history</legend><div className="setup-grid">
       <Field label="Model"><select value={config.model} onChange={event=>update({model:event.target.value})}>{[['rnn','RNN'],['lstm','LSTM'],['gru','GRU'],['extra_trees','Extra Trees baseline']].map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></Field>
       <Field label="Timeframe"><select value={config.timeframe} onChange={event=>update({timeframe:event.target.value})}>{TIMEFRAME_CHOICES.map(value=><option key={value}>{value}</option>)}</select></Field>
@@ -41,5 +45,6 @@ export default function ForecastPage({range}:{range:{startDate:string;endDate:st
       {result.dataQuality&&<p className="setup-note">Data quality: {result.dataQuality.incompleteCandles} incomplete candles excluded ? {result.dataQuality.continuousSegments} continuous segments ? {result.dataQuality.skippedTestOrigins} test origins excluded for missing context or future outcomes.</p>}
       <PredictionChart points={result.predictions}/><h3>Latest 100 predictions</h3><div className="table-scroll"><table><thead><tr>{['Forecast made (UTC)','Target close (UTC)','Origin close','Predicted close','Actual close','Predicted high / low','Actual high / low'].map(label=><th key={label}>{label}</th>)}</tr></thead><tbody>{result.predictions.slice(-100).reverse().map(point=><tr key={point.originTime}><td>{dateTime(point.originTime)}</td><td>{dateTime(point.targetTime)}</td><td>{fmt(point.originClose,3)}</td><td>{fmt(point.predictedClose,3)}</td><td>{fmt(point.actualClose,3)}</td><td>{fmt(point.predictedHigh,3)} / {fmt(point.predictedLow,3)}</td><td>{fmt(point.actualHigh,3)} / {fmt(point.actualLow,3)}</td></tr>)}</tbody></table></div>
     </section>}
+    </>}
   </section>;
 }

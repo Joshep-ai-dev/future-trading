@@ -19,6 +19,16 @@ LEGACY_PROFILES = DATA / 'legacy_profiles.json'
 LEGACY_PAPER = DATA / 'paper_trading.json'
 
 TABLES = (
+    """CREATE TABLE IF NOT EXISTS forecast_forward_tests (
+        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        user_id BIGINT UNSIGNED NOT NULL,
+        prediction JSON NOT NULL,
+        actual JSON NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_forecast_user (user_id, id),
+        CONSTRAINT fk_forecast_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB""",
+
     '''CREATE TABLE IF NOT EXISTS bot_profiles (
         user_id BIGINT UNSIGNED NOT NULL,
         name VARCHAR(48) NOT NULL,
@@ -229,6 +239,21 @@ class UserDataStore:
 
     def delete_backtest(self, user_id: int, run_id: int) -> None:
         self._run('DELETE FROM backtest_runs WHERE user_id=%s AND id=%s', (user_id, run_id))
+
+    def save_forward_forecast(self, user_id: int, prediction: dict) -> dict:
+        run_id = self._run('INSERT INTO forecast_forward_tests (user_id,prediction) VALUES (%s,%s)',
+                           (user_id, json.dumps(prediction, allow_nan=False)))
+        return dict(id=run_id, prediction=prediction, actual=None)
+
+    def list_forward_forecasts(self, user_id: int) -> list[dict]:
+        rows = self._run('SELECT id,prediction,actual FROM forecast_forward_tests WHERE user_id=%s '
+                         'ORDER BY id DESC LIMIT 100', (user_id,), fetch='all')
+        return [dict(id=row['id'], prediction=_json(row['prediction']), actual=_json(row['actual'])) for row in rows]
+
+    def settle_forward_forecast(self, user_id: int, run_id: int, actual: dict) -> None:
+        # Predictions are immutable. The first complete observed outcome wins.
+        self._run('UPDATE forecast_forward_tests SET actual=%s WHERE user_id=%s AND id=%s AND actual IS NULL',
+                  (json.dumps(actual, allow_nan=False), user_id, run_id))
 
     # Paper sessions
     def load_paper(self, user_id: int) -> dict | None:

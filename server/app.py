@@ -4,6 +4,7 @@ from typing import Literal
 from contextlib import asynccontextmanager
 from queue import Queue
 import threading
+import time
 from threading import Thread
 import json
 import logging
@@ -15,6 +16,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from server.market.data import load_bars
 from server.forecast_research import ForecastRequest, run_forecast_test
+from server.forecast_forward import ForwardForecastRequest, issue_forward_forecast, observed_outcome
 from server.strategies.strategy import BacktestRequest
 from server.strategies.bb_reversal_adapter import run_bb_reversal_backtest
 from server.strategies.registry import get_strategy
@@ -600,6 +602,47 @@ def data_range(market: Literal['xag', 'stable'] = 'xag'):
 def _run_backtest(parameters: BBBacktestRequest):
     frame, _ = load_bars(parameters.entry_timeframe, instrument=parameters.market)
     return run_bb_reversal_backtest(frame, parameters)
+
+
+@app.post('/api/forecast/forward')
+def create_forward_forecast(parameters: ForwardForecastRequest, request: Request):
+    try:
+        # Refresh public candles before taking the training snapshot.
+        refresh_service.refresh()
+        frame, _ = load_bars(parameters.timeframe, instrument='xag')
+        prediction = issue_forward_forecast(frame, parameters)
+        return user_data_store.save_forward_forecast(int(request.state.user['id']), prediction)
+    except (ValueError, OSError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.get('/api/forecast/forward')
+def list_forward_forecasts(request: Request):
+    owner = int(request.state.user['id'])
+    records = user_data_store.list_forward_forecasts(owner)
+    now = int(time.time())
+    due = [row for row in records if row['actual'] is None and row['prediction']['targetTime'] <= now]
+    state = refresh_service.status()
+    if due and not state.get('running') and now-(state.get('lastSuccess') or 0) >= 60:
+        Thread(target=refresh_service.refresh, daemon=True).start()
+    frames = {}
+    for row in records:
+        prediction = row['prediction']
+        row['status'] = 'verified' if row['actual'] is not None else 'pending'
+        if row['actual'] is None and prediction['targetTime'] <= now:
+            timeframe = prediction['timeframe']
+            if timeframe not in frames:
+                try:
+                    frames[timeframe] = load_bars(timeframe, instrument='xag')[0]
+                except (ValueError, OSError):
+                    frames[timeframe] = None
+            actual = observed_outcome(prediction, frames[timeframe], now) if frames[timeframe] is not None else None
+            if actual is not None:
+                user_data_store.settle_forward_forecast(owner, row['id'], actual)
+                row.update(actual=actual, status='verified')
+            else:
+                row['status'] = 'awaiting_data'
+    return records
 
 
 @app.post('/api/forecast/test')

@@ -59,31 +59,7 @@ def run_forecast_test(frame: pd.DataFrame, request: ForecastRequest) -> dict:
         raise ValueError('Test period needs more candles than the forecast horizon')
     if len(bars)-first > 3000:
         raise ValueError('Limit each forecast test to 3000 candles; shorten dates or use a larger timeframe')
-    feature_parts, atr_parts, target_parts = [], [], []
-    context = request.lookback if request.model != 'extra_trees' else 1
-    eligible = pd.Series(False, index=bars.index)
-    for _, segment in bars.groupby(segments):
-        features_part = build_features(segment, ['returns', 'volatility', 'trend', 'volume', 'candles'])
-        previous = segment.close.shift().replace(0., np.nan)
-        for column in ('open', 'high', 'low', 'close'):
-            features_part[f'candle_{column}_relative'] = segment[column]/previous-1
-        if 'volume' in segment:
-            features_part['candle_log_volume'] = np.log1p(segment.volume.clip(lower=0))
-        segment_atr = _atr(segment, 14)
-        ranges = excursions(segment, segment_atr, request.horizon)
-        segment_targets = pd.DataFrame({'up': ranges.long_mfe, 'down': ranges.long_mae,
-                                       'trend': (segment.close.shift(-request.horizon)-segment.close)/segment_atr})
-        usable = ((np.arange(len(segment)) >= context-1)
-                  & (np.arange(len(segment))+request.horizon < len(segment))
-                  & np.isfinite(segment_atr.to_numpy()) & (segment_atr.to_numpy() > 0))
-        eligible.loc[segment.index] = usable
-        segment_targets.loc[~usable] = np.nan
-        feature_parts.append(features_part)
-        atr_parts.append(segment_atr)
-        target_parts.append(segment_targets)
-    features = pd.concat(feature_parts).reindex(bars.index)
-    atr = pd.concat(atr_parts).reindex(bars.index)
-    targets = pd.concat(target_parts).reindex(bars.index)
+    features, atr, targets, eligible = forecast_inputs(bars, request, duration)
     rows = slice(train_start, train_end)
     training_rows = int(np.isfinite(targets.iloc[rows].to_numpy()).all(axis=1).sum())
     if training_rows < 300:
@@ -129,3 +105,33 @@ def run_forecast_test(frame: pd.DataFrame, request: ForecastRequest) -> dict:
                 dataQuality=dict(incompleteCandles=incomplete_rows, continuousSegments=int(segments.nunique()),
                                  skippedTestOrigins=int(len(bars)-first-len(points))),
                 note='Incomplete candles and windows crossing gaps are excluded; indicators restart after each gap. Frozen historical holdout. Scaling and training use past data only. High/low forecasts are excursion estimates, not confidence bounds. Overlapping targets are not independent samples.')
+
+
+def forecast_inputs(bars: pd.DataFrame, request, duration: pd.Timedelta) -> tuple:
+    feature_parts, atr_parts, target_parts = [], [], []
+    segments = bars.index.to_series().diff().ne(duration).cumsum()
+    context = request.lookback if request.model != 'extra_trees' else 1
+    eligible = pd.Series(False, index=bars.index)
+    for _, segment in bars.groupby(segments):
+        features_part = build_features(segment, ['returns', 'volatility', 'trend', 'volume', 'candles'])
+        previous = segment.close.shift().replace(0., np.nan)
+        for column in ('open', 'high', 'low', 'close'):
+            features_part[f'candle_{column}_relative'] = segment[column]/previous-1
+        if 'volume' in segment:
+            features_part['candle_log_volume'] = np.log1p(segment.volume.clip(lower=0))
+        segment_atr = _atr(segment, 14)
+        ranges = excursions(segment, segment_atr, request.horizon)
+        segment_targets = pd.DataFrame({'up': ranges.long_mfe, 'down': ranges.long_mae,
+                                       'trend': (segment.close.shift(-request.horizon)-segment.close)/segment_atr})
+        usable = ((np.arange(len(segment)) >= context-1)
+                  & (np.arange(len(segment))+request.horizon < len(segment))
+                  & np.isfinite(segment_atr.to_numpy()) & (segment_atr.to_numpy() > 0))
+        eligible.loc[segment.index] = usable
+        segment_targets.loc[~usable] = np.nan
+        feature_parts.append(features_part)
+        atr_parts.append(segment_atr)
+        target_parts.append(segment_targets)
+    features = pd.concat(feature_parts).reindex(bars.index)
+    atr = pd.concat(atr_parts).reindex(bars.index)
+    targets = pd.concat(target_parts).reindex(bars.index)
+    return features, atr, targets, eligible

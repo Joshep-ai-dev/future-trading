@@ -1,0 +1,27 @@
+import {useEffect,useState} from 'react';
+import {api} from '../../shared/api/api';
+import {Field,TIMEFRAME_CHOICES} from '../strategy/BBReversalSettings';
+import {fmt} from '../../shared/types/types';
+
+type Prediction={model:string;timeframe:string;horizon:number;issuedAt:number;originTime:number;targetTime:number;originClose:number;predictedClose:number;predictedHigh:number;predictedLow:number;note:string};
+type Record={id:number;prediction:Prediction;actual:null|{close:number;high:number;low:number;closeAbsoluteError:number;baselineAbsoluteError:number;directionCorrect:boolean};status?:'pending'|'awaiting_data'|'verified'};
+const stamp=(time:number)=>new Date(time*1000).toISOString().replace('T',' ').slice(0,19);
+
+export default function ForwardForecastPanel(){
+  const [config,setConfig]=useState({model:'gru',timeframe:'15m',train_bars:6000,lookback:100,horizon:12,epochs:30});
+  const [records,setRecords]=useState<Record[]>([]),[busy,setBusy]=useState(false),[checking,setChecking]=useState(false),[error,setError]=useState('');
+  useEffect(()=>{let active=true;const load=()=>{void api<Record[]>('/api/forecast/forward').then(rows=>{if(active)setRecords(rows);}).catch(error=>{if(active)setError(String(error));});};load();const timer=window.setInterval(load,30000);return()=>{active=false;window.clearInterval(timer);};},[]);
+  async function check(){setChecking(true);try{setRecords(await api<Record[]>('/api/forecast/forward'));setError('');}catch(error){setError(String(error));}finally{setChecking(false);}}
+  async function issue(){setBusy(true);setError('');try{const row=await api<Record>('/api/forecast/forward',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(config)});setRecords(current=>[row,...current.filter(item=>item.id!==row.id)].slice(0,100));}catch(error){setError(String(error));}finally{setBusy(false);}}
+  const numeric=(key:'train_bars'|'lookback'|'horizon'|'epochs',label:string,min:number,max:number)=><Field key={key} label={label}><input required type="number" min={min} max={max} step={1} value={config[key]} onChange={event=>setConfig({...config,[key]:Number(event.target.value)})}/></Field>;
+  return <section aria-label="Live forward prediction tests"><h2>Live forward test</h2><p className="setup-note">Save a silver prediction now and verify it against real completed OKX candles later. Predictions stay fixed and survive restarts. Prices use the last completed candle, not a live tick. This creates no orders.</p>
+    <form className="forecast-controls" onSubmit={event=>{event.preventDefault();void issue();}}><fieldset disabled={busy}><legend>Predict now · verify later · all times UTC</legend><div className="setup-grid">
+      <Field label="Model"><select value={config.model} onChange={event=>setConfig({...config,model:event.target.value})}>{[['gru','GRU'],['lstm','LSTM'],['rnn','RNN'],['extra_trees','Extra Trees']].map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></Field>
+      <Field label="Timeframe"><select value={config.timeframe} onChange={event=>setConfig({...config,timeframe:event.target.value})}>{TIMEFRAME_CHOICES.map(value=><option key={value}>{value}</option>)}</select></Field>
+      {numeric('train_bars','Training candles',500,50000)}{numeric('horizon','Future horizon (candles)',1,100)}{config.model!=='extra_trees'&&<>{numeric('lookback','Observed candles',1,500)}{numeric('epochs','Maximum epochs',1,100)}</>}
+    </div><button type="submit">{busy?'Refreshing, training and saving…':'Save live prediction'}</button></fieldset></form>
+    {busy&&<p role="status">Refreshing public silver history and training. A prediction is saved only if its target close is still in the future.</p>}{error&&<p className="error" role="alert">{error}</p>}
+    <div className="forecast-result-heading"><h3>Saved forward tests</h3><button type="button" className="secondary" disabled={checking} onClick={()=>void check()}>{checking?'Checking…':'Check outcomes'}</button></div><p className="setup-note">Checks every 30 seconds while this tab is open. After a target closes, missing market data triggers a refresh; verification waits for every candle in the horizon. Previously saved predictions are never retrained.</p>
+    {!records.length?<p>No saved predictions yet.</p>:<div className="table-scroll"><table><thead><tr>{['Test / model','Saved (UTC)','Start candle close (UTC)','Target close (UTC)','Start price','Predicted end price','Actual end price','Predicted high / low','Actual high / low','Error / baseline','Status'].map(label=><th key={label}>{label}</th>)}</tr></thead><tbody>{records.map(row=><tr key={row.id} title={row.prediction.note}><td>#{row.id} {row.prediction.model.toUpperCase()} · {row.prediction.timeframe}</td><td>{stamp(row.prediction.issuedAt)}</td><td>{stamp(row.prediction.originTime)}</td><td>{stamp(row.prediction.targetTime)}</td><td>{fmt(row.prediction.originClose,3)}</td><td>{fmt(row.prediction.predictedClose,3)}</td><td>{row.actual?fmt(row.actual.close,3):'Pending'}</td><td>{fmt(row.prediction.predictedHigh,3)} / {fmt(row.prediction.predictedLow,3)}</td><td>{row.actual?`${fmt(row.actual.high,3)} / ${fmt(row.actual.low,3)}`:'Pending'}</td><td>{row.actual?`${fmt(row.actual.closeAbsoluteError,4)} / ${fmt(row.actual.baselineAbsoluteError,4)}`:'—'}</td><td>{row.actual?`Verified · direction ${row.actual.directionCorrect?'correct':'incorrect'}`:row.status==='awaiting_data'?'Awaiting complete candles':'Waiting for target close'}</td></tr>)}</tbody></table></div>}
+  </section>;
+}
