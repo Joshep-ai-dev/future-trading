@@ -31,9 +31,11 @@ class ForecastRequest(BaseModel):
         return self
 
 
-def run_forecast_test(frame: pd.DataFrame, request: ForecastRequest) -> dict:
+def run_forecast_test(frame: pd.DataFrame, request: ForecastRequest, saved_model=None, metadata: dict | None = None) -> dict:
     duration = pd.Timedelta(seconds=TIMEFRAMES[request.timeframe])
     start = pd.Timestamp(request.start_date, tz='UTC')
+    if metadata and start < pd.Timestamp(metadata['trainedThrough']):
+        raise ValueError('Historical test must start after the saved model training cutoff')
     end = pd.Timestamp(request.end_date, tz='UTC')+pd.Timedelta(days=1)
     # Keep only completed bars within the selected end date. Preserve gaps:
     # sequences must never silently treat separated candles as adjacent.
@@ -53,22 +55,27 @@ def run_forecast_test(frame: pd.DataFrame, request: ForecastRequest) -> dict:
     first = int(bars.index.searchsorted(start))
     train_end = first-request.horizon
     train_start = max(0, train_end-request.train_bars)
-    if train_end-train_start < 500:
+    if saved_model is None and train_end-train_start < 500:
         raise ValueError('Need at least 500 training candles before the test, plus horizon history')
     if len(bars)-first <= request.horizon:
         raise ValueError('Test period needs more candles than the forecast horizon')
     if len(bars)-first > 3000:
         raise ValueError('Limit each forecast test to 3000 candles; shorten dates or use a larger timeframe')
     features, atr, targets, eligible = forecast_inputs(bars, request, duration)
+    if metadata and list(features.columns) != metadata['featureNames']:
+        raise ValueError('Market feature schema differs from the saved model; train a new model')
     rows = slice(train_start, train_end)
     training_rows = int(np.isfinite(targets.iloc[rows].to_numpy()).all(axis=1).sum())
-    if training_rows < 300:
+    if saved_model is None and training_rows < 300:
         raise ValueError(f'Only {training_rows} usable training samples after excluding gaps and incomplete horizons; need at least 300. Increase training candles or reduce observed candles/horizon.')
     stop = len(bars)-request.horizon
     usable_test = eligible.iloc[first:stop].to_numpy()
     if not usable_test.any():
         raise ValueError('No complete prediction windows in the test period. Reduce observed candles/horizon or extend the test dates.')
-    if request.model == 'extra_trees':
+    if saved_model is not None:
+        model = saved_model
+        training_rows = metadata['trainingRows']
+    elif request.model == 'extra_trees':
         model = ForecastModel.fit(features, targets, rows)
     else:
         model = SequenceForecast.fit(features, targets, rows, kind=request.model,
@@ -98,8 +105,9 @@ def run_forecast_test(frame: pd.DataFrame, request: ForecastRequest) -> dict:
                    highMae=float(np.mean([abs(p['predictedHigh']-p['actualHigh']) for p in points])),
                    lowMae=float(np.mean([abs(p['predictedLow']-p['actualLow']) for p in points])))
     return dict(model=request.model, timeframe=request.timeframe, horizon=request.horizon,
-                trainStart=bars.index[train_start].isoformat(),
-                trainEnd=(bars.index[train_end-1]+duration).isoformat(),
+                trainStart=metadata['trainStart'] if metadata else bars.index[train_start].isoformat(),
+                trainEnd=metadata['trainedThrough'] if metadata else (bars.index[train_end-1]+duration).isoformat(),
+                modelId=metadata['id'] if metadata else None,
                 trainingRows=training_rows, epochsTrained=getattr(model, 'epochs_trained', None),
                 metrics=metrics, predictions=points,
                 dataQuality=dict(incompleteCandles=incomplete_rows, continuousSegments=int(segments.nunique()),

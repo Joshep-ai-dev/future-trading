@@ -14,9 +14,10 @@ from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from server.market.data import load_bars
+from server.market.data import load_bars, TIMEFRAMES
 from server.forecast_research import ForecastRequest, run_forecast_test
 from server.forecast_forward import ForwardForecastRequest, issue_forward_forecast, observed_outcome
+from server.forecast_models import TrainForecastRequest, train_saved_model, list_models, load_model
 from server.strategies.strategy import BacktestRequest
 from server.strategies.bb_reversal_adapter import run_bb_reversal_backtest
 from server.strategies.registry import get_strategy
@@ -604,13 +605,65 @@ def _run_backtest(parameters: BBBacktestRequest):
     return run_bb_reversal_backtest(frame, parameters)
 
 
+class SavedForecastTestRequest(BaseModel):
+    start_date: date
+    end_date: date
+
+
+@app.get('/api/forecast/models')
+def forecast_models(request: Request):
+    return list_models(int(request.state.user['id']))
+
+
+@app.post('/api/forecast/models')
+def train_forecast_model(parameters: TrainForecastRequest, request: Request):
+    try:
+        frame, _ = load_bars(parameters.timeframe, instrument='xag')
+        return train_saved_model(frame, parameters, int(request.state.user['id']))
+    except (ValueError, OSError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.post('/api/forecast/models/{model_id}/test')
+def test_saved_forecast(model_id: str, parameters: SavedForecastTestRequest, request: Request):
+    try:
+        model, metadata = load_model(int(request.state.user['id']), model_id)
+        config = ForecastRequest(**metadata['config'], **parameters.model_dump())
+        frame, _ = load_bars(config.timeframe, instrument='xag')
+        return run_forecast_test(frame, config, saved_model=model, metadata=metadata)
+    except (ValueError, OSError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.get('/api/forecast/forward/{run_id}/chart')
+def forward_forecast_chart(run_id: int, request: Request):
+    records = user_data_store.list_forward_forecasts(int(request.state.user['id']))
+    row = next((row for row in records if row['id'] == run_id), None)
+    if row is None:
+        raise HTTPException(status_code=404, detail='Forward test not found')
+    prediction = row['prediction']
+    frame, _ = load_bars(prediction['timeframe'], instrument='xag')
+    duration = pd.Timedelta(seconds=TIMEFRAMES[prediction['timeframe']])
+    closes = frame.index+duration
+    known = frame.loc[(closes <= pd.Timestamp.now(tz='UTC')) & (closes <= pd.Timestamp(prediction['targetTime'], unit='s', tz='UTC'))].dropna(subset=['close'])
+    past = known.loc[known.index+duration <= pd.Timestamp(prediction['originTime'], unit='s', tz='UTC')].tail(100)
+    actual = known.loc[known.index+duration > pd.Timestamp(prediction['originTime'], unit='s', tz='UTC')]
+    encode = lambda values: [dict(time=int((stamp+duration).timestamp()), close=float(bar.close)) for stamp, bar in values.iterrows()]
+    return dict(history=prediction.get('history') or encode(past), actual=encode(actual), prediction=prediction)
+
+
 @app.post('/api/forecast/forward')
 def create_forward_forecast(parameters: ForwardForecastRequest, request: Request):
     try:
-        # Refresh public candles before taking the training snapshot.
+        model, metadata = (load_model(int(request.state.user['id']), parameters.model_id)
+                           if parameters.model_id else (None, None))
+        if metadata:
+            parameters = ForwardForecastRequest(**metadata['config'], model_id=parameters.model_id)
+        # Refresh public candles before taking the prediction snapshot.
         refresh_service.refresh()
         frame, _ = load_bars(parameters.timeframe, instrument='xag')
-        prediction = issue_forward_forecast(frame, parameters)
+        prediction = (issue_forward_forecast(frame, parameters, saved_model=model, metadata=metadata)
+                      if model is not None else issue_forward_forecast(frame, parameters))
         return user_data_store.save_forward_forecast(int(request.state.user['id']), prediction)
     except (ValueError, OSError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
@@ -623,7 +676,7 @@ def list_forward_forecasts(request: Request):
     now = int(time.time())
     due = [row for row in records if row['actual'] is None and row['prediction']['targetTime'] <= now]
     state = refresh_service.status()
-    if due and not state.get('running') and now-(state.get('lastSuccess') or 0) >= 60:
+    if any(row['actual'] is None for row in records) and not state.get('running') and now-(state.get('lastSuccess') or 0) >= 60:
         Thread(target=refresh_service.refresh, daemon=True).start()
     frames = {}
     for row in records:

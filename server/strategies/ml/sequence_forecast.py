@@ -11,6 +11,23 @@ import pandas as pd
 TRAIN_LOCK = threading.RLock()
 
 
+
+def forecast_network(kind: str, features: int):
+    import torch
+
+    class Network(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            cell = {'rnn': torch.nn.RNN, 'lstm': torch.nn.LSTM, 'gru': torch.nn.GRU}[kind]
+            self.recurrent = cell(features, 32, batch_first=True)
+            self.head = torch.nn.Linear(32, 3)
+
+        def forward(self, x):
+            output, _ = self.recurrent(x)
+            return self.head(output[:, -1])
+
+    return Network()
+
 @dataclass
 class SequenceForecast:
     network: object
@@ -50,17 +67,6 @@ class SequenceForecast:
         target_device = torch.device('cuda' if device != 'cpu' and torch.cuda.is_available() else 'cpu')
         offsets = np.arange(-lookback+1, 1)
 
-        class Network(torch.nn.Module):
-            def __init__(self) -> None:
-                super().__init__()
-                cell = {'rnn': torch.nn.RNN, 'lstm': torch.nn.LSTM, 'gru': torch.nn.GRU}[kind]
-                self.recurrent = cell(features.shape[1], 32, batch_first=True)
-                self.head = torch.nn.Linear(32, 3)
-
-            def forward(self, x):
-                output, _ = self.recurrent(x)
-                return self.head(output[:, -1])
-
         def batch(indices):
             return torch.from_numpy(values[indices[:, None]+offsets]).to(target_device)
 
@@ -70,7 +76,7 @@ class SequenceForecast:
             try:
                 torch.set_num_threads(2)
                 torch.manual_seed(7)
-                network = Network().to(target_device)
+                network = forecast_network(kind, features.shape[1]).to(target_device)
                 optimizer = torch.optim.AdamW(network.parameters(), lr=.001, weight_decay=.001)
                 loss_fn = torch.nn.SmoothL1Loss()
                 generator = np.random.default_rng(7)

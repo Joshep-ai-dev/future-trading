@@ -11,3 +11,33 @@
 .forecast-actual { color: #54d6aa; }
 .forecast-page .model-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
 @media (max-width: 600px) { .forecast-controls { padding: 12px; } .forecast-chart { padding: 6px; } }
+.forecast-steps { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
+.forecast-steps button { display: flex; align-items: center; gap: 14px; padding: 18px; text-align: left; background: #101925; border: 1px solid #293549; border-radius: 12px; color: #b8c6db; }
+.forecast-steps button[aria-current] { border-color: #87aaff; background: #17243e; color: #e4ecff; }
+.forecast-steps button>span { font-size: 22px; font-weight: 700; color: #87aaff; }
+.forecast-steps strong,.forecast-steps small { display: block; }
+.forecast-steps small { margin-top: 5px; color: #90a0b7; }
+.forecast-workbench { display: grid; grid-template-columns: 270px minmax(0,1fr); gap: 22px; align-items: start; }
+.forecast-library { border: 1px solid #293549; border-radius: 12px; padding: 16px; background: #0d1520; }
+.forecast-section-title { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.forecast-section-title h2 { font-size: 16px; }
+.forecast-section-title>span { font-size: 11px; color: #90a0b7; }
+.forecast-model-card { display: grid; width: 100%; gap: 8px; margin-top: 12px; padding: 14px; text-align: left; border: 1px solid #293549; border-radius: 9px; background: #111c2a; color: #dce7f9; white-space: normal; }
+.forecast-model-card span,.forecast-model-card small { font-size: 11px; color: #97abc7; }
+.forecast-model-card.is-selected { border-color: #87aaff; background: #17243e; }
+.forecast-main { min-width: 0; display: grid; gap: 18px; }
+.forecast-active-model { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border: 1px solid #2c5148; border-radius: 10px; background: #102420; }
+.forecast-active-model div { flex: 1; min-width: 0; }
+.forecast-active-model strong,.forecast-active-model small { display: block; overflow-wrap: anywhere; }
+.forecast-active-model small { margin-top: 5px; color: #9bbcb3; font-size: 11px; }
+.forecast-active-model>span:last-child { color: #54d6aa; font-size: 11px; }
+.forecast-ready-dot { width: 8px; height: 8px; border-radius: 50%; background: #54d6aa; }
+.forecast-empty { padding: 24px 8px; color: #90a0b7; line-height: 1.7; }
+.forecast-price-chart { background: #0b1420; }
+.forecast-price-chart figcaption { align-items: center; justify-content: space-between; }
+.forecast-price-chart figcaption div { display: flex; gap: 14px; font-size: 12px; }
+.forecast-price-chart select { width: auto; padding: 5px; margin-left: 6px; }
+.forecast-chart-caption { min-height: 30px; color: #90a0b7; font-size: 11px; line-height: 1.6; }
+.forecast-page .model-kpis strong { overflow-wrap: anywhere; }
+@media(max-width: 1050px) { .forecast-workbench { grid-template-columns: 210px minmax(0,1fr); gap: 14px; } .forecast-steps button { padding: 12px; } }
+@media(max-width: 760px) { .forecast-workbench { grid-template-columns: minmax(0,1fr); } .forecast-library { display: flex; flex-wrap: wrap; gap: 10px; } .forecast-library>.setup-note,.forecast-section-title { width: 100%; } .forecast-model-card { flex: 1 1 180px; margin: 0; } .forecast-steps { gap: 6px; } .forecast-steps button { display: grid; gap: 6px; } .forecast-steps small { display: none; } .forecast-active-model { flex-wrap: wrap; } }

@@ -13,6 +13,7 @@ from server.strategies.ml.sequence_forecast import SequenceForecast
 
 
 class ForwardForecastRequest(BaseModel):
+    model_id: str | None = Field(default=None, pattern=r'^[0-9a-f]{32}$')
     model: Literal['extra_trees', 'rnn', 'lstm', 'gru'] = 'gru'
     timeframe: Literal['1m', '3m', '5m', '10m', '15m', '30m', '1h', '4h', '1d'] = '15m'
     train_bars: int = Field(default=6000, ge=500, le=50000)
@@ -21,7 +22,7 @@ class ForwardForecastRequest(BaseModel):
     epochs: int = Field(default=30, ge=1, le=100)
 
 
-def issue_forward_forecast(frame: pd.DataFrame, request: ForwardForecastRequest, clock=time.time) -> dict:
+def issue_forward_forecast(frame: pd.DataFrame, request: ForwardForecastRequest, clock=time.time, saved_model=None, metadata: dict | None = None) -> dict:
     seconds = TIMEFRAMES[request.timeframe]
     duration = pd.Timedelta(seconds=seconds)
     started = int(clock())
@@ -34,15 +35,20 @@ def issue_forward_forecast(frame: pd.DataFrame, request: ForwardForecastRequest,
     if started-origin > seconds+120:
         raise ValueError('Silver history is stale. Refresh market data and retry when completed candles are available.')
     features, atr, targets, _ = forecast_inputs(bars, request, duration)
+    if metadata and list(features.columns) != metadata['featureNames']:
+        raise ValueError('Market feature schema differs from the saved model; train a new model')
     context = request.lookback if request.model != 'extra_trees' else 1
     if len(bars) < context or not (bars.index[-1]-bars.index[-context] == duration*(context-1)) or not np.isfinite(atr.iloc[-1]):
         raise ValueError('Latest candles do not provide a complete observation window after a data gap')
     train_end = len(bars)-request.horizon
     rows = slice(max(0, train_end-request.train_bars), train_end)
     training_rows = int(np.isfinite(targets.iloc[rows].to_numpy()).all(axis=1).sum())
-    if training_rows < 300:
+    if saved_model is None and training_rows < 300:
         raise ValueError('Need at least 300 complete past training targets; increase training history or reduce lookback')
-    if request.model == 'extra_trees':
+    if saved_model is not None:
+        model = saved_model
+        training_rows = metadata['trainingRows']
+    elif request.model == 'extra_trees':
         model = ForecastModel.fit(features, targets, rows)
     else:
         model = SequenceForecast.fit(features, targets, rows, kind=request.model, lookback=request.lookback,
@@ -57,7 +63,8 @@ def issue_forward_forecast(frame: pd.DataFrame, request: ForwardForecastRequest,
         raise ValueError('Forecast produced invalid values')
     return dict(**request.model_dump(), startedAt=started, issuedAt=issued, originTime=origin, targetTime=target,
                 originClose=close, predictedClose=float(close+trend*scale), predictedHigh=float(close+up*scale),
-                predictedLow=float(close-down*scale), trainingRows=training_rows,
+                predictedLow=float(close-down*scale), modelId=metadata['id'] if metadata else None, trainingRows=training_rows,
+                history=[dict(time=int((stamp+duration).timestamp()), close=float(row.close)) for stamp, row in bars.tail(100).iterrows()],
                 epochsTrained=getattr(model, 'epochs_trained', None),
                 note='Prediction saved before target close. Origin is the last completed candle, not a live tick. High/low cover the full horizon from origin; training may finish after the horizon starts.')
 
