@@ -49,3 +49,7 @@
 .forecast-model-select { display: grid; gap: 8px; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; width: 100%; white-space: normal; }
 .forecast-model-remove { justify-self: start; margin-top: 6px; padding: 5px 0; border: 0; background: transparent; color: #f09b9b; font-size: 11px; }
 .forecast-model-remove:hover { color: #ffc6c6; text-decoration: underline; }
+
+.forecast-model-card { position: relative; padding-right: 42px; }
+.forecast-model-remove { position: absolute; top: 8px; right: 8px; display: grid; place-items: center; width: 28px; height: 28px; margin: 0; padding: 0; border-radius: 6px; }
+.forecast-model-remove:hover { background: #39252b; text-decoration: none; }
