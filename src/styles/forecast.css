@@ -53,3 +53,13 @@
 .forecast-model-card { position: relative; padding-right: 42px; }
 .forecast-model-remove { position: absolute; top: 8px; right: 8px; display: grid; place-items: center; width: 28px; height: 28px; margin: 0; padding: 0; border-radius: 6px; }
 .forecast-model-remove:hover { background: #39252b; text-decoration: none; }
+
+.forecast-live-panel { display: grid; gap: 20px; min-width: 0; }
+.forecast-live-panel .forecast-result-heading { align-items: center; gap: 16px 24px; }
+.forecast-live-panel .forecast-result-heading h2,
+.forecast-live-panel .forecast-result-heading h3,
+.forecast-live-panel > p { margin: 0; }
+.forecast-live-panel .forecast-result-heading .setup-note { margin: 8px 0 0; line-height: 1.7; }
+.forecast-live-panel .forecast-result-heading > button { flex-shrink: 0; min-height: 36px; }
+.forecast-saved-heading { padding-top: 20px; border-top: 1px solid #293549; }
+@media (max-width: 600px) { .forecast-live-panel .forecast-result-heading { align-items: flex-start; } }
