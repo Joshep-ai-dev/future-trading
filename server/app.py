@@ -645,6 +645,22 @@ def test_saved_forecast(model_id: str, parameters: SavedForecastTestRequest, req
         raise HTTPException(status_code=400, detail=str(error)) from error
 
 
+@app.get('/api/forecast/models/{model_id}/live')
+def rolling_forecast(model_id: str, request: Request):
+    try:
+        model, metadata = load_model(int(request.state.user['id']), model_id)
+        state = refresh_service.status()
+        if not state.get('running') and time.time()-(state.get('lastSuccess') or 0) >= 15:
+            refresh_service.refresh()
+        parameters = ForwardForecastRequest(**metadata['config'], model_id=model_id)
+        frame, _ = load_bars(parameters.timeframe, instrument='xag')
+        prediction = issue_forward_forecast(frame, parameters, saved_model=model, metadata=metadata)
+        return dict(prediction=prediction, history=prediction['history'], actual=[], checkedAt=int(time.time()),
+                    note='Rolling forecast: recalculated from the latest completed candle. Saved tests remain fixed.')
+    except (ValueError, OSError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
 @app.get('/api/forecast/forward/{run_id}/chart')
 def forward_forecast_chart(run_id: int, request: Request):
     records = user_data_store.list_forward_forecasts(int(request.state.user['id']))

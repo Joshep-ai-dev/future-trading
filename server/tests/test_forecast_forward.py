@@ -27,6 +27,24 @@ class ForwardForecastTests(unittest.TestCase):
         self.assertLess(first['issuedAt'], first['targetTime'])
         self.assertNotIn('actual', first)
 
+    def test_rolling_prediction_advances_with_new_closed_candles_without_training(self):
+        from server.forecast_research import forecast_inputs
+        from unittest.mock import Mock
+        import numpy as np
+        features, _, _, _ = forecast_inputs(self.frame, self.config, pd.Timedelta(minutes=5))
+        metadata = dict(id='a'*32, trainingRows=600, featureNames=list(features.columns))
+        model = Mock()
+        model.forecast_rows.return_value = np.array([[1., 1., .1]])
+        with patch('server.strategies.ml.forecast.ForecastModel.fit', side_effect=AssertionError('Must not train')):
+            first = issue_forward_forecast(self.frame, self.config, clock=lambda: self.now, saved_model=model, metadata=metadata)
+            same = issue_forward_forecast(self.frame, self.config, clock=lambda: self.now+10, saved_model=model, metadata=metadata)
+            later = issue_forward_forecast(self.frame, self.config, clock=lambda: self.now+300, saved_model=model, metadata=metadata)
+        self.assertEqual(first['originTime'], same['originTime'])
+        self.assertEqual(first['predictedClose'], same['predictedClose'])
+        self.assertEqual(later['originTime'], first['originTime']+300)
+        self.assertEqual(later['targetTime'], first['targetTime']+300)
+        self.assertNotEqual(later['originClose'], first['originClose'])
+
     def test_verification_waits_for_target_and_every_completed_candle(self):
         prediction = issue_forward_forecast(self.frame, self.config, clock=lambda: self.now)
         self.assertIsNone(observed_outcome(prediction, self.frame, prediction['targetTime']-1))
