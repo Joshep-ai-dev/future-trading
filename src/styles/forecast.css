@@ -41,3 +41,7 @@
 .forecast-page .model-kpis strong { overflow-wrap: anywhere; }
 @media(max-width: 1050px) { .forecast-workbench { grid-template-columns: 210px minmax(0,1fr); gap: 14px; } .forecast-steps button { padding: 12px; } }
 @media(max-width: 760px) { .forecast-workbench { grid-template-columns: minmax(0,1fr); } .forecast-library { display: flex; flex-wrap: wrap; gap: 10px; } .forecast-library>.setup-note,.forecast-section-title { width: 100%; } .forecast-model-card { flex: 1 1 180px; margin: 0; } .forecast-steps { gap: 6px; } .forecast-steps button { display: grid; gap: 6px; } .forecast-steps small { display: none; } .forecast-active-model { flex-wrap: wrap; } }
+
+.forecast-controls .setup-grid { row-gap: 22px; margin-top: 16px; }
+.forecast-controls fieldset > button[type="submit"] { margin-top: 24px; }
+.forecast-controls .setup-note { margin-bottom: 16px; line-height: 1.7; }
