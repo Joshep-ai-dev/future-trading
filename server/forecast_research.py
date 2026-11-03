@@ -104,6 +104,9 @@ def run_forecast_test(frame: pd.DataFrame, request: ForecastRequest, saved_model
                    directionAccuracy=float((np.sign(predicted-baseline) == np.sign(actual-baseline)).mean()*100),
                    highMae=float(np.mean([abs(p['predictedHigh']-p['actualHigh']) for p in points])),
                    lowMae=float(np.mean([abs(p['predictedLow']-p['actualLow']) for p in points])))
+    metrics['skillPct'] = 100*(1-metrics['closeMae']/metrics['baselineMae']) if metrics['baselineMae'] > 0 else None
+    metrics['meanError'] = float((predicted-actual).mean())
+    metrics['beatsBaseline'] = metrics['closeMae'] < metrics['baselineMae']
     return dict(model=request.model, timeframe=request.timeframe, horizon=request.horizon,
                 trainStart=metadata['trainStart'] if metadata else bars.index[train_start].isoformat(),
                 trainEnd=metadata['trainedThrough'] if metadata else (bars.index[train_end-1]+duration).isoformat(),

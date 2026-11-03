@@ -52,6 +52,11 @@ class SavedModelTests(unittest.TestCase):
                     np.testing.assert_allclose(expected, restored.forecast_rows(features, slice(900, 910)), rtol=1e-5)
                     self.assertEqual(metadata['trainedThrough'], '2026-01-03T00:00:00+00:00')
                     self.assertTrue(metadata['trainingRows'] >= 300)
+                    quality = metadata['validation']
+                    self.assertGreater(quality['samples'], 0)
+                    self.assertLess(quality['end'], metadata['trainedThrough'])
+                    self.assertAlmostEqual(quality['skillPct'], 100*(1-quality['closeMae']/quality['baselineMae']))
+                    self.assertEqual(quality['beatsBaseline'], quality['closeMae'] < quality['baselineMae'])
                     with self.assertRaisesRegex(ValueError, 'this account'):
                         load_model(8, metadata['id'], root)
                     self.assertEqual(list_models(8, root), [])

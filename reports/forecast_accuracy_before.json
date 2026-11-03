@@ -1,0 +1,71 @@
+{
+  "purpose": "Original implementation on fixed development period; not an untouched performance claim",
+  "timeframe": "5m",
+  "horizon": 12,
+  "trainThrough": "2026-10-25",
+  "testStart": "2026-10-26",
+  "testEnd": "2026-11-02",
+  "results": [
+    {
+      "model": "extra_trees",
+      "metrics": {
+        "samples": 2292,
+        "closeMae": 0.1391005946770478,
+        "closeRmse": 0.20198979611856654,
+        "baselineMae": 0.13765270506108207,
+        "directionAccuracy": 51.178010471204196,
+        "highMae": 0.1004003230516422,
+        "lowMae": 0.10313715588429277,
+        "skillPct": -1.0518424722007813,
+        "meanError": 0.004570936537360973,
+        "beatsBaseline": false
+      }
+    },
+    {
+      "model": "rnn",
+      "metrics": {
+        "samples": 2292,
+        "closeMae": 0.1376917186803925,
+        "closeRmse": 0.20109993149014144,
+        "baselineMae": 0.13765270506108207,
+        "directionAccuracy": 50.56719022687609,
+        "highMae": 0.09555348392795358,
+        "lowMae": 0.1018248735434201,
+        "skillPct": -0.02834206512187798,
+        "meanError": -0.0014473537321329103,
+        "beatsBaseline": false
+      }
+    },
+    {
+      "model": "lstm",
+      "metrics": {
+        "samples": 2292,
+        "closeMae": 0.1379138503738492,
+        "closeRmse": 0.2015002640347004,
+        "baselineMae": 0.13765270506108207,
+        "directionAccuracy": 50.6108202443281,
+        "highMae": 0.09630924180174655,
+        "lowMae": 0.10157251716124353,
+        "skillPct": -0.1897131717471634,
+        "meanError": 0.0021350954050876722,
+        "beatsBaseline": false
+      }
+    },
+    {
+      "model": "gru",
+      "metrics": {
+        "samples": 2292,
+        "closeMae": 0.13698097922693306,
+        "closeRmse": 0.19998848153474574,
+        "baselineMae": 0.13765270506108207,
+        "directionAccuracy": 51.26527050610821,
+        "highMae": 0.09755325472588557,
+        "lowMae": 0.09932417122275541,
+        "skillPct": 0.4879859308619783,
+        "meanError": 0.0014711177543199928,
+        "beatsBaseline": true
+      }
+    }
+  ],
+  "implementationCommit": "5674678"
+}
