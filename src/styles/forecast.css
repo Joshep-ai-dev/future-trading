@@ -69,3 +69,10 @@
 .forecast-auto-update span { display: grid; gap: 4px; }
 .forecast-auto-update strong { font-size: 12px; font-weight: 600; }
 .forecast-auto-update small { color: #90a0b7; font-size: 10px; }
+
+.forecast-line-key { display: inline-block; width: 22px; margin-right: 6px; border-top: 2px solid currentColor; vertical-align: middle; }
+.forecast-line-key.is-dashed { border-top-style: dashed; }
+.forecast-guides-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; }
+.forecast-guides-toggle input[type="checkbox"] { width: 14px; height: 14px; margin: 0; }
+.forecast-sequential-comparison { display: grid; gap: 14px; padding: 18px; border: 1px solid #293549; border-radius: 10px; }
+.forecast-sequential-comparison .forecast-result-heading>span { color: #90a0b7; font-size: 11px; }
