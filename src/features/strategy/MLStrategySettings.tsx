@@ -19,7 +19,7 @@ export default function MLStrategySettings({settings,onChange}:{settings:Backtes
   if(!essential)return <div className="setup-option"><div><strong>Saved advanced setup</strong><p>This setup uses options that have been removed from the editor. Switch to the adaptive forecast model to edit it. Position size and direction are kept.</p></div><button type="button" className="secondary" onClick={()=>setMl({...mlDefaults,models:{...mlDefaults.models},feature_groups:[...mlDefaults.feature_groups],regimes:[...mlDefaults.regimes],amount_per_trade:config.amount_per_trade,amount_unit:config.amount_unit,trade_mode:config.trade_mode})}>Use adaptive forecast</button></div>;
 
   return <>
-    <p className="setup-note">Selectable forecast model / Candles and indicators / Adaptive trading</p>
+    <p className="setup-note">Candles and indicators / Adaptive trading</p>
     <SettingsCard step={1} id="settings-execution" title="Position" description="Choose timeframe, size and direction.">
       <div className="setup-field setup-field--wide"><span className="setup-label">Timeframe</span><div className="chip-group" role="radiogroup" aria-label="Execution timeframe">{TIMEFRAME_CHOICES.map(tf=><button key={tf} type="button" role="radio" aria-checked={settings.entry_timeframe===tf} onClick={()=>onChange({...settings,entry_timeframe:tf})}>{tf}</button>)}</div></div>
       <div className="setup-grid">
@@ -39,8 +39,6 @@ export default function MLStrategySettings({settings,onChange}:{settings:Backtes
     </SettingsCard>
     <SettingsCard step={3} id="settings-exits" title="Forecast" description="How far ahead the model learns to predict. This is a prediction horizon, not a mandatory closing time.">
       <div className="setup-grid">
-        <Field label="Forecast model"><select value={config.forecast_model} onChange={event=>setMl({forecast_model:event.target.value as MLConfig['forecast_model']})}><option value="extra_trees">Extra Trees</option><option value="rnn">RNN</option><option value="lstm">LSTM</option><option value="gru">GRU</option></select></Field>
-        {config.forecast_model!=='extra_trees'&&<>{num('sequence_lookback','Observed candles',1,500,1,'Completed candles in each ordered input sequence.')}{num('sequence_epochs','Maximum epochs',1,100,1,'Early stopping on a purged chronological validation tail. Neural forecasts use direction scores, not calibrated win probabilities.')}</>}
         {num('horizon','Forecast horizon',1,500,1,undefined,'bars')}
       </div>
     </SettingsCard>

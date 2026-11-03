@@ -14,6 +14,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from server.market.data import load_bars
+from server.forecast_research import ForecastRequest, run_forecast_test
 from server.strategies.strategy import BacktestRequest
 from server.strategies.bb_reversal_adapter import run_bb_reversal_backtest
 from server.strategies.registry import get_strategy
@@ -599,6 +600,15 @@ def data_range(market: Literal['xag', 'stable'] = 'xag'):
 def _run_backtest(parameters: BBBacktestRequest):
     frame, _ = load_bars(parameters.entry_timeframe, instrument=parameters.market)
     return run_bb_reversal_backtest(frame, parameters)
+
+
+@app.post('/api/forecast/test')
+def forecast_test(parameters: ForecastRequest):
+    try:
+        frame, _ = load_bars(parameters.timeframe, instrument='xag')
+        return run_forecast_test(frame, parameters)
+    except (ValueError, FileNotFoundError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
 
 @app.post('/api/backtest')

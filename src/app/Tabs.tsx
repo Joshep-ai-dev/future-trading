@@ -1,9 +1,10 @@
 import {TabBar,type TabItem} from '../shared/ui/ui';
 
-export type Page='strategy'|'results'|'paper'|'account';
+export type Page='strategy'|'results'|'paper'|'account'|'forecast';
 const pages:readonly TabItem<Page>[]=[
   {value:'paper',label:'Trading',controls:'page-paper'},
   {value:'results',label:'Backtest',controls:'page-results'},
+  {value:'forecast',label:'Forecast',controls:'page-forecast'},
   {value:'strategy',label:'Bot settings',controls:'page-strategy'},
   {value:'account',label:'Account',controls:'page-account'},
 ];

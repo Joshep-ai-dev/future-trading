@@ -1,0 +1,13 @@
+.forecast-page { display: grid; gap: 24px; min-width: 0; }
+.forecast-controls { padding: 20px; border: 1px solid var(--border, #293549); border-radius: 10px; }
+.forecast-controls fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.forecast-controls legend { margin-bottom: 20px; font-weight: 600; }
+.forecast-result-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.forecast-chart { margin: 24px 0; padding: 16px; border: 1px solid var(--border, #293549); border-radius: 10px; }
+.forecast-chart svg { width: 100%; height: auto; min-height: 180px; }
+.forecast-chart text { fill: #9cacc2; font-size: 11px; }
+.forecast-chart figcaption { display: flex; flex-wrap: wrap; gap: 16px; }
+.forecast-predicted { color: #87aaff; }
+.forecast-actual { color: #54d6aa; }
+.forecast-page .model-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+@media (max-width: 600px) { .forecast-controls { padding: 12px; } .forecast-chart { padding: 6px; } }

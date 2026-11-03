@@ -15,6 +15,7 @@ import LiveExecution from '../features/trading/LiveExecution';
 import type {Page} from './Tabs';
 import {fmt,type BacktestSettings,type BacktestResult,type FineTuneCase,type FineTuneResult,type TuneMetrics} from '../shared/types/types';
 
+const ForecastPage=lazy(()=>import('../features/research/ForecastPage'));
 const PaperTrading=lazy(()=>import('../features/trading/PaperTrading'));
 const ResultsWorkspace=lazy(()=>import('../features/research/ResultsWorkspace'));
 const AccountPage=lazy(()=>import('../features/account/AccountPage'));
@@ -179,6 +180,7 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
   return <section className="backtest"><Suspense fallback={<div className="workspace-loading" role="status">Loading workspace...</div>}>
     {accountMode==='live'?(view==='paper'&&<LiveTrading settings={settings} controls={<LiveExecution view="terminal" settings={settings} onSettingsChange={setSettings} onConfigure={()=>onViewChange('strategy')} onManageAccount={()=>onViewChange('account')} profiles={profiles} onApplySetup={setup=>setSettings(restoreSettings(setup.settings,availableRange))}/>}/>):<PaperTrading profiles={profiles} onApplySetup={setup=>setSettings(restoreSettings(setup.settings,availableRange))} settings={settings} onChange={setSettings} onConfigure={()=>onViewChange('strategy')} visible={view==='paper'}/>}
 
+    {view==='forecast'&&<ForecastPage range={availableRange}/>}
     {view==='account'&&<AccountPage settings={settings} onBack={()=>onViewChange('paper')} accountMode={accountMode} onAccountModeChange={onAccountModeChange}/>}
     {view==='strategy'&&<div id="page-strategy" className="setup-page" role="tabpanel" aria-labelledby="tab-strategy">
       <PageHeader eyebrow={(STRATEGY_LABELS[settings.strategy]??"").toUpperCase()} title="Bot settings" description="Set how the bot sizes, enters and exits trades. Changes apply to the next backtest or new bot session." actions={<><Button variant="ghost" disabled={busy} onClick={()=>setSettings({...initial(availableRange),market:settings.market})}>Restore defaults</Button><Button variant="secondary" onClick={()=>onViewChange('paper')}>Open terminal</Button></>}/>
