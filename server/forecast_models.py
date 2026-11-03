@@ -49,7 +49,9 @@ def train_saved_model(frame: pd.DataFrame, request: TrainForecastRequest, owner:
                        mean=model.mean, std=model.std, lookback=model.lookback, direction_scale=model.direction_scale,
                        epochs_trained=model.epochs_trained, features=features.shape[1])
     model_id = uuid.uuid4().hex
-    metadata = dict(id=model_id, version=VERSION, name=request.name, createdAt=int(time.time()),
+    label = 'Extra Trees' if request.model == 'extra_trees' else request.model.upper()
+    name = f'Silver {label}' if request.name in ('Silver GRU', 'Silver LSTM', 'Silver RNN', 'Silver Extra Trees') else request.name
+    metadata = dict(id=model_id, version=VERSION, name=name, createdAt=int(time.time()),
                     config=request.model_dump(exclude={'model_id', 'name', 'training_end'}),
                     trainStart=bars.index[rows.start].isoformat(), trainedThrough=(bars.index[-1]+duration).isoformat(),
                     trainingRows=count, featureNames=list(features.columns), epochsTrained=getattr(model, 'epochs_trained', None))

@@ -39,11 +39,13 @@ class SavedModelTests(unittest.TestCase):
             root = Path(directory)
             for kind in ('extra_trees', 'rnn', 'lstm', 'gru'):
                 with self.subTest(kind=kind):
-                    config = TrainForecastRequest(model=kind, timeframe='5m', horizon=6, epochs=1,
+                    config = TrainForecastRequest(name='Silver GRU', model=kind, timeframe='5m', horizon=6, epochs=1,
                                                   training_end='2026-01-02', train_bars=600)
                     metadata = train_saved_model(frame, config, 7, root)
                     model, restored_meta = load_model(7, metadata['id'], root)
                     self.assertEqual(metadata, restored_meta)
+                    self.assertEqual(metadata['config']['model'], kind)
+                    self.assertEqual(metadata['name'], 'Silver '+('Extra Trees' if kind == 'extra_trees' else kind.upper()))
                     features, _, _, _ = forecast_inputs(frame, config, pd.Timedelta(minutes=5))
                     expected = model.forecast_rows(features, slice(900, 910))
                     restored, _ = load_model(7, metadata['id'], root)
