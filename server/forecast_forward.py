@@ -13,6 +13,7 @@ from server.strategies.ml.sequence_forecast import SequenceForecast
 
 
 class ForwardForecastRequest(BaseModel):
+    path_forecast: bool = False
     model_id: str | None = Field(default=None, pattern=r'^[0-9a-f]{32}$')
     model: Literal['extra_trees', 'rnn', 'lstm', 'gru'] = 'gru'
     timeframe: Literal['1m', '3m', '5m', '10m', '15m', '30m', '1h', '4h', '1d'] = '15m'
@@ -61,8 +62,14 @@ def issue_forward_forecast(frame: pd.DataFrame, request: ForwardForecastRequest,
         raise ValueError('Training finished after the forecast target. Increase the horizon or reduce epochs and retry.')
     if not np.isfinite([up, down, trend, close, scale]).all():
         raise ValueError('Forecast produced invalid values')
+    path = []
+    if request.path_forecast and hasattr(model, 'forecast_path_rows'):
+        moves = model.forecast_path_rows(features, slice(len(bars)-1, len(bars)))[0]
+        if len(moves) != request.horizon or not np.isfinite(moves).all():
+            raise ValueError('Saved model has no complete multi-step forecast; train a new model')
+        path = [dict(time=origin+seconds*(step+1), close=float(close+move*scale)) for step, move in enumerate(moves)]
     return dict(**request.model_dump(), startedAt=started, issuedAt=issued, originTime=origin, targetTime=target,
-                originClose=close, predictedClose=float(close+trend*scale), predictedHigh=float(close+up*scale),
+                path=path, originClose=close, predictedClose=float(close+trend*scale), predictedHigh=float(close+up*scale),
                 predictedLow=float(close-down*scale), modelId=metadata['id'] if metadata else None, trainingRows=training_rows,
                 history=[dict(time=int((stamp+duration).timestamp()), close=float(row.close)) for stamp, row in bars.tail(100).iterrows()],
                 epochsTrained=getattr(model, 'epochs_trained', None),

@@ -45,11 +45,17 @@ class SavedModelTests(unittest.TestCase):
                     model, restored_meta = load_model(7, metadata['id'], root)
                     self.assertEqual(metadata, restored_meta)
                     self.assertEqual(metadata['config']['model'], kind)
+                    self.assertTrue(metadata['config']['path_forecast'])
                     self.assertEqual(metadata['name'], 'Silver '+('Extra Trees' if kind == 'extra_trees' else kind.upper()))
                     features, _, _, _ = forecast_inputs(frame, config, pd.Timedelta(minutes=5))
                     expected = model.forecast_rows(features, slice(900, 910))
                     restored, _ = load_model(7, metadata['id'], root)
                     np.testing.assert_allclose(expected, restored.forecast_rows(features, slice(900, 910)), rtol=1e-5)
+                    path = restored.forecast_path_rows(features, slice(900, 910))
+                    self.assertEqual(path.shape, (10, 6))
+                    self.assertTrue(np.isfinite(path).all())
+                    np.testing.assert_allclose(path[:, -1], expected[:, 2], rtol=1e-5)
+                    np.testing.assert_allclose(path, model.forecast_path_rows(features, slice(900, 910)), rtol=1e-5)
                     self.assertEqual(metadata['trainedThrough'], '2026-01-03T00:00:00+00:00')
                     self.assertTrue(metadata['trainingRows'] >= 300)
                     quality = metadata['validation']
@@ -100,6 +106,10 @@ class SavedModelTests(unittest.TestCase):
                 self.assertEqual(live['modelId'], metadata['id'])
                 self.assertLess(live['issuedAt'], live['targetTime'])
                 self.assertEqual(len(live['history']), 100)
+                self.assertEqual(len(live['path']), 6)
+                self.assertEqual(live['path'][-1]['time'], live['targetTime'])
+                self.assertAlmostEqual(live['path'][-1]['close'], live['predictedClose'])
+                self.assertEqual(live['path'][0]['time'], live['originTime']+300)
 
 
 if __name__ == '__main__':

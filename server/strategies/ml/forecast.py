@@ -46,6 +46,16 @@ class ForecastModel:
         up, down = np.maximum(values[:, 0], 0.), np.maximum(values[:, 1], 0.)
         return np.column_stack([up, down, np.clip(values[:, 2], -down, up)])
 
+    def forecast_path_rows(self, features: pd.DataFrame, rows: slice) -> np.ndarray:
+        matrix = self.imputer.transform(features.iloc[rows].to_numpy())
+        values = self.estimator.predict(matrix)
+        path = values[:, 3:].copy()
+        if path.shape[1]:
+            bounds = self.forecast_rows(features, rows)
+            path = np.clip(path, -bounds[:, 1, None], bounds[:, 0, None])
+            path[:, -1] = bounds[:, 2]
+        return path
+
     def predict_rows(self, features: pd.DataFrame, rows: slice) -> np.ndarray:
         matrix = self.imputer.transform(features.iloc[rows].to_numpy())
         trends = (np.array([tree.predict(matrix) for tree in self.trend_estimator.estimators_])

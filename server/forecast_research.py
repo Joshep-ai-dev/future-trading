@@ -15,6 +15,7 @@ from server.strategies.ml.strategy import _atr
 
 
 class ForecastRequest(BaseModel):
+    path_forecast: bool = False
     model: Literal['extra_trees', 'rnn', 'lstm', 'gru'] = 'gru'
     timeframe: Literal['1m', '3m', '5m', '10m', '15m', '30m', '1h', '4h', '1d'] = '15m'
     start_date: date
@@ -134,6 +135,9 @@ def forecast_inputs(bars: pd.DataFrame, request, duration: pd.Timedelta) -> tupl
         ranges = excursions(segment, segment_atr, request.horizon)
         segment_targets = pd.DataFrame({'up': ranges.long_mfe, 'down': ranges.long_mae,
                                        'trend': (segment.close.shift(-request.horizon)-segment.close)/segment_atr})
+        if getattr(request, 'path_forecast', False):
+            for step in range(1, request.horizon+1):
+                segment_targets[f'close_step_{step}'] = (segment.close.shift(-step)-segment.close)/segment_atr
         usable = ((np.arange(len(segment)) >= context-1)
                   & (np.arange(len(segment))+request.horizon < len(segment))
                   & np.isfinite(segment_atr.to_numpy()) & (segment_atr.to_numpy() > 0))

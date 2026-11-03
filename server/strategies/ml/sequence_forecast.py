@@ -12,7 +12,7 @@ TRAIN_LOCK = threading.RLock()
 
 
 
-def forecast_network(kind: str, features: int):
+def forecast_network(kind: str, features: int, outputs: int = 3):
     import torch
 
     class Network(torch.nn.Module):
@@ -20,7 +20,7 @@ def forecast_network(kind: str, features: int):
             super().__init__()
             cell = {'rnn': torch.nn.RNN, 'lstm': torch.nn.LSTM, 'gru': torch.nn.GRU}[kind]
             self.recurrent = cell(features, 32, batch_first=True)
-            self.head = torch.nn.Linear(32, 3)
+            self.head = torch.nn.Linear(32, outputs)
 
         def forward(self, x):
             output, _ = self.recurrent(x)
@@ -76,7 +76,7 @@ class SequenceForecast:
             try:
                 torch.set_num_threads(2)
                 torch.manual_seed(7)
-                network = forecast_network(kind, features.shape[1]).to(target_device)
+                network = forecast_network(kind, features.shape[1], truth.shape[1]).to(target_device)
                 optimizer = torch.optim.AdamW(network.parameters(), lr=.001, weight_decay=.001)
                 loss_fn = torch.nn.SmoothL1Loss()
                 generator = np.random.default_rng(7)
@@ -113,13 +113,13 @@ class SequenceForecast:
         scale = max(.1, float(np.std(truth[training, 2])))
         return cls(network, mean.astype(np.float32), std.astype(np.float32), lookback, scale, trained)
 
-    def forecast_rows(self, features: pd.DataFrame, rows: slice) -> np.ndarray:
+    def _raw_rows(self, features: pd.DataFrame, rows: slice) -> np.ndarray:
         import torch
 
         values = np.clip(np.nan_to_num((features.to_numpy(np.float32)-self.mean)/self.std,
                                       nan=0., posinf=0., neginf=0.), -10, 10).astype(np.float32)
         start, stop = rows.start or 0, rows.stop if rows.stop is not None else len(features)
-        output = np.full((stop-start, 3), np.nan)
+        output = np.full((stop-start, self.network.head.out_features), np.nan)
         ends = np.arange(max(start, self.lookback-1), stop)
         offsets = np.arange(-self.lookback+1, 1)
         device = next(self.network.parameters()).device
@@ -134,8 +134,21 @@ class SequenceForecast:
                     output[indices-start] = self.network(batch).cpu().numpy()
             finally:
                 torch.set_num_threads(previous_threads)
+        return output
+
+    def forecast_rows(self, features: pd.DataFrame, rows: slice) -> np.ndarray:
+        output = self._raw_rows(features, rows)
         up, down = np.maximum(output[:, 0], 0.), np.maximum(output[:, 1], 0.)
         return np.column_stack([up, down, np.clip(output[:, 2], -down, up)])
+
+    def forecast_path_rows(self, features: pd.DataFrame, rows: slice) -> np.ndarray:
+        output = self._raw_rows(features, rows)
+        path = output[:, 3:].copy()
+        if path.shape[1]:
+            up, down = np.maximum(output[:, 0], 0.), np.maximum(output[:, 1], 0.)
+            path = np.clip(path, -down[:, None], up[:, None])
+            path[:, -1] = np.clip(output[:, 2], -down, up)
+        return path
 
     def predict_rows(self, features: pd.DataFrame, rows: slice) -> np.ndarray:
         trend = self.forecast_rows(features, rows)[:, 2]/self.direction_scale

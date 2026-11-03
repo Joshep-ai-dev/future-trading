@@ -18,7 +18,7 @@ from server.strategies.ml.forecast import ForecastModel
 from server.strategies.ml.sequence_forecast import SequenceForecast, forecast_network
 
 ROOT = Path(__file__).resolve().parent.parent/'data'/'forecast_models'
-VERSION = 2
+VERSION = 3
 
 
 class TrainForecastRequest(ForwardForecastRequest):
@@ -27,6 +27,7 @@ class TrainForecastRequest(ForwardForecastRequest):
 
 
 def train_saved_model(frame: pd.DataFrame, request: TrainForecastRequest, owner: int, root: Path = ROOT) -> dict:
+    request = request.model_copy(update={'path_forecast': True})
     duration = pd.Timedelta(seconds=TIMEFRAMES[request.timeframe])
     cutoff = min(pd.Timestamp(request.training_end, tz='UTC')+pd.Timedelta(days=1), pd.Timestamp.now(tz='UTC'))
     bars = frame.loc[frame.index+duration <= cutoff].tail(request.train_bars+request.horizon+200).copy()
@@ -56,7 +57,7 @@ def train_saved_model(frame: pd.DataFrame, request: TrainForecastRequest, owner:
                                      epochs=request.epochs, horizon=request.horizon)
         payload = dict(state={key: value.detach().cpu() for key, value in model.network.state_dict().items()},
                        mean=model.mean, std=model.std, lookback=model.lookback, direction_scale=model.direction_scale,
-                       epochs_trained=model.epochs_trained, features=features.shape[1])
+                       epochs_trained=model.epochs_trained, features=features.shape[1], outputs=model.network.head.out_features)
     validation_rows = slice(int(validation[0]), int(validation[-1])+1)
     predicted = model.forecast_rows(features, validation_rows)[validation-validation[0]]
     scale = atr.iloc[validation].to_numpy()
@@ -78,7 +79,7 @@ def train_saved_model(frame: pd.DataFrame, request: TrainForecastRequest, owner:
                                      epochs=request.epochs, horizon=request.horizon)
         payload = dict(state={key: value.detach().cpu() for key, value in model.network.state_dict().items()},
                        mean=model.mean, std=model.std, lookback=model.lookback, direction_scale=model.direction_scale,
-                       epochs_trained=model.epochs_trained, features=features.shape[1])
+                       epochs_trained=model.epochs_trained, features=features.shape[1], outputs=model.network.head.out_features)
     count = int(np.isfinite(targets.iloc[rows].to_numpy()).all(axis=1).sum())
     model_id = uuid.uuid4().hex
     label = 'Extra Trees' if request.model == 'extra_trees' else request.model.upper()
@@ -110,13 +111,13 @@ def load_model(owner: int, model_id: str, root: Path = ROOT) -> tuple:
     if not path.exists():
         raise ValueError('Saved model not found for this account')
     metadata = json.loads(path.read_text(encoding='utf-8'))
-    if metadata['version'] not in (1, VERSION):
+    if metadata['version'] not in (1, 2, VERSION):
         raise ValueError('This model version is no longer supported; train a new model')
     # Only server-created artifacts are loaded; no user-supplied pickle uploads.
     payload = joblib.load(directory/f'{model_id}.joblib')
     if metadata['config']['model'] == 'extra_trees':
         return payload['model'], metadata
-    network = forecast_network(metadata['config']['model'], payload['features'])
+    network = forecast_network(metadata['config']['model'], payload['features'], payload.get('outputs', 3))
     network.load_state_dict(payload['state'])
     network.eval()
     return SequenceForecast(network, payload['mean'], payload['std'], payload['lookback'],
