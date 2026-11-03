@@ -43,10 +43,13 @@ def run_forecast_test(frame: pd.DataFrame, request: ForecastRequest) -> dict:
     first = int(source.index.searchsorted(start))
     left = max(0, first-request.train_bars-request.horizon-200)
     bars = source.iloc[left:].copy()
-    if bars.empty or bars[['open', 'high', 'low', 'close']].isna().any().any():
-        raise ValueError('Forecast experiment requires complete candles without data gaps; choose another period or timeframe')
-    if len(bars) > 1 and not (bars.index.to_series().diff().iloc[1:] == duration).all():
-        raise ValueError('Forecast experiment requires consecutive candles; choose another period or timeframe')
+    complete = np.isfinite(bars[['open', 'high', 'low', 'close']].to_numpy()).all(axis=1)
+    incomplete_rows = int((~complete).sum())
+    bars = bars.loc[complete].copy()
+    if bars.empty:
+        raise ValueError('No complete candles in the selected history')
+    # Segment on every timestamp discontinuity, including removed partial bars.
+    segments = bars.index.to_series().diff().ne(duration).cumsum()
     first = int(bars.index.searchsorted(start))
     train_end = first-request.horizon
     train_start = max(0, train_end-request.train_bars)
@@ -56,27 +59,50 @@ def run_forecast_test(frame: pd.DataFrame, request: ForecastRequest) -> dict:
         raise ValueError('Test period needs more candles than the forecast horizon')
     if len(bars)-first > 3000:
         raise ValueError('Limit each forecast test to 3000 candles; shorten dates or use a larger timeframe')
-    features = build_features(bars, ['returns', 'volatility', 'trend', 'volume', 'candles'])
-    previous = bars.close.shift().replace(0., np.nan)
-    for column in ('open', 'high', 'low', 'close'):
-        features[f'candle_{column}_relative'] = bars[column]/previous-1
-    if 'volume' in bars:
-        features['candle_log_volume'] = np.log1p(bars.volume.clip(lower=0))
-    atr = _atr(bars, 14)
-    ranges = excursions(bars, atr, request.horizon)
-    targets = pd.DataFrame({'up': ranges.long_mfe, 'down': ranges.long_mae,
-                            'trend': (bars.close.shift(-request.horizon)-bars.close)/atr})
+    feature_parts, atr_parts, target_parts = [], [], []
+    context = request.lookback if request.model != 'extra_trees' else 1
+    eligible = pd.Series(False, index=bars.index)
+    for _, segment in bars.groupby(segments):
+        features_part = build_features(segment, ['returns', 'volatility', 'trend', 'volume', 'candles'])
+        previous = segment.close.shift().replace(0., np.nan)
+        for column in ('open', 'high', 'low', 'close'):
+            features_part[f'candle_{column}_relative'] = segment[column]/previous-1
+        if 'volume' in segment:
+            features_part['candle_log_volume'] = np.log1p(segment.volume.clip(lower=0))
+        segment_atr = _atr(segment, 14)
+        ranges = excursions(segment, segment_atr, request.horizon)
+        segment_targets = pd.DataFrame({'up': ranges.long_mfe, 'down': ranges.long_mae,
+                                       'trend': (segment.close.shift(-request.horizon)-segment.close)/segment_atr})
+        usable = ((np.arange(len(segment)) >= context-1)
+                  & (np.arange(len(segment))+request.horizon < len(segment))
+                  & np.isfinite(segment_atr.to_numpy()) & (segment_atr.to_numpy() > 0))
+        eligible.loc[segment.index] = usable
+        segment_targets.loc[~usable] = np.nan
+        feature_parts.append(features_part)
+        atr_parts.append(segment_atr)
+        target_parts.append(segment_targets)
+    features = pd.concat(feature_parts).reindex(bars.index)
+    atr = pd.concat(atr_parts).reindex(bars.index)
+    targets = pd.concat(target_parts).reindex(bars.index)
     rows = slice(train_start, train_end)
+    training_rows = int(np.isfinite(targets.iloc[rows].to_numpy()).all(axis=1).sum())
+    if training_rows < 300:
+        raise ValueError(f'Only {training_rows} usable training samples after excluding gaps and incomplete horizons; need at least 300. Increase training candles or reduce observed candles/horizon.')
+    stop = len(bars)-request.horizon
+    usable_test = eligible.iloc[first:stop].to_numpy()
+    if not usable_test.any():
+        raise ValueError('No complete prediction windows in the test period. Reduce observed candles/horizon or extend the test dates.')
     if request.model == 'extra_trees':
         model = ForecastModel.fit(features, targets, rows)
     else:
         model = SequenceForecast.fit(features, targets, rows, kind=request.model,
                                      lookback=request.lookback, epochs=request.epochs, horizon=request.horizon)
     # Freeze the model for the entire holdout. Actual outcomes never retrain it.
-    stop = len(bars)-request.horizon
     predictions = model.forecast_rows(features, slice(first, stop))
     points = []
     for offset, index in enumerate(range(first, stop)):
+        if not usable_test[offset]:
+            continue
         close, scale = float(bars.close.iloc[index]), float(atr.iloc[index])
         future = bars.iloc[index+1:index+1+request.horizon]
         up, down, trend = predictions[offset]
@@ -98,6 +124,8 @@ def run_forecast_test(frame: pd.DataFrame, request: ForecastRequest) -> dict:
     return dict(model=request.model, timeframe=request.timeframe, horizon=request.horizon,
                 trainStart=bars.index[train_start].isoformat(),
                 trainEnd=(bars.index[train_end-1]+duration).isoformat(),
-                trainingRows=train_end-train_start, epochsTrained=getattr(model, 'epochs_trained', None),
+                trainingRows=training_rows, epochsTrained=getattr(model, 'epochs_trained', None),
                 metrics=metrics, predictions=points,
-                note='Frozen historical holdout. Scaling and training use past data only. High/low forecasts are excursion estimates, not confidence bounds. Overlapping targets are not independent samples.')
+                dataQuality=dict(incompleteCandles=incomplete_rows, continuousSegments=int(segments.nunique()),
+                                 skippedTestOrigins=int(len(bars)-first-len(points))),
+                note='Incomplete candles and windows crossing gaps are excluded; indicators restart after each gap. Frozen historical holdout. Scaling and training use past data only. High/low forecasts are excursion estimates, not confidence bounds. Overlapping targets are not independent samples.')

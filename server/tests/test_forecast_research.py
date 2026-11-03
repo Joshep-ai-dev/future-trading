@@ -39,10 +39,28 @@ class ForecastResearchTests(unittest.TestCase):
         self.assertTrue(np.isfinite(result['metrics']['closeMae']))
         self.assertNotIn('trades', result)
 
-    def test_rejects_gaps_short_history_and_invalid_dates(self):
+    def test_skips_missing_and_partial_candles_without_crossing_gaps(self):
         frame = market(1500)
-        with self.assertRaises(ValueError):
-            run_forecast_test(frame.drop(frame.index[800]), self.request())
+        frame.loc[frame.index[1000], ['open', 'high', 'low', 'close']] = np.nan
+        result = run_forecast_test(frame.drop(frame.index[1100]), self.request())
+        self.assertEqual(result['dataQuality']['incompleteCandles'], 1)
+        self.assertEqual(result['dataQuality']['continuousSegments'], 3)
+        for point in result['predictions']:
+            for gap in (1000, 1100):
+                gap_time = int(frame.index[gap].timestamp())
+                self.assertFalse(point['originTime'] <= gap_time < point['targetTime'])
+        self.assertGreater(result['dataQuality']['skippedTestOrigins'], 6)
+        self.assertTrue(np.isfinite(result['metrics']['closeMae']))
+
+    def test_neural_windows_restart_after_gaps(self):
+        frame = market(1500).drop(market(1500).index[1000])
+        result = run_forecast_test(frame, self.request(model='gru'))
+        gap_end = int(market(1500).index[1101].timestamp())
+        gap_start = int(market(1500).index[1000].timestamp())
+        self.assertTrue(all(p['originTime'] <= gap_start or p['originTime'] >= gap_end for p in result['predictions']))
+
+    def test_rejects_short_history_and_invalid_dates(self):
+        frame = market(1500)
         with self.assertRaises(ValueError):
             run_forecast_test(frame, self.request(start_date='2026-01-02'))
         with self.assertRaises(ValueError):
