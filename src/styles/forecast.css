@@ -45,3 +45,7 @@
 .forecast-controls .setup-grid { row-gap: 22px; margin-top: 16px; }
 .forecast-controls fieldset > button[type="submit"] { margin-top: 24px; }
 .forecast-controls .setup-note { margin-bottom: 16px; line-height: 1.7; }
+
+.forecast-model-select { display: grid; gap: 8px; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; width: 100%; white-space: normal; }
+.forecast-model-remove { justify-self: start; margin-top: 6px; padding: 5px 0; border: 0; background: transparent; color: #f09b9b; font-size: 11px; }
+.forecast-model-remove:hover { color: #ffc6c6; text-decoration: underline; }

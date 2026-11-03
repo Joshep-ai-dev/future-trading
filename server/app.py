@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from server.market.data import load_bars, TIMEFRAMES
 from server.forecast_research import ForecastRequest, run_forecast_test
 from server.forecast_forward import ForwardForecastRequest, issue_forward_forecast, observed_outcome
-from server.forecast_models import TrainForecastRequest, train_saved_model, list_models, load_model
+from server.forecast_models import TrainForecastRequest, train_saved_model, list_models, load_model, delete_model
 from server.strategies.strategy import BacktestRequest
 from server.strategies.bb_reversal_adapter import run_bb_reversal_backtest
 from server.strategies.registry import get_strategy
@@ -621,6 +621,16 @@ def train_forecast_model(parameters: TrainForecastRequest, request: Request):
         frame, _ = load_bars(parameters.timeframe, instrument='xag')
         return train_saved_model(frame, parameters, int(request.state.user['id']))
     except (ValueError, OSError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.delete('/api/forecast/models/{model_id}')
+def delete_forecast_model(model_id: str, request: Request):
+    try:
+        if not delete_model(int(request.state.user['id']), model_id):
+            raise HTTPException(status_code=404, detail='Saved model not found for this account')
+        return {'deleted': model_id}
+    except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
 

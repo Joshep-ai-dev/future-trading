@@ -13,6 +13,26 @@ from server.tests.test_ml_strategy import market
 
 
 class SavedModelTests(unittest.TestCase):
+    def test_remove_model_only_deletes_the_owners_artifacts(self):
+        from server.forecast_models import delete_model
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            owner = root/'7'
+            owner.mkdir()
+            model_id = 'a'*32
+            (owner/f'{model_id}.json').write_text('{}', encoding='utf-8')
+            (owner/f'{model_id}.joblib').write_bytes(b'model')
+            (owner/'prediction-history.json').write_text('[]', encoding='utf-8')
+            self.assertFalse(delete_model(8, model_id, root))
+            self.assertTrue((owner/f'{model_id}.json').exists())
+            with self.assertRaises(ValueError):
+                delete_model(7, '../outside', root)
+            self.assertTrue(delete_model(7, model_id, root))
+            self.assertFalse((owner/f'{model_id}.json').exists())
+            self.assertFalse((owner/f'{model_id}.joblib').exists())
+            self.assertTrue((owner/'prediction-history.json').exists())
+            self.assertFalse(delete_model(7, model_id, root))
+
     def test_all_architectures_survive_reload_and_are_account_scoped(self):
         frame = market(1400)
         with tempfile.TemporaryDirectory() as directory:

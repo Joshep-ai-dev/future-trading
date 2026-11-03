@@ -87,3 +87,16 @@ def load_model(owner: int, model_id: str, root: Path = ROOT) -> tuple:
     network.eval()
     return SequenceForecast(network, payload['mean'], payload['std'], payload['lookback'],
                             payload['direction_scale'], payload['epochs_trained']), metadata
+
+
+def delete_model(owner: int, model_id: str, root: Path = ROOT) -> bool:
+    if not re.fullmatch(r'[0-9a-f]{32}', model_id):
+        raise ValueError('Invalid model ID')
+    directory = root/str(int(owner))
+    metadata = directory/f'{model_id}.json'
+    if not metadata.exists():
+        return False
+    # Remove only the named account's model artifacts; prediction records remain.
+    (directory/f'{model_id}.joblib').unlink(missing_ok=True)
+    metadata.unlink()
+    return True
