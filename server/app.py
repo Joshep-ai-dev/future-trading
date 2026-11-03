@@ -15,6 +15,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from server.market.data import load_bars, TIMEFRAMES
+from server.market.live_quote import silver_quote
 from server.forecast_research import ForecastRequest, run_forecast_test
 from server.forecast_forward import ForwardForecastRequest, issue_forward_forecast, observed_outcome
 from server.forecast_models import TrainForecastRequest, train_saved_model, list_models, load_model, delete_model
@@ -643,6 +644,14 @@ def test_saved_forecast(model_id: str, parameters: SavedForecastTestRequest, req
         return run_forecast_test(frame, config, saved_model=model, metadata=metadata)
     except (ValueError, OSError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.get('/api/forecast/quote')
+def forecast_quote():
+    try:
+        return silver_quote()
+    except (OSError, ValueError, KeyError, IndexError) as error:
+        raise HTTPException(status_code=503, detail='Live silver price is unavailable; retrying will not change saved forecasts.') from error
 
 
 @app.get('/api/forecast/models/{model_id}/live')
