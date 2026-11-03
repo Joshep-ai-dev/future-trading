@@ -11,9 +11,9 @@ export function priceAxis(min:number,max:number){
   return {low,high,unit,decimals,ticks:Array.from({length:count+1},(_,index)=>Number((low+index*unit).toFixed(8)))};
 }
 
-export function timeAxis(left:number,right:number){
+export function timeAxis(left:number,right:number,unit=0){
   const intervals=[60,300,600,900,1800,3600,7200,14400,21600,43200,86400,172800,604800,2592000];
-  const step=intervals.find(value=>value>=(right-left)/5)||2592000;
+  const step=unit>0&&(right-left)/unit<=500?unit:(intervals.find(value=>value>=(right-left)/5)||2592000);
   const ticks:number[]=[];
   for(let value=Math.ceil(left/step)*step;value<=right;value+=step)ticks.push(value);
   return ticks;
