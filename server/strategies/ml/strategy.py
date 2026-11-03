@@ -27,6 +27,9 @@ ESSENTIAL_GROUPS = ('returns', 'volatility', 'trend', 'volume', 'candles')
 class MLSettings:
     feature_groups: list[str] = field(default_factory=lambda: list(ESSENTIAL_GROUPS))
     models: dict[str, float] = field(default_factory=lambda: dict(DEFAULT_MODELS))
+    forecast_model: str = 'extra_trees'
+    sequence_lookback: int = 100
+    sequence_epochs: int = 30
     horizon: int = 24
     take_profit_atr: float = 1.5
     stop_atr: float = 1.0
@@ -69,6 +72,12 @@ class MLSettings:
     recency_half_life: int = 0
 
     def __post_init__(self):
+        if self.forecast_model not in ('extra_trees', 'rnn', 'lstm', 'gru'):
+            raise ValueError('Invalid forecast model')
+        if not isinstance(self.sequence_lookback, int) or not 1 <= self.sequence_lookback <= 500:
+            raise ValueError('Sequence lookback must be 1-500 candles')
+        if not isinstance(self.sequence_epochs, int) or not 1 <= self.sequence_epochs <= 100:
+            raise ValueError('Sequence epochs must be 1-100')
         unknown = [key for key in self.feature_groups if key not in FEATURE_GROUPS]
         if unknown or not self.feature_groups:
             raise ValueError('Choose at least one valid feature group')
@@ -118,7 +127,7 @@ class MLSettings:
 
     def model_key(self) -> str:
         """Identity of everything that changes a trained fold (not sizing or entry rules)."""
-        return config_key(groups=sorted(self.feature_groups), models=self.models, horizon=self.horizon,
+        return config_key(forecast_model=self.forecast_model, sequence_lookback=self.sequence_lookback, sequence_epochs=self.sequence_epochs, groups=sorted(self.feature_groups), models=self.models, horizon=self.horizon,
                           tp=self.take_profit_atr, sl=self.stop_atr, atr=self.atr_length, capacity=self.capacity,
                           exits=self.exit_mode, quantiles=(self.tp_quantile, self.sl_quantile) if self.exit_mode == 'learned' else None,
                           percent=(self.take_profit_pct, self.stop_loss_pct) if self.exit_mode == 'percent' else None,
@@ -227,6 +236,12 @@ def prepare(frame: pd.DataFrame, settings: MLSettings, start=None, progress=None
         raise ValueError('Not enough candles for the ML strategy')
     atr = _atr(clean, settings.atr_length)
     features = build_features(clean, settings.feature_groups)
+    if settings.exit_mode == 'forecast' and settings.forecast_model != 'extra_trees':
+        previous = clean.close.shift().replace(0., np.nan)
+        for column in ('open', 'high', 'low', 'close'):
+            features[f'candle_{column}_relative'] = clean[column]/previous-1
+        if 'volume' in clean:
+            features['candle_log_volume'] = np.log1p(clean.volume.clip(lower=0))
     percent = settings.exit_mode == 'percent'
     labels = None if settings.exit_mode == 'forecast' else triple_barrier(clean, clean.close/100 if percent else atr, settings.horizon,
                             settings.take_profit_pct if percent else settings.take_profit_atr,
@@ -245,7 +260,9 @@ def prepare(frame: pd.DataFrame, settings: MLSettings, start=None, progress=None
                           models=settings.models, key=settings.model_key(), capacity=settings.capacity, progress=progress,
                           exit_targets=targets, quantiles=(settings.tp_quantile, settings.sl_quantile),
                           half_life=settings.recency_half_life, meta=settings.quality_filter, device=settings.device,
-                          learn_regimes=set(settings.regimes) != set(REGIME_NAMES), forecast_targets=forecast_targets)
+                          learn_regimes=set(settings.regimes) != set(REGIME_NAMES), forecast_targets=forecast_targets,
+                          forecast_options=dict(kind=settings.forecast_model, lookback=settings.sequence_lookback,
+                                                epochs=settings.sequence_epochs, horizon=settings.horizon))
     return Prepared(clean, atr, features.shape[1], labels, start_index, result, forecast_targets)
 
 
@@ -401,7 +418,7 @@ def ml_readiness(bar, settings: MLSettings) -> dict:
         return number if np.isfinite(number) else None
     p_long, p_short, p_none = value('p_long'), value('p_short'), value('p_none')
     def side(probability, opposite):
-        checks = [dict(label='Tree agreement' if settings.exit_mode == 'forecast' else 'Probability', passed=probability is not None and probability >= settings.entry_threshold,
+        checks = [dict(label='Forecast direction score' if settings.exit_mode == 'forecast' else 'Probability', passed=probability is not None and probability >= settings.entry_threshold,
                        value=probability, threshold=settings.entry_threshold),
                   dict(label='Edge vs opposite', passed=probability is not None and opposite is not None and probability-opposite >= settings.min_edge,
                        value=None if probability is None or opposite is None else probability-opposite, threshold=settings.min_edge)]

@@ -8,6 +8,7 @@ export type Analysis = {
 export const fmt = (v: number | null, digits=2) => v === null ? '—' : v.toLocaleString('en-US', {maximumFractionDigits: digits});
 
 export type MLConfig = {
+  forecast_model:'extra_trees'|'rnn'|'lstm'|'gru';sequence_lookback:number;sequence_epochs:number;
   feature_groups: string[]; models: Record<string, number>; horizon: number; forecast_target_fraction: number; forecast_stop_buffer: number; take_profit_pct: number; stop_loss_pct: number; take_profit_atr: number; stop_atr: number;
   atr_length: number; entry_threshold: number; min_edge: number; min_reward_cost: number; train_bars: number;
   retrain_every: number; trade_mode: 'Both'|'Long Only'|'Short Only'; reverse_on_signal: boolean;

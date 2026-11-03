@@ -79,7 +79,7 @@ def config_key(**parts) -> str:
 def _train_fold(features: pd.DataFrame, labels: pd.Series, train_slice: slice, models: dict[str, float], key: str,
                 capacity: str = 'standard', exit_targets: pd.DataFrame | None = None, quantiles=(.4, .7),
                 half_life: float = 0, meta: bool = False, device: str = 'auto', learn_regimes: bool = True,
-                forecast_targets: pd.DataFrame | None = None) -> Fold | None:
+                forecast_targets: pd.DataFrame | None = None, forecast_options: dict | None = None) -> Fold | None:
     window_x, window_y = features.iloc[train_slice], labels.iloc[train_slice]
     mask = window_y.notna().to_numpy()
     if mask.sum() < MIN_TRAIN_ROWS:
@@ -97,7 +97,11 @@ def _train_fold(features: pd.DataFrame, labels: pd.Series, train_slice: slice, m
     if forecast_targets is not None:
         if np.isfinite(forecast_targets.iloc[train_slice].to_numpy()).all(axis=1).sum() < MIN_TRAIN_ROWS:
             return None
-        model = ForecastModel.fit(features, forecast_targets, train_slice)
+        if forecast_options and forecast_options['kind'] != 'extra_trees':
+            from server.strategies.ml.sequence_forecast import SequenceForecast
+            model = SequenceForecast.fit(features, forecast_targets, train_slice, device=device, **forecast_options)
+        else:
+            model = ForecastModel.fit(features, forecast_targets, train_slice)
         fold = Fold(0, 0, int(mask.sum()), [model], [1.], forecast=model)
         fold_cache.put(cache_key, fold)
         return fold
@@ -127,7 +131,7 @@ def walk_forward(features: pd.DataFrame, labels: pd.Series, *, start_index: int,
                  retrain_every: int, horizon: int, models: dict[str, float], key: str,
                  capacity: str = 'standard', progress=None, exit_targets: pd.DataFrame | None = None,
                  quantiles=(.4, .7), half_life: float = 0, meta: bool = False, device: str = 'auto',
-                 learn_regimes: bool = True, forecast_targets: pd.DataFrame | None = None) -> WalkForwardResult:
+                 learn_regimes: bool = True, forecast_targets: pd.DataFrame | None = None, forecast_options: dict | None = None) -> WalkForwardResult:
     """Out-of-sample probabilities (short, none, long) for every bar from ``start_index``.
 
     With ``exit_targets`` every block also learns take-profit / stop distances
@@ -158,14 +162,14 @@ def walk_forward(features: pd.DataFrame, labels: pd.Series, *, start_index: int,
 
     def train(block_start):
         fold = _train_fold(features, labels, windows[block_start], models, key, capacity, exit_targets, quantiles, half_life,
-                           meta, device, learn_regimes, forecast_targets)
+                           meta, device, learn_regimes, forecast_targets, forecast_options)
         with lock:
             done[0] += 1
             if progress:
                 progress(done[0], len(windows))
         return block_start, fold
 
-    pool = ThreadPoolExecutor(max_workers=max(1, min(WORKERS, len(windows))))
+    pool = ThreadPoolExecutor(max_workers=max(1, min(1 if forecast_options and forecast_options['kind'] != 'extra_trees' else WORKERS, len(windows))))
     futures = [pool.submit(train, block_start) for block_start in windows]
     try:
         trained = dict(future.result() for future in futures)

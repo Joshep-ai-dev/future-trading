@@ -11,7 +11,7 @@ export const bbDefaults: BacktestSettings['bb_reversal'] = {
 /** Mirrors server/strategies/ml/strategy.py MLSettings defaults. */
 export const mlDefaults: BacktestSettings['ml'] = {
   feature_groups:['returns','volatility','trend','volume','candles'],
-  models:{extra_trees:1},
+  models:{extra_trees:1},forecast_model:'extra_trees',sequence_lookback:100,sequence_epochs:30,
   horizon:24,forecast_target_fraction:.8,forecast_stop_buffer:1,take_profit_pct:1,stop_loss_pct:.65,take_profit_atr:1.5,stop_atr:1,atr_length:14,entry_threshold:.55,min_edge:.15,min_reward_cost:3,
   train_bars:6000,retrain_every:2000,trade_mode:'Both',reverse_on_signal:false,amount_per_trade:100,amount_unit:'percent',
   capacity:'light',exit_mode:'forecast',tp_quantile:.5,sl_quantile:.7,min_reward_risk:0,trailing:false,trail_start:.6,trail_noise:1,

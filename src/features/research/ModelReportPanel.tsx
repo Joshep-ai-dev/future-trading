@@ -21,7 +21,7 @@ export default function ModelReportPanel({report}:{report:ModelReport}){
   const costShare=report.medianTarget&&report.medianRoundTripCost?report.medianRoundTripCost/report.medianTarget:null;
   return <div className="model-report">
     {!!report.skippedTrainingBlocks&&<p className="model-note">{report.skippedTrainingBlocks} training blocks skipped because the data had only one outcome. No new entries were generated in those blocks. Later blocks train normally when outcomes vary.</p>}
-    {report.forecast&&<p className="model-note">Latest forecast over {report.forecast.horizon} candles: high {fmt(report.forecast.high,4)}, low {fmt(report.forecast.low,4)}, close {fmt(report.forecast.close,4)}. Tree agreement is not a calibrated win probability.</p>}
+    {report.forecast&&<p className="model-note">Latest forecast over {report.forecast.horizon} candles: high {fmt(report.forecast.high,4)}, low {fmt(report.forecast.low,4)}, close {fmt(report.forecast.close,4)}. Forecast direction scores are not calibrated win probabilities.</p>}
     {report.forecastErrors&&<p className="model-note">Unseen forecast mean absolute error: high {fmt(report.forecastErrors.highMaePct,3)}%, low {fmt(report.forecastErrors.lowMaePct,3)}%, close {fmt(report.forecastErrors.closeMaePct,3)}% of price, over {report.forecastErrors.samples} candles with complete future outcomes.</p>}
     <div className="model-kpis">
       <div><span>Out-of-sample accuracy</span><strong className={edge!=null&&edge>0?'positive':'negative'}>{pct(report.accuracy)}</strong><small>{report.exitMode==='forecast'?`Majority outcome ${fmt(baseline*100,1)}%`:'Random guessing ~ 33.3%'}{edge!=null&&` · ${edge>=0?'+':''}${fmt(edge*100,1)} pts`}</small></div>
