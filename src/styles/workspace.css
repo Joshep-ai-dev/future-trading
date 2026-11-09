@@ -609,3 +609,9 @@
   color: #8496b1;
   font-size: 12px;
 }
+
+.tune-result-actions input {
+  min-width: 0;
+  width: 210px;
+  max-width: 100%;
+}

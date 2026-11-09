@@ -27,7 +27,7 @@ class TradingEnv(gym.Env):
             raise ValueError('RL needs complete lookback candles and at least one following candle')
         self.random_start, self.episode_bars, self.liquidate_at_end = random_start, episode_bars, liquidate_at_end
         self.action_space = spaces.Discrete(3)  # target: flat, long, short
-        size = settings.lookback*self.features.shape[1]+6
+        size = settings.lookback*self.features.shape[1]+10
         self.observation_space = spaces.Box(-np.inf, np.inf, shape=(size,), dtype=np.float32)
         self.reset()
 
@@ -51,7 +51,13 @@ class TradingEnv(gym.Env):
     def observation(self) -> np.ndarray:
         p = self.position
         unrealized = 0. if p is None else (float(self.bars.close.iloc[self.t])-p['entry_price'])*p['direction']*p['quantity']/self.capital
-        state = [0. if p is None else p['direction'], unrealized,
+        price = float(self.bars.close.iloc[self.t])
+        # Portfolio and protective-stop state cannot be inferred from candles.
+        # Keep eligibility and cost as the last two fields for diagnostics.
+        state = [self.cash/self.capital-1., self.equity/self.capital-1.,
+                 0. if p is None else p['quantity']*price/self.capital,
+                 0. if p is None else p['direction']*(price-self.active_stop()[0])/price,
+                 0. if p is None else p['direction'], unrealized,
                  0. if p is None else min(10., (self.t-p['entry_index'])/100), self.drawdown,
                  float(np.isfinite(self.atr[self.t]) and self.atr[self.t] > self.cfg.min_atr),
                  2*self.fee+2*self.adverse/float(self.bars.close.iloc[self.t])]
@@ -188,3 +194,18 @@ class TradingEnv(gym.Env):
         bars = self.bars.reindex(diagnostics.index).join(diagnostics)
         position = None if self.position is None else {key: value for key, value in self.position.items() if key != 'entry_index'}
         return dict(bars=bars, trades=pd.DataFrame(self.trades), open_position=position, cash=float(self.cash), halted=self.halted)
+
+
+class TrainingEnv(TradingEnv):
+    """Learning adapter; account arithmetic stays identical to replay.
+
+    Random episodes liquidate at their end. This is a terminal portfolio,
+    not a time limit on a continuing position: PPO must not bootstrap a
+    fictitious future value from that liquidated terminal observation.
+    """
+
+    def step(self, action: int) -> tuple[np.ndarray, float, bool, bool, dict]:
+        observation, reward, terminated, truncated, info = super().step(action)
+        if truncated and self.liquidate_at_end:
+            terminated, truncated = True, False
+        return observation, 100.*reward, terminated, truncated, info

@@ -1,67 +1,641 @@
-import {useEffect,useState} from 'react';
-import {api} from '../../shared/api/api';
-import type {SavedForecastModel} from './ForecastPage';
-import ForecastPriceChart,{type PricePoint} from './ForecastPriceChart';
-import {retainNextForecast,retainObservedCloses,compareForecasts,type TimelineForecast} from './forecastTimeline';
-import {fmt} from '../../shared/types/types';
+import { useEffect, useState } from "react";
+import { api } from "../../shared/api/api";
+import type { SavedForecastModel } from "./ForecastPage";
+import ForecastPriceChart, { type PricePoint } from "./ForecastPriceChart";
+import {
+  retainNextForecast,
+  retainObservedCloses,
+  compareForecasts,
+  type TimelineForecast,
+} from "./forecastTimeline";
+import { fmt } from "../../shared/types/types";
 
-type Prediction={path?:PricePoint[];modelId?:string;model:string;timeframe:string;horizon:number;issuedAt:number;originTime:number;targetTime:number;originClose:number;predictedClose:number;predictedHigh:number;predictedLow:number;note:string};
-type Record={id:number;prediction:Prediction;actual:null|{close:number;high:number;low:number;closeAbsoluteError:number;baselineAbsoluteError:number;directionCorrect:boolean};status?:'pending'|'awaiting_data'|'verified'};
-const stamp=(time:number)=>new Date(time*1000).toISOString().replace('T',' ').slice(0,19);
+type Prediction = {
+  path?: PricePoint[];
+  modelId?: string;
+  model: string;
+  timeframe: string;
+  horizon: number;
+  issuedAt: number;
+  originTime: number;
+  targetTime: number;
+  originClose: number;
+  predictedClose: number;
+  predictedHigh: number;
+  predictedLow: number;
+  note: string;
+};
+type Record = {
+  id: number;
+  prediction: Prediction;
+  actual: null | {
+    close: number;
+    high: number;
+    low: number;
+    closeAbsoluteError: number;
+    baselineAbsoluteError: number;
+    directionCorrect: boolean;
+  };
+  status?: "pending" | "awaiting_data" | "verified";
+};
+const stamp = (time: number) =>
+  new Date(time * 1000).toISOString().replace("T", " ").slice(0, 19);
 
-export default function ForwardForecastPanel({selectedModel}:{selectedModel:SavedForecastModel}){
-  const [timeline,setTimeline]=useState<TimelineForecast[]>(()=>{try{const values=JSON.parse(sessionStorage.getItem(`silver.forecast.timeline.${selectedModel.id}`)||'[]');return Array.isArray(values)?values.filter(p=>[p.time,p.close,p.originTime,p.originClose,p.issuedAt].every(Number.isFinite)&&p.issuedAt<p.time&&(p.actualClose==null||Number.isFinite(p.actualClose))).slice(-500):[];}catch{return [];}});
-  useEffect(()=>{try{sessionStorage.setItem(`silver.forecast.timeline.${selectedModel.id}`,JSON.stringify(timeline));}catch{/* Keep the in-memory comparison when browser storage is full. */}},[timeline,selectedModel.id]);
-  const [quote,setQuote]=useState<{price:number;time:number;source:string;stale:boolean}|null>(null),[quoteError,setQuoteError]=useState(''),[ticks,setTicks]=useState<PricePoint[]>([]);
-  const [viewMode,setViewMode]=useState<'rolling'|'saved'>('rolling'),[autoUpdate,setAutoUpdate]=useState(true);
-  const [live,setLive]=useState<{history:PricePoint[];actual:PricePoint[];prediction:Prediction;checkedAt:number}|null>(null),[liveBusy,setLiveBusy]=useState(false),[liveError,setLiveError]=useState('');
-  const [selectedRun,setSelectedRun]=useState<number|null>(null),[chart,setChart]=useState<{history:PricePoint[];actual:PricePoint[];prediction:Prediction}|null>(null);
-  const [records,setRecords]=useState<Record[]>([]),[busy,setBusy]=useState(false),[checking,setChecking]=useState(false),[error,setError]=useState('');
-  useEffect(()=>{let active=true;const load=()=>{void api<Record[]>('/api/forecast/forward').then(rows=>{if(active)setRecords(rows);}).catch(error=>{if(active)setError(String(error));});};load();const timer=window.setInterval(load,30000);return()=>{active=false;window.clearInterval(timer);};},[]);
-  async function check(){setChecking(true);try{setRecords(await api<Record[]>('/api/forecast/forward'));setError('');}catch(error){setError(String(error));}finally{setChecking(false);}}
-  async function issue(){setBusy(true);setError('');try{const row=await api<Record>('/api/forecast/forward',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model_id:selectedModel.id})});setRecords(current=>[row,...current.filter(item=>item.id!==row.id)].slice(0,100));setSelectedRun(row.id);setChart(null);}catch(error){setError(String(error));}finally{setBusy(false);}}
-  useEffect(()=>{
-    if(viewMode!=='rolling')return;
-    let current=true;let timer:number|undefined;const controller=new AbortController();
-    async function update(){
+export default function ForwardForecastPanel({
+  selectedModel,
+}: {
+  selectedModel: SavedForecastModel;
+}) {
+  const [timeline, setTimeline] = useState<TimelineForecast[]>(() => {
+    try {
+      const values = JSON.parse(
+        sessionStorage.getItem(
+          `silver.forecast.timeline.${selectedModel.id}`,
+        ) || "[]",
+      );
+      return Array.isArray(values)
+        ? values
+            .filter(
+              (p) =>
+                [
+                  p.time,
+                  p.close,
+                  p.originTime,
+                  p.originClose,
+                  p.issuedAt,
+                ].every(Number.isFinite) &&
+                p.issuedAt < p.time &&
+                (p.actualClose == null || Number.isFinite(p.actualClose)),
+            )
+            .slice(-500)
+        : [];
+    } catch {
+      return [];
+    }
+  });
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(
+        `silver.forecast.timeline.${selectedModel.id}`,
+        JSON.stringify(timeline),
+      );
+    } catch {
+      /* Keep the in-memory comparison when browser storage is full. */
+    }
+  }, [timeline, selectedModel.id]);
+  const [quote, setQuote] = useState<{
+      price: number;
+      time: number;
+      source: string;
+      stale: boolean;
+    } | null>(null),
+    [quoteError, setQuoteError] = useState(""),
+    [ticks, setTicks] = useState<PricePoint[]>([]);
+  const [viewMode, setViewMode] = useState<"rolling" | "saved">("rolling"),
+    [autoUpdate, setAutoUpdate] = useState(true);
+  const [live, setLive] = useState<{
+      history: PricePoint[];
+      actual: PricePoint[];
+      prediction: Prediction;
+      checkedAt: number;
+    } | null>(null),
+    [liveBusy, setLiveBusy] = useState(false),
+    [liveError, setLiveError] = useState("");
+  const [selectedRun, setSelectedRun] = useState<number | null>(null),
+    [chart, setChart] = useState<{
+      history: PricePoint[];
+      actual: PricePoint[];
+      prediction: Prediction;
+    } | null>(null);
+  const [records, setRecords] = useState<Record[]>([]),
+    [busy, setBusy] = useState(false),
+    [checking, setChecking] = useState(false),
+    [error, setError] = useState("");
+  useEffect(() => {
+    let active = true;
+    const load = () => {
+      void api<Record[]>("/api/forecast/forward")
+        .then((rows) => {
+          if (active) setRecords(rows);
+        })
+        .catch((error) => {
+          if (active) setError(String(error));
+        });
+    };
+    load();
+    const timer = window.setInterval(load, 30000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, []);
+  async function check() {
+    setChecking(true);
+    try {
+      setRecords(await api<Record[]>("/api/forecast/forward"));
+      setError("");
+    } catch (error) {
+      setError(String(error));
+    } finally {
+      setChecking(false);
+    }
+  }
+  async function issue() {
+    setBusy(true);
+    setError("");
+    try {
+      const row = await api<Record>("/api/forecast/forward", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model_id: selectedModel.id }),
+      });
+      setRecords((current) =>
+        [row, ...current.filter((item) => item.id !== row.id)].slice(0, 100),
+      );
+      setSelectedRun(row.id);
+      setChart(null);
+    } catch (error) {
+      setError(String(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+  useEffect(() => {
+    if (viewMode !== "rolling") return;
+    let current = true;
+    let timer: number | undefined;
+    const controller = new AbortController();
+    async function update() {
       setLiveBusy(true);
-      try{const value=await api<{history:PricePoint[];actual:PricePoint[];prediction:Prediction;checkedAt:number}>(`/api/forecast/models/${selectedModel.id}/live`,{signal:controller.signal});if(current){setLive(value);setTimeline(previous=>retainNextForecast(retainObservedCloses(previous,value.history),value.prediction));setLiveError('');}}
-      catch(error){if(current)setLiveError(String(error));}
-      finally{if(current){setLiveBusy(false);if(autoUpdate)timer=window.setTimeout(()=>void update(),15000);}}
+      try {
+        const value = await api<{
+          history: PricePoint[];
+          actual: PricePoint[];
+          prediction: Prediction;
+          checkedAt: number;
+        }>(`/api/forecast/models/${selectedModel.id}/live`, {
+          signal: controller.signal,
+        });
+        if (current) {
+          setLive(value);
+          setTimeline((previous) =>
+            retainNextForecast(
+              retainObservedCloses(previous, value.history),
+              value.prediction,
+            ),
+          );
+          setLiveError("");
+        }
+      } catch (error) {
+        if (current) setLiveError(String(error));
+      } finally {
+        if (current) {
+          setLiveBusy(false);
+          if (autoUpdate) timer = window.setTimeout(() => void update(), 15000);
+        }
+      }
     }
-    void update();return()=>{current=false;controller.abort();if(timer)window.clearTimeout(timer);};
-  },[selectedModel.id,viewMode,autoUpdate]);
-  useEffect(()=>{
-    if(viewMode!=='rolling')return;
-    let current=true;let timer:number|undefined;const controller=new AbortController();
-    async function updateQuote(){
-      try{const value=await api<{price:number;time:number;source:string;stale:boolean}>('/api/forecast/quote',{signal:controller.signal});if(current){setQuote(value);setQuoteError('');if(!value.stale)setTicks(previous=>[...previous.filter(point=>point.time<value.time),{time:value.time,close:value.price}].slice(-240));}}
-      catch(error){if(current)setQuoteError(String(error));}
-      finally{if(current&&autoUpdate)timer=window.setTimeout(()=>void updateQuote(),5000);}
+    void update();
+    return () => {
+      current = false;
+      controller.abort();
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [selectedModel.id, viewMode, autoUpdate]);
+  useEffect(() => {
+    if (viewMode !== "rolling") return;
+    let current = true;
+    let timer: number | undefined;
+    const controller = new AbortController();
+    async function updateQuote() {
+      try {
+        const value = await api<{
+          price: number;
+          time: number;
+          source: string;
+          stale: boolean;
+        }>("/api/forecast/quote", { signal: controller.signal });
+        if (current) {
+          setQuote(value);
+          setQuoteError("");
+          if (!value.stale)
+            setTicks((previous) =>
+              [
+                ...previous.filter((point) => point.time < value.time),
+                { time: value.time, close: value.price },
+              ].slice(-240),
+            );
+        }
+      } catch (error) {
+        if (current) setQuoteError(String(error));
+      } finally {
+        if (current && autoUpdate)
+          timer = window.setTimeout(() => void updateQuote(), 5000);
+      }
     }
-    void updateQuote();return()=>{current=false;controller.abort();if(timer)window.clearTimeout(timer);};
-  },[viewMode,autoUpdate]);
-  const visible=records.filter(row=>row.prediction.modelId===selectedModel.id);
-  const active=visible.find(row=>row.id===selectedRun)||visible[0];
-  useEffect(()=>{if(!active){setChart(null);return;}let current=true;const load=()=>{void api<{history:PricePoint[];actual:PricePoint[];prediction:Prediction}>(`/api/forecast/forward/${active.id}/chart`).then(value=>{if(current)setChart(value);}).catch(error=>{if(current)setError(String(error));});};load();const timer=window.setInterval(load,30000);return()=>{current=false;window.clearInterval(timer);};},[active?.id]);
-  const display=viewMode==='rolling'?live:chart;
-  const prediction=display?.prediction;
-  const closedHistory=viewMode==='rolling'?[...new Map([...timeline.filter(point=>point.actualClose!=null).map(point=>({time:point.time,close:point.actualClose!})),...(live?.history||[])].map(point=>[point.time,point])).values()].sort((a,b)=>a.time-b.time):(chart?.history||[]);
-  const comparisons=compareForecasts(timeline,live?.history||[]);
-  const matched=comparisons.filter(point=>point.error!=null);
-  const comparisonMae=matched.length?matched.reduce((sum,point)=>sum+Math.abs(point.error!),0)/matched.length:null;
-  const pastPredictions=timeline.filter(point=>live&&point.time<=live.prediction.originTime);
-  return <section className="forecast-live-panel" aria-label="Live forward prediction tests"><div className="forecast-result-heading"><div><h2>Live price forecast</h2><p className="setup-note">Uses {selectedModel.name} without retraining. Watch a rolling forecast as new candles arrive, or save a fixed prediction for later verification.</p></div><button type="button" disabled={busy} onClick={()=>void issue()}>{busy?'Refreshing and predicting...':'Predict ahead & save'}</button></div>
-    <div className="forecast-result-heading"><div className="chip-group" role="group" aria-label="Prediction view"><button type="button" aria-pressed={viewMode==='rolling'} onClick={()=>setViewMode('rolling')}>Auto-updating forecast</button><button type="button" aria-pressed={viewMode==='saved'} onClick={()=>setViewMode('saved')}>Saved test snapshot</button></div>{viewMode==='rolling'&&<label className="forecast-auto-update"><input type="checkbox" checked={autoUpdate} onChange={event=>setAutoUpdate(event.target.checked)}/><span><strong>Auto update</strong><small>Market price: 5s | Forecast check: 15s</small></span></label>}</div>
-    {viewMode==='rolling'&&<p className="setup-note" role="status">{liveBusy?'Refreshing market data and recalculating...':live?`Last checked ${stamp(live.checkedAt)} UTC. Input candle closed ${stamp(live.prediction.originTime)} UTC.`:'Loading forecast...'} The forecast updates when a new {selectedModel.config.timeframe} candle closes; it uses completed candles, not live ticks.</p>}
-    {viewMode==='rolling'&&quoteError&&<p className="notice" role="status">Live market feed unavailable. {quote?`Last received price: ${fmt(quote.price,4)} at ${stamp(quote.time)} UTC.`:'No live price received yet.'}</p>}
-    {viewMode==='rolling'&&quote&&<p className="setup-note">{quote.source} | Quote time {stamp(quote.time)} UTC{quote.stale||quoteError?' | STALE - not a current quote':''}. Live quotes are display-only; predictions use completed candles.</p>}
-    {viewMode==='rolling'&&liveError&&<p className="error" role="alert">{liveError} {live?'The displayed forecast is from the last successful update.':''}</p>}
-    {prediction&&!prediction.path?.length&&<p className="notice">This saved model predicts only the final price. Train a new model to enable a forecast curve with one predicted close per future candle.</p>}
-    {display&&prediction&&<><div className="forecast-quote-header"><div className="forecast-primary-quote"><span>{viewMode==='rolling'?'Live market price':'Start price'} <small>USDT</small></span><strong>{fmt(viewMode==='rolling'&&quote?quote.price:prediction.originClose,4)}</strong><small>{viewMode==='rolling'&&quote?`${stamp(quote.time)} UTC${quote.stale||quoteError?' | Stale quote':''}`:`${stamp(prediction.originTime)} UTC`}</small></div><div className="forecast-estimate-quote"><span>Forecast end price</span><strong>{fmt(prediction.predictedClose,4)}</strong><small>{stamp(prediction.targetTime)} UTC</small></div><div className={`forecast-change ${(prediction.predictedClose-prediction.originClose)>=0?'is-up':'is-down'}`}><strong>{(prediction.predictedClose-prediction.originClose)>=0?'+':''}{fmt((prediction.predictedClose/prediction.originClose-1)*100,2)}%</strong><small>vs last closed price</small></div><details className="forecast-quote-details"><summary>Forecast details</summary><dl><div><dt>Last closed price</dt><dd>{fmt(prediction.originClose,4)}</dd></div><div><dt>Next predicted close</dt><dd>{prediction.path?.length?fmt(prediction.path[0].close,4):'-'}</dd></div><div><dt>Next close (UTC)</dt><dd>{prediction.path?.length?stamp(prediction.path[0].time):'-'}</dd></div><div><dt>Actual end price</dt><dd>{viewMode==='saved'&&active?.actual?fmt(active.actual.close,4):'Awaiting target'}</dd></div></dl></details></div><ForecastPriceChart history={closedHistory} actual={viewMode==='rolling'?[...display.actual,...ticks.filter(point=>point.time>prediction.originTime&&point.time<=prediction.targetTime)]:display.actual} forecast={prediction} predictions={viewMode==='rolling'?pastPredictions:[]}/></>}
-    {viewMode==='rolling'&&timeline.length>0&&<section className="forecast-sequential-comparison"><div className="forecast-result-heading"><h3>Prediction vs actual - in time order</h3><span>{matched.length} matched closes | MAE {comparisonMae==null?'-':fmt(comparisonMae,4)} USDT</span></div><p className="setup-note">The solid blue historical curve keeps the first next-candle forecast made before each target. Actual closed-candle prices appear at the same timestamps as they arrive. The solid blue future curve shows the latest full horizon. Collected comparisons survive refreshes in this browser tab; save a snapshot for a permanent test record.</p><div className="table-scroll"><table><thead><tr><th>Target close (UTC)</th><th>Predicted price</th><th>Actual close</th><th>Prediction minus actual</th><th>Issued (UTC)</th></tr></thead><tbody>{comparisons.slice(-50).map(point=><tr key={point.time}><td>{stamp(point.time)}</td><td>{fmt(point.close,4)}</td><td>{point.actual==null?'Awaiting completed candle':fmt(point.actual,4)}</td><td>{point.error==null?'-':fmt(point.error,4)}</td><td>{stamp(point.issuedAt)}</td></tr>)}</tbody></table></div></section>}
-    {busy&&<p role="status">Refreshing public silver history and using saved model weights. A prediction is saved only if its target close is still in the future.</p>}{error&&<p className="error" role="alert">{error}</p>}
-    <div className="forecast-result-heading forecast-saved-heading"><h3>Saved forward tests</h3><button type="button" className="secondary" disabled={checking} onClick={()=>void check()}>{checking?'Checking...':'Check outcomes'}</button></div><p className="setup-note">Checks every 30 seconds while this tab is open. After a target closes, missing market data triggers a refresh; verification waits for every candle in the horizon. Previously saved predictions are never retrained.</p>
-    {!visible.length?<p>No saved predictions yet.</p>:<div className="table-scroll"><table><thead><tr>{['Test / model','Saved (UTC)','Start candle close (UTC)','Target close (UTC)','Start price','Predicted end price','Actual end price','Predicted high / low','Actual high / low','Error / baseline','Status'].map(label=><th key={label}>{label}</th>)}</tr></thead><tbody>{visible.map(row=><tr key={row.id} onClick={()=>{setSelectedRun(row.id);setViewMode('saved');}} title={row.prediction.note}><td><button type="button" className="trade-link" onClick={()=>{setSelectedRun(row.id);setViewMode('saved');}}>#{row.id}</button> {row.prediction.model.toUpperCase()} | {row.prediction.timeframe}</td><td>{stamp(row.prediction.issuedAt)}</td><td>{stamp(row.prediction.originTime)}</td><td>{stamp(row.prediction.targetTime)}</td><td>{fmt(row.prediction.originClose,3)}</td><td>{fmt(row.prediction.predictedClose,3)}</td><td>{row.actual?fmt(row.actual.close,3):'Pending'}</td><td>{fmt(row.prediction.predictedHigh,3)} / {fmt(row.prediction.predictedLow,3)}</td><td>{row.actual?`${fmt(row.actual.high,3)} / ${fmt(row.actual.low,3)}`:'Pending'}</td><td>{row.actual?`${fmt(row.actual.closeAbsoluteError,4)} / ${fmt(row.actual.baselineAbsoluteError,4)}`:'-'}</td><td>{row.actual?`Verified | direction ${row.actual.directionCorrect?'correct':'incorrect'}`:row.status==='awaiting_data'?'Awaiting complete candles':'Waiting for target close'}</td></tr>)}</tbody></table></div>}
-  </section>;
+    void updateQuote();
+    return () => {
+      current = false;
+      controller.abort();
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [viewMode, autoUpdate]);
+  const visible = records.filter(
+    (row) => row.prediction.modelId === selectedModel.id,
+  );
+  const active = visible.find((row) => row.id === selectedRun) || visible[0];
+  useEffect(() => {
+    if (!active) {
+      setChart(null);
+      return;
+    }
+    let current = true;
+    const load = () => {
+      void api<{
+        history: PricePoint[];
+        actual: PricePoint[];
+        prediction: Prediction;
+      }>(`/api/forecast/forward/${active.id}/chart`)
+        .then((value) => {
+          if (current) setChart(value);
+        })
+        .catch((error) => {
+          if (current) setError(String(error));
+        });
+    };
+    load();
+    const timer = window.setInterval(load, 30000);
+    return () => {
+      current = false;
+      window.clearInterval(timer);
+    };
+  }, [active?.id]);
+  const display = viewMode === "rolling" ? live : chart;
+  const prediction = display?.prediction;
+  const closedHistory =
+    viewMode === "rolling"
+      ? [
+          ...new Map(
+            [
+              ...timeline
+                .filter((point) => point.actualClose != null)
+                .map((point) => ({
+                  time: point.time,
+                  close: point.actualClose!,
+                })),
+              ...(live?.history || []),
+            ].map((point) => [point.time, point]),
+          ).values(),
+        ].sort((a, b) => a.time - b.time)
+      : chart?.history || [];
+  const comparisons = compareForecasts(timeline, live?.history || []);
+  const matched = comparisons.filter((point) => point.error != null);
+  const comparisonMae = matched.length
+    ? matched.reduce((sum, point) => sum + Math.abs(point.error!), 0) /
+      matched.length
+    : null;
+  const pastPredictions = timeline.filter(
+    (point) => live && point.time <= live.prediction.originTime,
+  );
+  return (
+    <section
+      className='forecast-live-panel'
+      aria-label='Live forward prediction tests'
+    >
+      <div className='forecast-result-heading'>
+        <div>
+          <h2>Live price forecast</h2>
+          <p className='setup-note'>
+            Uses {selectedModel.name} without retraining. Watch a rolling
+            forecast as new candles arrive, or save a fixed prediction for later
+            verification.
+          </p>
+        </div>
+        <button type='button' disabled={busy} onClick={() => void issue()}>
+          {busy ? "Refreshing and predicting..." : "Predict ahead & save"}
+        </button>
+      </div>
+      <div className='forecast-result-heading'>
+        <div className='chip-group' role='group' aria-label='Prediction view'>
+          <button
+            type='button'
+            aria-pressed={viewMode === "rolling"}
+            onClick={() => setViewMode("rolling")}
+          >
+            Auto-updating forecast
+          </button>
+          <button
+            type='button'
+            aria-pressed={viewMode === "saved"}
+            onClick={() => setViewMode("saved")}
+          >
+            Saved test snapshot
+          </button>
+        </div>
+        {viewMode === "rolling" && (
+          <label className='forecast-auto-update'>
+            <input
+              type='checkbox'
+              checked={autoUpdate}
+              onChange={(event) => setAutoUpdate(event.target.checked)}
+            />
+            <span>
+              <strong>Auto update</strong>
+              <small>Market price: 5s | Forecast check: 15s</small>
+            </span>
+          </label>
+        )}
+      </div>
+      {viewMode === "rolling" && (
+        <p className='setup-note' role='status'>
+          {liveBusy
+            ? "Refreshing market data and recalculating..."
+            : live
+              ? `Last checked ${stamp(live.checkedAt)} UTC. Input candle closed ${stamp(live.prediction.originTime)} UTC.`
+              : "Loading forecast..."}{" "}
+          The forecast updates when a new {selectedModel.config.timeframe}{" "}
+          candle closes; it uses completed candles, not live ticks.
+        </p>
+      )}
+      {viewMode === "rolling" && quoteError && (
+        <p className='notice' role='status'>
+          Live market feed unavailable.{" "}
+          {quote
+            ? `Last received price: ${fmt(quote.price, 4)} at ${stamp(quote.time)} UTC.`
+            : "No live price received yet."}
+        </p>
+      )}
+      {viewMode === "rolling" && quote && (
+        <p className='setup-note'>
+          {quote.source} | Quote time {stamp(quote.time)} UTC
+          {quote.stale || quoteError ? " | STALE - not a current quote" : ""}.
+          Live quotes are display-only; predictions use completed candles.
+        </p>
+      )}
+      {viewMode === "rolling" && liveError && (
+        <p className='error' role='alert'>
+          {liveError}{" "}
+          {live
+            ? "The displayed forecast is from the last successful update."
+            : ""}
+        </p>
+      )}
+      {prediction && !prediction.path?.length && (
+        <p className='notice'>
+          This saved model predicts only the final price. Train a new model to
+          enable a forecast curve with one predicted close per future candle.
+        </p>
+      )}
+      {display && prediction && (
+        <>
+          <div className='forecast-quote-header'>
+            <div className='forecast-primary-quote'>
+              <span>
+                {viewMode === "rolling" ? "Live market price" : "Start price"}{" "}
+                <small>USDT</small>
+              </span>
+              <strong>
+                {fmt(
+                  viewMode === "rolling" && quote
+                    ? quote.price
+                    : prediction.originClose,
+                  4,
+                )}
+              </strong>
+              <small>
+                {viewMode === "rolling" && quote
+                  ? `${stamp(quote.time)} UTC${quote.stale || quoteError ? " | Stale quote" : ""}`
+                  : `${stamp(prediction.originTime)} UTC`}
+              </small>
+            </div>
+            <div className='forecast-estimate-quote'>
+              <span>Forecast end price</span>
+              <strong>{fmt(prediction.predictedClose, 4)}</strong>
+              <small>{stamp(prediction.targetTime)} UTC</small>
+            </div>
+            <div
+              className={`forecast-change ${prediction.predictedClose - prediction.originClose >= 0 ? "is-up" : "is-down"}`}
+            >
+              <strong>
+                {prediction.predictedClose - prediction.originClose >= 0
+                  ? "+"
+                  : ""}
+                {fmt(
+                  (prediction.predictedClose / prediction.originClose - 1) *
+                    100,
+                  2,
+                )}
+                %
+              </strong>
+              <small>vs last closed price</small>
+            </div>
+            <details className='forecast-quote-details'>
+              <summary>Forecast details</summary>
+              <dl>
+                <div>
+                  <dt>Last closed price</dt>
+                  <dd>{fmt(prediction.originClose, 4)}</dd>
+                </div>
+                <div>
+                  <dt>Next predicted close</dt>
+                  <dd>
+                    {prediction.path?.length
+                      ? fmt(prediction.path[0].close, 4)
+                      : "-"}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Next close (UTC)</dt>
+                  <dd>
+                    {prediction.path?.length
+                      ? stamp(prediction.path[0].time)
+                      : "-"}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Actual end price</dt>
+                  <dd>
+                    {viewMode === "saved" && active?.actual
+                      ? fmt(active.actual.close, 4)
+                      : "Awaiting target"}
+                  </dd>
+                </div>
+              </dl>
+            </details>
+          </div>
+          <ForecastPriceChart
+            history={closedHistory}
+            actual={
+              viewMode === "rolling"
+                ? [
+                    ...display.actual,
+                    ...ticks.filter(
+                      (point) =>
+                        point.time > prediction.originTime &&
+                        point.time <= prediction.targetTime,
+                    ),
+                  ]
+                : display.actual
+            }
+            forecast={prediction}
+            predictions={viewMode === "rolling" ? pastPredictions : []}
+          />
+        </>
+      )}
+      {viewMode === "rolling" && timeline.length > 0 && (
+        <section className='forecast-sequential-comparison'>
+          <div className='forecast-result-heading'>
+            <h3>Prediction vs actual - in time order</h3>
+            <span>
+              {matched.length} matched closes | MAE{" "}
+              {comparisonMae == null ? "-" : fmt(comparisonMae, 4)} USDT
+            </span>
+          </div>
+          <p className='setup-note'>
+            The solid blue historical curve keeps the first next-candle forecast
+            made before each target. Actual closed-candle prices appear at the
+            same timestamps as they arrive. The solid blue future curve shows
+            the latest full horizon. Collected comparisons survive refreshes in
+            this browser tab; save a snapshot for a permanent test record.
+          </p>
+          <div className='table-scroll'>
+            <table>
+              <thead>
+                <tr>
+                  <th>Target close (UTC)</th>
+                  <th>Predicted price</th>
+                  <th>Actual close</th>
+                  <th>Prediction minus actual</th>
+                  <th>Issued (UTC)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {comparisons.slice(-50).map((point) => (
+                  <tr key={point.time}>
+                    <td>{stamp(point.time)}</td>
+                    <td>{fmt(point.close, 4)}</td>
+                    <td>
+                      {point.actual == null
+                        ? "Awaiting completed candle"
+                        : fmt(point.actual, 4)}
+                    </td>
+                    <td>{point.error == null ? "-" : fmt(point.error, 4)}</td>
+                    <td>{stamp(point.issuedAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+      {busy && (
+        <p role='status'>
+          Refreshing public silver history and using saved model weights. A
+          prediction is saved only if its target close is still in the future.
+        </p>
+      )}
+      {error && (
+        <p className='error' role='alert'>
+          {error}
+        </p>
+      )}
+      <div className='forecast-result-heading forecast-saved-heading'>
+        <h3>Saved forward tests</h3>
+        <button
+          type='button'
+          className='secondary'
+          disabled={checking}
+          onClick={() => void check()}
+        >
+          {checking ? "Checking..." : "Check outcomes"}
+        </button>
+      </div>
+      <p className='setup-note'>
+        Checks every 30 seconds while this tab is open. After a target closes,
+        missing market data triggers a refresh; verification waits for every
+        candle in the horizon. Previously saved predictions are never retrained.
+      </p>
+      {!visible.length ? (
+        <p>No saved predictions yet.</p>
+      ) : (
+        <div className='table-scroll'>
+          <table>
+            <thead>
+              <tr>
+                {[
+                  "Test / model",
+                  "Saved (UTC)",
+                  "Start candle close (UTC)",
+                  "Target close (UTC)",
+                  "Start price",
+                  "Predicted end price",
+                  "Actual end price",
+                  "Predicted high / low",
+                  "Actual high / low",
+                  "Error / baseline",
+                  "Status",
+                ].map((label) => (
+                  <th key={label}>{label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map((row) => (
+                <tr
+                  key={row.id}
+                  onClick={() => {
+                    setSelectedRun(row.id);
+                    setViewMode("saved");
+                  }}
+                  title={row.prediction.note}
+                >
+                  <td>
+                    <button
+                      type='button'
+                      className='trade-link'
+                      onClick={() => {
+                        setSelectedRun(row.id);
+                        setViewMode("saved");
+                      }}
+                    >
+                      #{row.id}
+                    </button>{" "}
+                    {row.prediction.model.toUpperCase()} |{" "}
+                    {row.prediction.timeframe}
+                  </td>
+                  <td>{stamp(row.prediction.issuedAt)}</td>
+                  <td>{stamp(row.prediction.originTime)}</td>
+                  <td>{stamp(row.prediction.targetTime)}</td>
+                  <td>{fmt(row.prediction.originClose, 3)}</td>
+                  <td>{fmt(row.prediction.predictedClose, 3)}</td>
+                  <td>{row.actual ? fmt(row.actual.close, 3) : "Pending"}</td>
+                  <td>
+                    {fmt(row.prediction.predictedHigh, 3)} /{" "}
+                    {fmt(row.prediction.predictedLow, 3)}
+                  </td>
+                  <td>
+                    {row.actual
+                      ? `${fmt(row.actual.high, 3)} / ${fmt(row.actual.low, 3)}`
+                      : "Pending"}
+                  </td>
+                  <td>
+                    {row.actual
+                      ? `${fmt(row.actual.closeAbsoluteError, 4)} / ${fmt(row.actual.baselineAbsoluteError, 4)}`
+                      : "-"}
+                  </td>
+                  <td>
+                    {row.actual
+                      ? `Verified | direction ${row.actual.directionCorrect ? "correct" : "incorrect"}`
+                      : row.status === "awaiting_data"
+                        ? "Awaiting complete candles"
+                        : "Waiting for target close"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
 }

@@ -64,6 +64,7 @@ def run_rl_backtest(frame: pd.DataFrame, settings: RLSettings, *, initial_capita
                             trainedBars=sum(f['bars'] for f in folds), accuracy=None, importance={},
                             labelBalance=dict(long=0., none=0., short=0.), blockedByCost=0,
                             medianTarget=None, medianRoundTripCost=None,
-                            message=('No checkpoint passed past validation; the policy stayed flat.' if folds and rejected == len(folds)
-                                     else 'Only checkpoints beating cash after costs with enough validation trades can open positions.'))
+                            message=('Insufficient past training history; the policy stayed flat.' if not folds else
+                                     'No policy passed past selection and confirmation; the policy stayed flat.' if rejected == len(folds) else
+                                     'Only policies passing past selection and confirmation can open positions. Each block retrains on earlier candles.'))
     return result

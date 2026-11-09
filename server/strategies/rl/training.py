@@ -13,14 +13,14 @@ import numpy as np
 import pandas as pd
 
 from server.strategies.fine_tuning import _score
-from server.strategies.rl.environment import TradingEnv
+from server.strategies.rl.environment import TradingEnv, TrainingEnv
 from server.strategies.rl.features import regime_breakdown
 from server.strategies.rl.settings import RLSettings
 
 MODEL_ROOT = Path(__file__).resolve().parents[3]/'data'/'rl_models'
 TRAIN_LOCK = threading.RLock()
 CACHE: OrderedDict = OrderedDict()
-VERSION = 'ppo-target-position-v5-market-context-risk-ranking'
+VERSION = 'ppo-v6-portfolio-state-confirmation-scaled-reward'
 
 
 class CashPolicy:
@@ -52,6 +52,8 @@ class Normalizer:
 def checkpoint_rejection(metrics: dict) -> str | None:
     if not all(np.isfinite(metrics[key]) for key in ('netPnl', 'winRate', 'maxDrawdownPct', 'trades')):
         return 'Invalid validation metrics'
+    if not np.isfinite(metrics.get('returnPct', 0.)):
+        return 'Invalid validation return'
     if metrics.get('halted', False):
         return 'Validation hit the drawdown risk limit'
     if metrics['netPnl'] <= 0:
@@ -67,7 +69,7 @@ def checkpoint_rank(metrics: dict) -> tuple:
     # Return and drawdown are both percentage points, with a 1-point floor
     # so a tiny measured drawdown cannot dominate checkpoint selection.
     risk_return = metrics.get('returnPct', 0.)/max(1., abs(metrics['maxDrawdownPct'])) if accepted else 0.
-    return (accepted, risk_return, profit, metrics['maxDrawdownPct'], metrics['winRate'] if accepted else 0.,
+    return (accepted, risk_return, profit, -abs(metrics['maxDrawdownPct']), metrics['winRate'] if accepted else 0.,
             0 if accepted else -metrics['trades'])
 
 
@@ -98,10 +100,12 @@ def train_policy(bars: pd.DataFrame, features: pd.DataFrame, atr: np.ndarray, se
     if len(bars) < 500:
         raise ValueError('PPO needs at least 500 historical candles before evaluation')
     split = int(len(bars)*.8)
+    confirmation_start = int(len(bars)*.9)
     if len(bars)-split < 2 or split <= settings.lookback:
         raise ValueError('Not enough candles for separate PPO training and validation')
     fingerprint = dict(version=VERSION, settings=asdict(settings), execution=execution,
                        columns=list(features.columns),
+                       atr=hashlib.sha256(np.asarray(atr, dtype=np.float64).tobytes()).hexdigest(),
                        candles=hashlib.sha256(pd.util.hash_pandas_object(bars, index=True).values.tobytes()).hexdigest(),
                        features=hashlib.sha256(pd.util.hash_pandas_object(features, index=True).values.tobytes()).hexdigest())
     key = hashlib.sha256(json.dumps(fingerprint, sort_keys=True).encode()).hexdigest()
@@ -119,16 +123,23 @@ def train_policy(bars: pd.DataFrame, features: pd.DataFrame, atr: np.ndarray, se
         else:
             scaler = Normalizer.fit(features.iloc[:split].to_numpy(float))
             values = scaler.transform(features.to_numpy(float))
-            baseline = evaluate(CashPolicy(), bars, values, atr, settings, execution, split-1)
-            env = TradingEnv(bars.iloc[:split], values[:split], atr[:split], settings,
-                             random_start=True, episode_bars=512, **execution)
+            # The final tenth is never consulted during checkpoint selection.
+            selection_bars = bars.iloc[:confirmation_start]
+            selection_values, selection_atr = values[:confirmation_start], atr[:confirmation_start]
+            baseline = evaluate(CashPolicy(), selection_bars, selection_values, selection_atr,
+                                settings, execution, split-1)
+            env = TrainingEnv(bars.iloc[:split], values[:split], atr[:split], settings,
+                             random_start=True, episode_bars=min(512, max(64, (split-settings.lookback)//4)),
+                             **execution)
+            # Portfolio returns are tiny at candle frequency. Scale only the
+            # optimizer reward; execution, reported P&L and penalties stay intact.
             # Small MLP updates are much faster with a bounded CPU thread count.
             previous_threads = torch.get_num_threads()
             try:
                 torch.set_num_threads(2)
                 model = PPO('MlpPolicy', env, learning_rate=settings.learning_rate, n_steps=256, batch_size=64,
-                            n_epochs=5, gamma=.99, seed=settings.seed, device='cpu', verbose=0,
-                            policy_kwargs=dict(net_arch=[32, 32]))
+                            n_epochs=10, gamma=.995, gae_lambda=.95, target_kl=.02, ent_coef=.005, seed=settings.seed, device='cpu', verbose=0,
+                            policy_kwargs=dict(net_arch=dict(pi=[64, 64], vf=[64, 64])))
                 checkpoints, best, best_state = [], baseline, None
                 selected_steps = None
                 best_attempt = None
@@ -139,7 +150,7 @@ def train_policy(bars: pd.DataFrame, features: pd.DataFrame, atr: np.ndarray, se
                     chunk = min(2048, max(256, remaining))
                     model.learn(total_timesteps=chunk, reset_num_timesteps=number == 0)
                     trained_steps = int(model.num_timesteps)
-                    metrics = evaluate(model, bars, values, atr, settings, execution, split-1)
+                    metrics = evaluate(model, selection_bars, selection_values, selection_atr, settings, execution, split-1)
                     reason = checkpoint_rejection(metrics)
                     checkpoints.append(dict(steps=int(model.num_timesteps), metrics=metrics, accepted=reason is None, reason=reason))
                     if best_attempt is None or checkpoint_rank(metrics) > checkpoint_rank(best_attempt):
@@ -153,14 +164,26 @@ def train_policy(bars: pd.DataFrame, features: pd.DataFrame, atr: np.ndarray, se
                     model.policy.load_state_dict(best_state)
             finally:
                 torch.set_num_threads(previous_threads)
+            confirmation, confirmation_reason = None, None
+            if best_state is not None:
+                confirmation = evaluate(model, bars, values, atr, settings, execution, confirmation_start-1)
+                confirmation_reason = checkpoint_rejection(confirmation)
+            accepted = best_state is not None and confirmation_reason is None
             metadata = dict(key=key, algorithm='PPO', trainStart=bars.index[0].isoformat(),
                             trainEnd=bars.index[split-1].isoformat(), validationStart=bars.index[split].isoformat(),
-                            validationEnd=bars.index[-1].isoformat(), steps=trained_steps,
-                            accepted=best_state is not None, selectedCheckpointSteps=selected_steps,
-                            selectionReason='Passed past validation' if best_state is not None else 'No checkpoint passed validation; staying flat',
+                            validationEnd=bars.index[confirmation_start-1].isoformat(), steps=trained_steps,
+                            confirmationStart=bars.index[confirmation_start].isoformat(),
+                            confirmationEnd=bars.index[-1].isoformat(), confirmation=confirmation,
+                            confirmationReason=confirmation_reason, rewardScale=100.,
+                            trainingEpisodeBars=env.unwrapped.episode_bars,
+                            observationSize=int(env.observation_space.shape[0]),
+                            accepted=accepted, selectedCheckpointSteps=selected_steps,
+                            selectionReason=('Passed checkpoint selection and untouched past confirmation' if accepted else
+                                             f'Confirmation rejected: {confirmation_reason}' if best_state is not None else
+                                             'No checkpoint passed validation; staying flat'),
                             baseline=baseline, candidateValidation=best_attempt, validation=best, checkpoints=checkpoints)
             directory.mkdir(parents=True, exist_ok=True)
-            if best_state is not None:
+            if accepted:
                 model.save(directory/'policy.zip')
             else:
                 model = CashPolicy()

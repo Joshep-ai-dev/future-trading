@@ -39,7 +39,7 @@ class RLEnvironmentTests(unittest.TestCase):
         cfg = RLSettings(lookback=4)
         values = Normalizer.fit(features.iloc[:100].to_numpy()).transform(features.to_numpy())
         env = TradingEnv(frame, values, np.ones(len(frame)), cfg, first_observation=100)
-        np.testing.assert_array_equal(env.observation()[:-6], values[97:101].reshape(-1))
+        np.testing.assert_array_equal(env.observation()[:-10], values[97:101].reshape(-1))
         if 'volume' in frame:
             self.assertAlmostEqual(float(features.candle_log_volume.iloc[100]),
                                    float(np.log1p(frame.volume.iloc[100])), places=5)
@@ -378,7 +378,7 @@ class RLTrainingTests(unittest.TestCase):
         execution = dict(capital=1000., leverage=1., bar_seconds=300)
         with tempfile.TemporaryDirectory() as directory, \
              patch('server.strategies.rl.training.MODEL_ROOT', Path(directory)), \
-             patch('server.strategies.rl.training.evaluate', side_effect=[cash, winner]):
+             patch('server.strategies.rl.training.evaluate', side_effect=[cash, winner, winner]):
             model, scaler, metadata = train_policy(frame, features, np.full(600, .1), cfg, execution)
             self.assertTrue(metadata['accepted'])
             self.assertEqual(metadata['selectedCheckpointSteps'], 256)
@@ -403,6 +403,8 @@ class RLTrainingTests(unittest.TestCase):
         def validate(model, *args):
             if isinstance(model, CashPolicy):
                 return cash
+            if len(snapshots) == 2:
+                return first  # untouched confirmation of restored first checkpoint
             snapshots.append({key: value.clone() for key, value in model.policy.state_dict().items()})
             return first if len(snapshots) == 1 else second
         cfg = RLSettings(train_bars=600, lookback=4, timesteps=4096)
@@ -416,3 +418,123 @@ class RLTrainingTests(unittest.TestCase):
         self.assertEqual(metadata['validation'], first)
         for key, value in model.policy.state_dict().items():
             torch.testing.assert_close(value, snapshots[0][key])
+
+
+class RLQualityTests(unittest.TestCase):
+    def setUp(self):
+        CACHE.clear()
+        self.addCleanup(CACHE.clear)
+
+    def test_observation_exposes_balance_exposure_and_stop_distance(self):
+        frame = bars([[100, 100.1, 99.9, 100]]*4)
+        env = TradingEnv(frame, np.zeros((4, 2), np.float32), np.ones(4),
+                         RLSettings(lookback=1), capital=1000., fee_bps=5.)
+        np.testing.assert_allclose(env.observation()[-10:-6], 0.)
+        env.step(1)
+        state = env.observation()[-10:]
+        self.assertAlmostEqual(float(state[0]), -.0005)
+        self.assertAlmostEqual(float(state[1]), -.0005)
+        self.assertAlmostEqual(float(state[2]), 1.)
+        self.assertAlmostEqual(float(state[3]), .03)
+        self.assertEqual(len(env.observation()), env.observation_space.shape[0])
+
+    def test_positive_drawdown_rank_uses_magnitude(self):
+        base = dict(trades=20, netPnl=10., returnPct=0., winRate=60.)
+        self.assertGreater(checkpoint_rank(dict(base, maxDrawdownPct=2.)),
+                           checkpoint_rank(dict(base, maxDrawdownPct=10.)))
+        self.assertIsNotNone(checkpoint_rejection(dict(base, maxDrawdownPct=2., returnPct=np.nan)))
+
+    def test_confirmation_is_untouched_during_selection_and_can_veto_policy(self):
+        frame = market(600)
+        features = pd.DataFrame({'a': np.arange(600, dtype=float)}, index=frame.index)
+        cash = dict(trades=0, netPnl=0., winRate=0., maxDrawdownPct=0.)
+        winner = dict(trades=20, netPnl=10., winRate=60., maxDrawdownPct=-2.)
+        loser = dict(winner, netPnl=-1.)
+        calls = []
+
+        def validate(model, source, values, atr, cfg, execution, first):
+            calls.append((source.index[-1], first))
+            return cash if isinstance(model, CashPolicy) else winner if len(calls) <= 3 else loser
+
+        cfg = RLSettings(train_bars=600, lookback=4, timesteps=4096)
+        with tempfile.TemporaryDirectory() as directory, \
+             patch('server.strategies.rl.training.MODEL_ROOT', Path(directory)), \
+             patch('server.strategies.rl.training.evaluate', side_effect=validate):
+            model, scaler, metadata = train_policy(frame, features, np.ones(600), cfg,
+                                                   dict(capital=1000., leverage=1., bar_seconds=300))
+            self.assertEqual(calls, [(frame.index[539], 479)]*3+[(frame.index[599], 539)])
+            self.assertIsInstance(model, CashPolicy)
+            self.assertFalse(metadata['accepted'])
+            self.assertIn('Confirmation rejected', metadata['selectionReason'])
+            self.assertFalse((Path(directory)/metadata['key']/'policy.zip').exists())
+            self.assertLess(metadata['trainingEpisodeBars'], 480-cfg.lookback)
+            np.testing.assert_allclose(scaler.mean, features.iloc[:480].mean().to_numpy())
+
+    def test_training_episodes_cover_different_starts_reproducibly(self):
+        frame = market(480)
+        env = TradingEnv(frame, np.zeros((480, 2), np.float32), np.ones(480), RLSettings(lookback=4),
+                         random_start=True, episode_bars=119)
+        env.reset(seed=17)
+        starts = []
+        for _ in range(12):
+            env.reset()
+            starts.append(env.t)
+            self.assertLess(env.end, len(frame))
+        self.assertGreater(len(set(starts)), 1)
+        env.reset(seed=17)
+        repeat = []
+        for _ in range(12):
+            env.reset()
+            repeat.append(env.t)
+        self.assertEqual(starts, repeat)
+
+
+    def test_learning_reward_scales_without_altering_account_and_liquidation_is_terminal(self):
+        from server.strategies.rl.environment import TrainingEnv
+
+        frame = bars([[100, 100.1, 99.9, 100]]*3)
+        args = (frame, np.zeros((3, 2), np.float32), np.ones(3), RLSettings(lookback=1))
+        replay = TradingEnv(*args, capital=1000., fee_bps=5.)
+        learning = TrainingEnv(*args, capital=1000., fee_bps=5.)
+        for action in (1, 0):
+            expected, actual = replay.step(action), learning.step(action)
+            self.assertAlmostEqual(actual[1], 100.*expected[1])
+            self.assertEqual(learning.equity, replay.equity)
+        self.assertTrue(actual[2])
+        self.assertFalse(actual[3])
+        self.assertEqual(learning.trades, replay.trades)
+
+
+    def test_atr_changes_invalidate_artifact_cache(self):
+        frame = market(600)
+        features = pd.DataFrame({'a': np.arange(600, dtype=float)}, index=frame.index)
+        cash = dict(trades=0, netPnl=0., winRate=0., maxDrawdownPct=0.)
+        cfg = RLSettings(train_bars=600, lookback=4, timesteps=256)
+        execution = dict(capital=1000., leverage=1., bar_seconds=300)
+        with tempfile.TemporaryDirectory() as directory, \
+             patch('server.strategies.rl.training.MODEL_ROOT', Path(directory)), \
+             patch('server.strategies.rl.training.evaluate', return_value=cash):
+            _, _, first = train_policy(frame, features, np.ones(600), cfg, execution)
+            _, _, second = train_policy(frame, features, np.full(600, 2.), cfg, execution)
+        self.assertNotEqual(first['key'], second['key'])
+
+
+    def test_zero_trade_report_exposes_rejected_policies_and_replay_coverage(self):
+        from server.strategies.rl import tuning
+        from server.strategies.strategy import BacktestRequest
+
+        frame = market(1600)
+        request = BacktestRequest(start_date='2026-01-03', end_date='2026-01-06', strategy='rl_ppo')
+        replay = dict(bars=frame.iloc[:12], report=dict(
+            folds=[dict(training=dict(accepted=False, selectionReason='Confirmation rejected: loss'))],
+            rejectedPolicyBlocks=1, message='No policy passed confirmation'))
+        score = dict(trades=0, netPnl=0., winRate=0., maxDrawdownPct=0.)
+        with patch.object(tuning, 'run_rl_backtest', return_value=replay), \
+             patch.object(tuning, '_score', side_effect=lambda result, capital: dict(score)):
+            result = tuning.rl_train_and_evaluate(frame, request)
+        metrics = result['periods']['forwardTest']['metrics']
+        self.assertEqual(metrics['evaluatedBars'], 12)
+        self.assertGreater(metrics['availableBars'], 0)
+        self.assertEqual(metrics['policyBlocks'], 1)
+        self.assertEqual(metrics['rejectedPolicyBlocks'], 1)
+        self.assertEqual(metrics['rejectionReasons'], ['Confirmation rejected: loss'])

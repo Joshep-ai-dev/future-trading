@@ -37,6 +37,17 @@ def rl_train_and_evaluate(frame, request, progress=None, validation_start=None, 
                                  progress=lambda percent, message: report(min(94, 5+number*30+int(percent*.3)), message))
         metrics = _score(result, request.capital)
         metrics['halted'] = bool(result.get('halted', False))
+        replay_bars = result.get('bars')
+        metrics['evaluatedBars'] = len(replay_bars) if replay_bars is not None else None
+        metrics['availableBars'] = int(((source.index >= left) & (source.index < right)).sum())
+        model_report = result.get('report', {})
+        folds = model_report.get('folds', [])
+        metrics['policyBlocks'] = len(folds)
+        metrics['rejectedPolicyBlocks'] = model_report.get('rejectedPolicyBlocks', 0)
+        metrics['policyMessage'] = model_report.get('message', '')
+        metrics['rejectionReasons'] = list(dict.fromkeys(
+            fold['training'].get('selectionReason', 'Rejected historical policy')
+            for fold in folds if not fold['training'].get('accepted', False)))
         return metrics
 
     metrics = []
