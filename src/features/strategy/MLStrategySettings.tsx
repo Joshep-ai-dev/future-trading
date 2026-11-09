@@ -31,15 +31,21 @@ export default function MLStrategySettings({settings,onChange}:{settings:Backtes
         <Field label="Direction"><select value={config.trade_mode} onChange={event=>setMl({trade_mode:event.target.value as MLConfig['trade_mode']})}><option value="Both">Long and short</option><option value="Long Only">Long only</option><option value="Short Only">Short only</option></select></Field>
       </div>
     </SettingsCard>
-    <SettingsCard step={2} id="settings-signals" title="Trading decisions" description="The model predicts the future high, low and trend. Historical trade evaluation selects entry confidence and exit adjustments, ranking win rate first and profit second.">
+    <SettingsCard step={2} id="settings-signals" title="Trading decisions" description="The model predicts high, low and trend. Entries must beat historical forecast baselines, exceed measured uncertainty and have positive past trade expectancy. Tree agreement is not trade-win probability.">
       <div className="setup-grid">
+        {num('quality_threshold','Minimum historical trade win frequency',0,.95,'any','Measured from matured, non-overlapping proposals, separately from tree agreement.')}
+        {num('risk_per_trade_pct','Maximum planned risk per trade',.01,2,'any','Sizing includes stop distance and estimated costs; price gaps may exceed the budget.','%')}
+        {num('max_drawdown_pct','Drawdown halt',.1,80,'any',undefined,'%')}
+        {num('daily_loss_pct','UTC daily loss halt',.1,20,'any','A loss halt stops this replay or paper session.','%')}
         {num('min_atr','Minimum ATR',0,100,'any','Open new trades only when ATR is strictly greater than this value.','USDT')}
       </div>
-      <p className="setup-note">New entries require ATR greater than {config.min_atr}. Targets and protective stops follow forecasts. Stops only tighten. A changed trend can close the position. There is no fixed percentage target or holding-time exit.</p>
+      <p className="setup-note">New entries require ATR greater than {config.min_atr}. Targets and protective stops follow forecasts. Stops only tighten. A changed trend can close the position. Entries fill at the next open. Holding time is bounded; a daily loss or drawdown limit halts trading.</p>
     </SettingsCard>
-    <SettingsCard step={3} id="settings-exits" title="Forecast" description="How far ahead the model learns to predict. This is a prediction horizon, not a mandatory closing time.">
+    <SettingsCard step={3} id="settings-exits" title="Forecast" description="How far ahead the model learns to predict. Forecast horizon and maximum holding time are separate. Zero holding limit uses the forecast horizon.">
       <div className="setup-grid">
         {num('horizon','Forecast horizon',1,500,1,undefined,'bars')}
+        {num('forecast_max_hold_bars','Maximum holding time',0,500,1,'Zero uses the forecast horizon.','bars')}
+        <Field label="Forecast-based exit adjustments"><input type="checkbox" checked={config.forecast_adaptive_exits} onChange={event=>setMl({forecast_adaptive_exits:event.target.checked})}/></Field>
       </div>
     </SettingsCard>
     <SettingsCard step={4} id="settings-training" title="Training" description="Train on past candles, then evaluate on unseen candles.">

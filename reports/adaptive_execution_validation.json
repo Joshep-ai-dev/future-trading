@@ -1,0 +1,133 @@
+{
+  "purpose": "Fixed-period integration and ablation check; no profitability claim or forward-based selection",
+  "start": "2026-10-30T07:55:00+00:00",
+  "end": "2026-11-09T17:50:00+00:00",
+  "costs": {
+    "fee_bps": 6.0,
+    "slippage": 0.01,
+    "spread": 0.02,
+    "funding_bps": 1.0
+  },
+  "horizon": 24,
+  "trainBars": 6000,
+  "requestedEvaluationBars": 3000,
+  "cases": {
+    "unguarded_adaptive": {
+      "metrics": {
+        "halted": false,
+        "averageWin": 9.7117,
+        "averageLoss": 6.1495,
+        "payoffRatio": 1.579,
+        "score": 54.504,
+        "trades": 36,
+        "wins": 9,
+        "losses": 27,
+        "winRate": 25.0,
+        "netPnl": -78.6321,
+        "returnPct": -3.932,
+        "maxDrawdownPct": -5.138,
+        "averageLossPct": 0.307
+      },
+      "audit": {
+        "passed": true,
+        "cashReconciliationError": 7.503331289626658e-12,
+        "pnlReconciliationError": 2.220446049250313e-15,
+        "entryTiming": "next_open",
+        "grossPnl": 24.753094457939653,
+        "fees": 62.93709122661473,
+        "executionCost": 40.785506752062695,
+        "funding": -0.337413374207637,
+        "netPnl": -78.63209014653015,
+        "evaluatedBars": 3000,
+        "halted": false
+      },
+      "validation": null
+    },
+    "guarded_adaptive": {
+      "metrics": {
+        "halted": false,
+        "averageWin": 0.0,
+        "averageLoss": 0.0,
+        "payoffRatio": null,
+        "score": 0.0,
+        "trades": 0,
+        "wins": 0,
+        "losses": 0,
+        "winRate": 0.0,
+        "netPnl": 0.0,
+        "returnPct": 0.0,
+        "maxDrawdownPct": 0.0,
+        "averageLossPct": 0.0
+      },
+      "audit": {
+        "passed": true,
+        "cashReconciliationError": 0.0,
+        "pnlReconciliationError": 0.0,
+        "entryTiming": "next_open",
+        "grossPnl": 0.0,
+        "fees": 0.0,
+        "executionCost": 0.0,
+        "funding": 0.0,
+        "netPnl": 0.0,
+        "evaluatedBars": 3000,
+        "halted": false
+      },
+      "validation": {
+        "samples": 2976,
+        "modelMaeAtr": 2.82279024697654,
+        "baselineMaeAtr": 2.675824290159839,
+        "uncertaintyQuantile": 0.9,
+        "calibrationDelay": 25,
+        "minimumQualitySamples": 30,
+        "proposedEntries": 109,
+        "benchmarkPassed": 27,
+        "uncertaintyPassed": 0,
+        "qualityPassed": 0,
+        "message": "Entry checks use matured out-of-sample forecasts and non-overlapping completed proposals. Tree agreement is not trade-win probability."
+      }
+    },
+    "guarded_fixed": {
+      "metrics": {
+        "halted": false,
+        "averageWin": 0.0,
+        "averageLoss": 0.0,
+        "payoffRatio": null,
+        "score": 0.0,
+        "trades": 0,
+        "wins": 0,
+        "losses": 0,
+        "winRate": 0.0,
+        "netPnl": 0.0,
+        "returnPct": 0.0,
+        "maxDrawdownPct": 0.0,
+        "averageLossPct": 0.0
+      },
+      "audit": {
+        "passed": true,
+        "cashReconciliationError": 0.0,
+        "pnlReconciliationError": 0.0,
+        "entryTiming": "next_open",
+        "grossPnl": 0.0,
+        "fees": 0.0,
+        "executionCost": 0.0,
+        "funding": 0.0,
+        "netPnl": 0.0,
+        "evaluatedBars": 3000,
+        "halted": false
+      },
+      "validation": {
+        "samples": 2976,
+        "modelMaeAtr": 2.82279024697654,
+        "baselineMaeAtr": 2.675824290159839,
+        "uncertaintyQuantile": 0.9,
+        "calibrationDelay": 25,
+        "minimumQualitySamples": 30,
+        "proposedEntries": 109,
+        "benchmarkPassed": 27,
+        "uncertaintyPassed": 0,
+        "qualityPassed": 0,
+        "message": "Entry checks use matured out-of-sample forecasts and non-overlapping completed proposals. Tree agreement is not trade-win probability."
+      }
+    }
+  }
+}

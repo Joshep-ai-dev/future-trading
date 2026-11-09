@@ -156,7 +156,7 @@ def _score(result, capital):
     score = (0.35 * win_rate + 0.35 * profit_component +
              0.20 * drawdown_component + 0.10 * loss_component)
     score *= min(1., count / 20)
-    return dict(averageWin=round(average_win,4), averageLoss=round(average_loss,4),
+    return dict(halted=bool(result.get('halted', False)), averageWin=round(average_win,4), averageLoss=round(average_loss,4),
                 payoffRatio=round(average_win/average_loss,3) if average_loss else None,
                 score=round(score, 3), trades=count, wins=wins,
                 losses=int((pnl < 0).sum()), winRate=round(win_rate, 2),

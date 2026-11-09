@@ -8,6 +8,7 @@ export type Analysis = {
 export const fmt = (v: number | null, digits=2) => v === null ? '—' : v.toLocaleString('en-US', {maximumFractionDigits: digits});
 
 export type MLConfig = {
+  forecast_guard:boolean;forecast_next_open:boolean;forecast_adaptive_exits:boolean;forecast_max_hold_bars:number;risk_per_trade_pct:number;max_drawdown_pct:number;daily_loss_pct:number;
   forecast_model:'extra_trees'|'rnn'|'lstm'|'gru';sequence_lookback:number;sequence_epochs:number;
   feature_groups: string[]; models: Record<string, number>; horizon: number; forecast_target_fraction: number; forecast_stop_buffer: number; take_profit_pct: number; stop_loss_pct: number; take_profit_atr: number; stop_atr: number;
   atr_length: number; entry_threshold: number; min_edge: number; min_reward_cost: number; train_bars: number;
@@ -20,6 +21,8 @@ export type RegimeStat = {name:string;share:number;trades:number;netPnl:number;w
 export type RLConfig = {train_bars:number;retrain_every:number;lookback:number;timesteps:number;learning_rate:number;seed:number;min_atr:number;stop_atr:number;max_drawdown_pct:number;drawdown_penalty:number;turnover_penalty:number;amount_per_trade:number;amount_unit:'percent'|'price'};
 export type ModelReport = {
   kind?:'rl';algorithm?:string;message?:string;rejectedPolicyBlocks?:number;
+  executionAudit?:{passed:boolean;cashReconciliationError:number;pnlReconciliationError:number;entryTiming:string;grossPnl:number;fees:number;executionCost:number;funding:number;netPnl:number;evaluatedBars:number;halted:boolean};
+  forecastValidation?:{samples:number;modelMaeAtr:number|null;baselineMaeAtr:number|null;uncertaintyQuantile:number;calibrationDelay:number;minimumQualitySamples:number;proposedEntries:number;benchmarkPassed:number;uncertaintyPassed:number;qualityPassed:number;message:string}|null;
   forecastErrors?:{samples:number;highMaePct:number;lowMaePct:number;closeMaePct:number};
   forecast?:{high:number;low:number;close:number;horizon:number};
   skippedTrainingBlocks?:number;

@@ -68,7 +68,7 @@ class ForecastTests(unittest.TestCase):
                                           forecast_up=2., forecast_down=1., forecast_trend=1.), index=frame.index)
         walk = SimpleNamespace(probabilities=probabilities, folds=[], importance={})
         prepared = Prepared(frame, atr, 1, pd.Series(1., index=frame.index), 0, walk)
-        result = execute(prepared, MLSettings(min_atr=.03), initial_capital=1000, leverage=1)
+        result = execute(prepared, MLSettings(min_atr=.03, forecast_guard=False, forecast_next_open=False), initial_capital=1000, leverage=1)
         self.assertEqual(result['bars'].long_signal.tolist(), [False, False, False, False, True])
         self.assertEqual(result['open_position']['entry_time'], frame.index[-1])
 
@@ -83,7 +83,7 @@ class ForecastTests(unittest.TestCase):
                             pd.Series(1., index=frame.index), 0, walk)
         for threshold, expected in ((.02, True), (.025, False), (.04, False)):
             with self.subTest(threshold=threshold):
-                result = execute(prepared, MLSettings(min_atr=threshold), initial_capital=1000, leverage=1)
+                result = execute(prepared, MLSettings(min_atr=threshold, forecast_guard=False, forecast_next_open=False), initial_capital=1000, leverage=1)
                 self.assertEqual(bool(result['bars'].long_signal.any()), expected)
 
     def test_flat_prices_do_not_manufacture_directional_trades(self):
@@ -127,5 +127,6 @@ class ForecastTests(unittest.TestCase):
         self.assertEqual(result['report']['exitMode'], 'forecast')
         self.assertIn('forecast', result['report'])
         self.assertGreater(result['report']['forecastErrors']['samples'], 0)
-        self.assertNotIn('time_exit', set(result['trades'].exit_reason) if len(result['trades']) else set())
+        self.assertTrue(result['report']['executionAudit']['passed'])
+        self.assertEqual(result['report']['executionAudit']['entryTiming'], 'next_open')
         self.assertAlmostEqual(sum(result['report']['labelBalance'].values()), 1.)

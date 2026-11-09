@@ -91,6 +91,10 @@ def _train_fold(features: pd.DataFrame, labels: pd.Series, train_slice: slice, m
         return Fold(0, 0, int(mask.sum()), [], [], skip_reason='single_outcome')
     first, last = window_x.index[0], window_x.index[-1]
     cache_key = (key, int(first.timestamp()), int(last.timestamp()), int(mask.sum()), learn_regimes, forecast_targets is not None)
+    content = pd.util.hash_pandas_object(window_x, index=True).values.tobytes()+pd.util.hash_pandas_object(window_y, index=True).values.tobytes()
+    if forecast_targets is not None:
+        content += pd.util.hash_pandas_object(forecast_targets.iloc[train_slice], index=True).values.tobytes()
+    cache_key += (hashlib.sha256(content).hexdigest(),)
     cached = fold_cache.get(cache_key)
     if cached is not None:
         return cached

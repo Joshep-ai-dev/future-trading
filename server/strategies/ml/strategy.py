@@ -48,6 +48,13 @@ class MLSettings:
     capacity: str = 'light'
     # Percentage exits are the default; retain ATR modes for saved configurations.
     exit_mode: str = 'forecast'
+    forecast_guard: bool = True
+    forecast_next_open: bool = True
+    forecast_adaptive_exits: bool = True
+    forecast_max_hold_bars: int = 0  # zero uses the forecast horizon
+    risk_per_trade_pct: float = .5
+    max_drawdown_pct: float = 10.
+    daily_loss_pct: float = 3.
     forecast_target_fraction: float = .8
     forecast_stop_buffer: float = 1.
     tp_quantile: float = .5
@@ -89,6 +96,16 @@ class MLSettings:
         missing = [MODELS[key].label for key, weight in self.models.items() if weight > 0 and not MODELS[key].available()]
         if missing:
             raise ValueError(f'Install the packages for: {", ".join(missing)}')
+        if self.exit_mode == 'forecast' and self.forecast_guard and not self.forecast_next_open:
+            raise ValueError('Forecast entry validation requires next-open execution')
+        if any(not isinstance(getattr(self, name), bool) for name in ('forecast_guard', 'forecast_next_open', 'forecast_adaptive_exits')):
+            raise ValueError('Forecast execution options must be boolean')
+        if isinstance(self.forecast_max_hold_bars, bool) or not isinstance(self.forecast_max_hold_bars, int) or not 0 <= self.forecast_max_hold_bars <= 500:
+            raise ValueError('Forecast holding limit must be 0-500 bars')
+        if any(isinstance(getattr(self, key), bool) or not isinstance(getattr(self, key), (int, float)) or not np.isfinite(getattr(self, key)) for key in ('risk_per_trade_pct', 'max_drawdown_pct', 'daily_loss_pct')):
+            raise ValueError('Forecast risk limits must be finite numbers')
+        if not (0 < self.risk_per_trade_pct <= 2 and 0 < self.max_drawdown_pct <= 80 and 0 < self.daily_loss_pct <= 20):
+            raise ValueError('Invalid forecast risk budget or loss limits')
         checks = [(1 <= self.horizon <= 500, 'Horizon must be 1-500 candles'),
                   (0 < self.take_profit_atr <= 20 and 0 < self.stop_atr <= 20, 'ATR multiples must be between 0 and 20'),
                   (2 <= self.atr_length <= 500, 'ATR length must be 2-500'),
@@ -127,7 +144,7 @@ class MLSettings:
 
     def model_key(self) -> str:
         """Identity of everything that changes a trained fold (not sizing or entry rules)."""
-        return config_key(forecast_model=self.forecast_model, sequence_lookback=self.sequence_lookback, sequence_epochs=self.sequence_epochs, groups=sorted(self.feature_groups), models=self.models, horizon=self.horizon,
+        return config_key(version='forecast-audit-v2', forecast_model=self.forecast_model, sequence_lookback=self.sequence_lookback, sequence_epochs=self.sequence_epochs, groups=sorted(self.feature_groups), models=self.models, horizon=self.horizon,
                           tp=self.take_profit_atr, sl=self.stop_atr, atr=self.atr_length, capacity=self.capacity,
                           exits=self.exit_mode, quantiles=(self.tp_quantile, self.sl_quantile) if self.exit_mode == 'learned' else None,
                           percent=(self.take_profit_pct, self.stop_loss_pct) if self.exit_mode == 'percent' else None,
@@ -290,6 +307,7 @@ def execute(prepared: Prepared, settings: MLSettings, *, initial_capital: float,
     # Skip entries whose take-profit cannot pay for the round trip several times over.
     close = clean.close.to_numpy()
     round_trip = 2*(slippage+spread/2)+2*close*fee_bps/10000
+    round_trip += close*abs(funding_bps)/10000*(settings.forecast_max_hold_bars or settings.horizon)*(bar_seconds or 300)/(8*3600)
     target_for_signal = np.where(signals == -1, plan['short_target'], plan['long_target'])
     affordable = target_for_signal >= settings.min_reward_cost*round_trip
     blocked_by_cost = int(((signals != 0) & ~affordable)[start_index:].sum())
@@ -303,6 +321,14 @@ def execute(prepared: Prepared, settings: MLSettings, *, initial_capital: float,
     big_enough = atr_allowed & (target_for_signal >= settings.min_target)
     blocked_by_size = int(((signals != 0) & ~big_enough)[start_index:].sum())
     signals = np.where(big_enough, signals, 0.)
+    validation_report, quality_diagnostics = None, None
+    if settings.exit_mode == 'forecast' and settings.forecast_guard:
+        from server.strategies.ml.forecast_validation import validate_forecasts
+        allowed_entries, validation_report, quality_diagnostics = validate_forecasts(
+            prepared, settings, signals.copy(), min_tick=min_tick, bar_seconds=bar_seconds,
+            fee_bps=fee_bps, slippage=slippage, spread=spread, funding_bps=funding_bps)
+        signals = np.where(allowed_entries, signals, 0.)
+        funnel.append(dict(step='Past benchmark, uncertainty and positive trade expectancy', remaining=int(np.count_nonzero(signals[start_index:]))))
     stop_distance = np.where(signals == -1, plan['short_stop'], plan['long_stop'])
     target_distance = target_for_signal
     trail_activation = np.where(signals == -1, plan['short_trail_start'], plan['long_trail_start'])
@@ -313,12 +339,18 @@ def execute(prepared: Prepared, settings: MLSettings, *, initial_capital: float,
         trail_distance = np.where(np.isfinite(trail_distance), trail_distance, stop_distance)
     execution = ExecutionSettings(initial_capital=initial_capital, leverage=leverage,
                                   amount_per_trade=settings.amount_per_trade, amount_unit=settings.amount_unit,
-                                  max_hold_bars=10**9 if settings.let_profit_run or settings.exit_mode == 'forecast' else settings.horizon,
+                                  max_hold_bars=(settings.forecast_max_hold_bars or settings.horizon) if settings.exit_mode == 'forecast' else 10**9 if settings.let_profit_run else settings.horizon,
+                                  next_open=settings.exit_mode == 'forecast' and settings.forecast_next_open,
+                                  risk_per_trade_pct=settings.risk_per_trade_pct if settings.exit_mode == 'forecast' else 0.,
+                                  max_drawdown_pct=settings.max_drawdown_pct if settings.exit_mode == 'forecast' else 0.,
+                                  daily_loss_pct=settings.daily_loss_pct if settings.exit_mode == 'forecast' else 0.,
                                   reverse_on_signal=settings.reverse_on_signal,
                                   take_profit_pct=settings.take_profit_pct if settings.exit_mode == 'percent' else None,
                                   stop_loss_pct=settings.stop_loss_pct if settings.exit_mode == 'percent' else None,
                                   min_tick=min_tick)
     bars = clean.join(result.probabilities).assign(atr=atr)
+    if quality_diagnostics is not None:
+        bars = bars.join(quality_diagnostics)
     if end is not None:
         keep = bars.index <= end
         bars, signals, distance = bars.loc[keep], signals[keep], distance[keep]
@@ -334,7 +366,7 @@ def execute(prepared: Prepared, settings: MLSettings, *, initial_capital: float,
                                      trend=bars.forecast_trend.to_numpy()*bars.atr.to_numpy(),
                                      target_fraction=settings.forecast_target_fraction,
                                      stop_buffer=settings.forecast_stop_buffer)
-                                     if settings.exit_mode == 'forecast' else None))
+                                     if settings.exit_mode == 'forecast' and settings.forecast_adaptive_exits else None))
     trades = output['trades']
     if len(trades):
         codes = bars['regime'].reindex(trades.entry_time).to_numpy() if 'regime' in bars else np.full(len(trades), -1)
@@ -353,7 +385,7 @@ def execute(prepared: Prepared, settings: MLSettings, *, initial_capital: float,
                                  winRate=float((chosen.pnl > 0).mean()*100) if len(chosen) else None,
                                  allowed=name in settings.regimes))
     learned_window = result.probabilities.iloc[window]
-    output['report'] = dict(exitMode=settings.exit_mode, regimes=regime_stats, blockedBySize=blocked_by_size,
+    output['report'] = dict(forecastValidation=validation_report, executionAudit=output.get('audit'), halted=output.get('halted', False), exitMode=settings.exit_mode, regimes=regime_stats, blockedBySize=blocked_by_size,
                             funnel=funnel+[dict(step='Trades taken', remaining=int(len(trades)),
                                                 note='One position at a time; signals during an open trade are skipped')],
                             blockedByRewardRisk=blocked_by_reward_risk, blockedByRegime=blocked_by_regime,

@@ -4,7 +4,8 @@ Given per-bar entry signals (+1 long, -1 short, 0 none) and per-bar stop and
 target distances, it reproduces the BB engine's execution rules: entries fill
 at the completed candle close, stops and targets use OHLC with adverse gap
 fills, a bar touching both is resolved stop-first, and fees, spread, slippage
-and prorated funding are charged. Output matches ``bb_outer_reversal.run_backtest``
+and prorated funding are charged. Forecast mode can instead delay entries to
+the next open and enforce a planned loss budget and portfolio loss halts. Output matches ``bb_outer_reversal.run_backtest``
 so the dashboard adapter, paper trading and charts can consume either engine.
 """
 from __future__ import annotations
@@ -24,8 +25,20 @@ class ExecutionSettings:
     max_hold_bars: int = 12
     reverse_on_signal: bool = True
     min_tick: float = .01
+    next_open: bool = False
+    risk_per_trade_pct: float = 0.
+    max_drawdown_pct: float = 0.
+    daily_loss_pct: float = 0.
     take_profit_pct: float | None = None
     stop_loss_pct: float | None = None
+
+    def __post_init__(self) -> None:
+        for name in ('risk_per_trade_pct', 'max_drawdown_pct', 'daily_loss_pct'):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not np.isfinite(value) or not 0 <= value < 100:
+                raise ValueError(f'{name} must be finite and between 0 and 100 (exclusive)')
+        if not isinstance(self.next_open, bool):
+            raise ValueError('next_open must be boolean')
 
 
 def _seconds(time) -> float:
@@ -47,11 +60,18 @@ def run_signal_backtest(bars: pd.DataFrame, signals: np.ndarray, stop_distance: 
             raise ValueError('Both price exit percentages must be finite and between 0 and 100')
     signals = np.asarray(signals, float)
     n_all = len(signals)
+    gaps = bars.index.to_series().diff().dt.total_seconds().gt(bar_seconds or (300 if settings.next_open else np.inf)).to_numpy()
     trail_activation = np.full(n_all, np.nan) if trail_activation is None else np.asarray(trail_activation, float)
     trail_distance = np.full(n_all, np.nan) if trail_distance is None else np.asarray(trail_distance, float)
+    if settings.next_open:
+        def delayed(values):
+            return np.r_[np.nan, np.asarray(values, float)[:-1]]
+        signals = delayed(signals)
+        stop_distance, target_distance = delayed(stop_distance), delayed(target_distance)
+        trail_activation, trail_distance = delayed(trail_activation), delayed(trail_distance)
     if start is not None:
         keep = bars.index >= start
-        bars, signals = bars.loc[keep], signals[keep]
+        bars, signals, gaps = bars.loc[keep], signals[keep], gaps[keep]
         stop_distance, target_distance = np.asarray(stop_distance)[keep], np.asarray(target_distance)[keep]
         trail_activation, trail_distance = trail_activation[keep], trail_distance[keep]
         if adaptive_forecast is not None:
@@ -59,6 +79,13 @@ def run_signal_backtest(bars: pd.DataFrame, signals: np.ndarray, stop_distance: 
                 key: np.asarray(adaptive_forecast[key])[keep] for key in ('high', 'low', 'trend')}}
     adverse = slippage+spread/2
     cash, position, trades, records = float(settings.initial_capital), None, [], []
+    peak, day_equity, day = cash, cash, None
+    halted = False
+
+    def risk_floor():
+        return max(peak*(1-settings.max_drawdown_pct/100) if settings.max_drawdown_pct else -np.inf,
+                   day_equity*(1-settings.daily_loss_pct/100) if settings.daily_loss_pct else -np.inf)
+
 
     def accrue_funding(time):
         nonlocal cash
@@ -89,6 +116,10 @@ def run_signal_backtest(bars: pd.DataFrame, signals: np.ndarray, stop_distance: 
         nonlocal cash, position
         amount = cash*settings.amount_per_trade/100 if settings.amount_unit == 'percent' else min(settings.amount_per_trade, cash)
         quantity = amount*settings.leverage/close
+        if settings.risk_per_trade_pct:
+            unit_risk = max(settings.min_tick, stop)+2*adverse+2*(close+abs(stop)+adverse)*fee_bps/10000
+            unit_risk += close*abs(funding_bps)/10000*settings.max_hold_bars*(bar_seconds or 300)/(8*3600)
+            quantity = min(quantity, max(0., cash)*settings.risk_per_trade_pct/100/max(settings.min_tick, unit_risk))
         if quantity <= 0:
             return
         entry = float(close)+direction*adverse
@@ -111,19 +142,39 @@ def run_signal_backtest(bars: pd.DataFrame, signals: np.ndarray, stop_distance: 
     index = bars.index
     for i, bar in enumerate(bars.itertuples()):
         time = bar.Index
+        end_time = time+pd.Timedelta(seconds=bar_seconds or 300) if settings.next_open else time
+        current_day = time.floor('D') if hasattr(time, 'floor') else int(_seconds(time)//86400)
+        if day != current_day:
+            day = current_day
+            day_equity = cash if position is None else records[-1]['equity']
+        gap = bool(gaps[i])
+        signal = int(signals[i]) if np.isfinite(signals[i]) else 0
+        entered = 0
+        if settings.next_open and not gap and not halted and signal and position is None and cash > 0 and np.isfinite(stop_distance[i]) and not np.isnan(target_distance[i]):
+            open_position(time, bar.open, signal, stop_distance[i], target_distance[i], i, trail_activation[i], trail_distance[i])
+            entered = signal if position is not None else 0
         if bar_seconds and i and (time-index[i-1]).total_seconds() > bar_seconds and position is not None:
-            close_position(index[i-1], bars.close.iloc[i-1], 'data_gap')
+            close_position(index[i-1]+pd.Timedelta(seconds=bar_seconds) if settings.next_open else index[i-1], bars.close.iloc[i-1], 'data_gap')
         if position is not None:
             accrue_funding(time)
             direction, stop, target = position['direction'], position['stop'], position['target']
+            floor = risk_floor()
+            risk_stop = False
+            if np.isfinite(floor):
+                quantity = position['quantity']
+                fill = (floor-cash+direction*quantity*position['entry_price'])/(quantity*(direction-fee_bps/10000))
+                candidate = fill+direction*adverse
+                if direction*(candidate-stop) > 0:
+                    stop, risk_stop = candidate, True
             stop_hit = bar.low <= stop if direction == 1 else bar.high >= stop
             target_hit = bar.high >= target if direction == 1 else bar.low <= target
             if stop_hit:
-                close_position(time, min(bar.open, stop) if direction == 1 else max(bar.open, stop), 'stop')
+                close_position(time if direction*(bar.open-stop) <= 0 else end_time, min(bar.open, stop) if direction == 1 else max(bar.open, stop), 'risk_limit' if risk_stop else 'stop')
+                halted = halted or risk_stop
             elif target_hit:
-                close_position(time, max(bar.open, target) if direction == 1 else min(bar.open, target), 'take_profit')
-            elif i-position['entry_index'] >= settings.max_hold_bars:
-                close_position(time, bar.close, 'time_exit')
+                close_position(time if direction*(bar.open-target) >= 0 else end_time, max(bar.open, target) if direction == 1 else min(bar.open, target), 'take_profit')
+            elif i-position['entry_index']+(1 if settings.next_open else 0) >= settings.max_hold_bars:
+                close_position(end_time, bar.close, 'time_exit')
             elif np.isfinite(position['trail_distance']):
                 p = position
                 p['extreme'] = max(p['extreme'], bar.high) if direction == 1 else min(p['extreme'], bar.low)
@@ -137,7 +188,7 @@ def run_signal_backtest(bars: pd.DataFrame, signals: np.ndarray, stop_distance: 
                         p['stop_history'].append(dict(time=int(_seconds(time)), price=p['stop'],
                                                       reason='activation' if activated else 'trailing'))
                     if direction*(bar.close-p['stop']) <= 0:
-                        close_position(time, bar.close, 'trailing_stop_at_close')
+                        close_position(end_time, bar.close, 'trailing_stop_at_close')
         model_closed = False
         if position is not None and adaptive_forecast is not None:
             high, low, trend = (adaptive_forecast[key][i] for key in ('high', 'low', 'trend'))
@@ -146,7 +197,7 @@ def run_signal_backtest(bars: pd.DataFrame, signals: np.ndarray, stop_distance: 
                 # Forecasts are observed at this close, after existing intrabar
                 # stops/targets. New levels cannot fill earlier in this candle.
                 if direction*trend <= 0:
-                    close_position(time, bar.close, 'model_exit')
+                    close_position(end_time, bar.close, 'model_exit')
                     model_closed = True
                 else:
                     favourable = high-bar.close if direction == 1 else bar.close-low
@@ -158,26 +209,37 @@ def run_signal_backtest(bars: pd.DataFrame, signals: np.ndarray, stop_distance: 
                     if position['stop'] != previous:
                         position['stop_history'].append(dict(time=int(_seconds(time)), price=float(position['stop']), reason='forecast'))
                     if direction*(bar.close-position['stop']) <= 0:
-                        close_position(time, bar.close, 'model_stop_at_close')
+                        close_position(end_time, bar.close, 'model_stop_at_close')
                         model_closed = True
         signal = int(signals[i]) if np.isfinite(signals[i]) and not model_closed else 0
         valid = signal and np.isfinite(stop_distance[i]) and not np.isnan(target_distance[i])
-        if valid and position is not None and position['direction'] != signal and settings.reverse_on_signal:
+        if not settings.next_open and not halted and valid and position is not None and position['direction'] != signal and settings.reverse_on_signal:
             close_position(time, bar.close, 'reversal')
-        if valid and position is None and cash > 0:
+        if not settings.next_open and not halted and valid and position is None and cash > 0:
             open_position(time, bar.close, signal, stop_distance[i], target_distance[i], i, trail_activation[i], trail_distance[i])
             signal = signal if position is not None else 0
         else:
             signal = 0  # Already positioned this way, blocked, or no valid signal: no new entry.
+        if settings.next_open:
+            signal = entered
+            accrue_funding(end_time)
         unrealized = 0. if position is None else (bar.close-position['entry_price'])*position['direction']*position['quantity']
+        equity = float(cash+unrealized)
+        if not halted and equity <= risk_floor():
+            if position is not None:
+                close_position(end_time, bar.close, 'risk_limit')
+            equity, halted = cash, True
+        peak = max(peak, equity)
         records.append(dict(long_signal=signal == 1, short_signal=signal == -1,
                             position=0 if position is None else position['direction'],
                             stop=np.nan if position is None else position['stop'],
                             target=np.nan if position is None or not np.isfinite(position['target']) else position['target'],
                             trailing_active=False if position is None else position['trailing_active'],
-                            equity=float(cash+unrealized)))
+                            equity=float(equity)))
+        if halted:
+            break
     if close_at_end and position is not None and len(bars):
-        close_position(index[-1], bars.close.iloc[-1], 'period_end')
+        close_position(index[len(records)-1]+pd.Timedelta(seconds=bar_seconds or 300) if settings.next_open else index[len(records)-1], bars.close.iloc[len(records)-1], 'period_end')
         records[-1].update(position=0, stop=np.nan, target=np.nan, equity=float(cash))
     # "No take-profit" is infinite internally; publish it as None so JSON (API, MySQL) stays valid.
     for trade in trades:
@@ -187,5 +249,18 @@ def run_signal_backtest(bars: pd.DataFrame, signals: np.ndarray, stop_distance: 
     open_copy = None if position is None else {k: v for k, v in position.items() if k != 'entry_index'}
     if open_copy is not None and not np.isfinite(open_copy['target']):
         open_copy['target'] = None
-    diagnostics = pd.DataFrame(records, index=bars.index)
-    return dict(bars=bars.join(diagnostics), trades=pd.DataFrame(trades), open_position=open_copy, cash=float(cash))
+    bars = bars.iloc[:len(records)]
+    diagnostics = pd.DataFrame(records, index=bars.index, columns=['long_signal', 'short_signal', 'position', 'stop', 'target', 'trailing_active', 'equity'])
+    closed = sum(trade['pnl'] for trade in trades)
+    open_cost = 0. if position is None else position['entry_fee']+position['funding']
+    cash_error = cash-(settings.initial_capital+closed-open_cost)
+    pnl_error = sum(abs(trade['pnl']-(trade['gross_pnl']-trade['execution_cost']-trade['fees']-trade['funding'])) for trade in trades)
+    tolerance = 1e-7+1e-12*max(settings.initial_capital, abs(closed))
+    audit = dict(passed=bool(abs(cash_error) < tolerance and pnl_error < tolerance), cashReconciliationError=float(cash_error),
+                 pnlReconciliationError=float(pnl_error), entryTiming='next_open' if settings.next_open else 'signal_close',
+                 grossPnl=float(sum(trade['gross_pnl'] for trade in trades)),
+                 fees=float(sum(trade['fees'] for trade in trades)),
+                 executionCost=float(sum(trade['execution_cost'] for trade in trades)),
+                 funding=float(sum(trade['funding'] for trade in trades)),
+                 netPnl=float(closed), evaluatedBars=len(bars), halted=halted)
+    return dict(bars=bars.join(diagnostics), trades=pd.DataFrame(trades), open_position=open_copy, cash=float(cash), halted=halted, audit=audit)

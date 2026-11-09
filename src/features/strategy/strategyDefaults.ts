@@ -10,6 +10,7 @@ export const bbDefaults: BacktestSettings['bb_reversal'] = {
 
 /** Mirrors server/strategies/ml/strategy.py MLSettings defaults. */
 export const mlDefaults: BacktestSettings['ml'] = {
+  forecast_guard:true,forecast_next_open:true,forecast_adaptive_exits:true,forecast_max_hold_bars:0,risk_per_trade_pct:.5,max_drawdown_pct:10,daily_loss_pct:3,
   feature_groups:['returns','volatility','trend','volume','candles'],
   models:{extra_trees:1},forecast_model:'extra_trees',sequence_lookback:100,sequence_epochs:30,
   horizon:24,forecast_target_fraction:.8,forecast_stop_buffer:1,take_profit_pct:1,stop_loss_pct:.65,take_profit_atr:1.5,stop_atr:1,atr_length:14,entry_threshold:.55,min_edge:.15,min_reward_cost:3,

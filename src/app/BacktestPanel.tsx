@@ -865,9 +865,12 @@ export default function BacktestPanel({
                 <details className='setup-assumptions'>
                   <summary>How the simulation works</summary>
                   <p>
-                    Signals use completed candles and fill at close. Stops
-                    include adverse gaps; trailing stops never loosen. Position
-                    size is the allocated amount times leverage. A depleted
+                    {settings.strategy === "rl_ppo" || (settings.strategy === "ml_ensemble" && settings.ml.exit_mode === "forecast" && settings.ml.forecast_next_open)
+                      ? "Signals use completed candles and fill at the next open. "
+                      : "Signals use completed candles and fill at close. "}
+                    Stops include adverse gaps; trailing stops never loosen. {settings.strategy === "ml_ensemble" && settings.ml.exit_mode === "forecast"
+                      ? "Position size is capped by the stop-distance risk budget, allocation and leverage. Loss limits halt the session. "
+                      : "Position size is the allocated amount times leverage. "}A depleted
                     balance blocks new trades. Fees, slippage, spread and
                     prorated funding are included; liquidation is not modeled.
                   </p>

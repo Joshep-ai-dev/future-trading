@@ -233,6 +233,8 @@ export default function ModelReportPanel({ report }: { report: ModelReport }) {
           not calibrated win probabilities.
         </p>
       )}
+      {report.executionAudit&&<section><h3>Execution audit</h3><p className="model-note">{report.executionAudit.passed?'Cash and trade P&L reconcile.':'Reconciliation failed.'} Entry timing: {report.executionAudit.entryTiming}. {report.executionAudit.evaluatedBars} candles evaluated. {report.executionAudit.halted?'Stopped at a loss limit.':''}</p><p className="model-note">Gross ${fmt(report.executionAudit.grossPnl)} / fees ${fmt(report.executionAudit.fees)} / spread and slippage ${fmt(report.executionAudit.executionCost)} / funding ${fmt(report.executionAudit.funding)} / net ${fmt(report.executionAudit.netPnl)}</p></section>}
+      {report.forecastValidation&&<section><h3>Forecast benchmark and trade quality</h3><p className="model-note">{report.forecastValidation.message}</p><p className="model-note">Model error {fmt(report.forecastValidation.modelMaeAtr)} ATR / simple baseline {fmt(report.forecastValidation.baselineMaeAtr)} ATR, over {report.forecastValidation.samples} samples. Lower is better. Entry decisions use historical measurements delayed by {report.forecastValidation.calibrationDelay} candles.</p><p className="model-note">Candidates: {report.forecastValidation.proposedEntries}. Past benchmark passed: {report.forecastValidation.benchmarkPassed}; uncertainty passed: {report.forecastValidation.uncertaintyPassed}; trade quality passed: {report.forecastValidation.qualityPassed}. Counts are separate checks, not sequential survivors.</p></section>}
       {report.forecastErrors && (
         <p className='model-note'>
           Unseen forecast mean absolute error: high{" "}

@@ -34,7 +34,7 @@ MIN_TRAIN_TRADES = 50
 def _ml_ranking_key(train: dict, validation: dict) -> tuple:
     """Sample size and profitability gates, then win rate, profit and drawdown."""
     enough = validation['trades'] >= MIN_VALIDATION_TRADES and train['trades'] >= MIN_TRAIN_TRADES
-    consistent = train['netPnl'] > 0 and validation['netPnl'] > 0
+    consistent = train['netPnl'] > 0 and validation['netPnl'] > 0 and not train.get('halted', False) and not validation.get('halted', False)
     return (enough, consistent, min(train['winRate'], validation['winRate']),
             train['netPnl']+validation['netPnl'],
             -max(abs(train['maxDrawdownPct']), abs(validation['maxDrawdownPct'])))
