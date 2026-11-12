@@ -76,3 +76,26 @@ Run new evaluations after restarting the backend; previous result cards retain
 their historical configuration. This implementation does not claim improved
 forecast accuracy or positive out-of-sample profit. The benchmarks establish
 whether additional modeling work is justified, rather than forcing entries.
+
+
+## Calibration prefix and no-trade searches
+
+Guarded forecast preparation now generates an out-of-sample calibration prefix
+before the selected trading start. Its length is rounded to whole retraining
+blocks so evaluation block boundaries remain anchored to the selected date.
+Paper warmup requests include both model training and calibration history.
+Only forecasts already available at their own decision times contribute;
+proposal outcomes must fully mature before a later decision uses them.
+Actual trades are still sliced to the selected evaluation dates.
+
+Each tuning period carries its own forecast-entry diagnostics. Independent
+failure counts can overlap; first-blocker counts are sequential and reconcile
+to proposed entries minus eligible entries. Pre-period sample totals describe
+historical availability; quality still requires 30 observations in the same
+side/agreement bucket within the rolling training window. Aggregate historical
+counts do not guarantee that any particular bucket has enough examples.
+
+When no finalist passes trade-count, profit and loss-limit requirements, the
+search reports `no_eligible_setup` and returns diagnostic cases with explicit
+reliability reasons. Applying remains disabled; saving named parameters for
+research remains available. Zero-trade win rate is unmeasured, not 0%.

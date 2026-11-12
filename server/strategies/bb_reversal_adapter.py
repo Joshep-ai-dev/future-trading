@@ -10,6 +10,14 @@ from server.strategies.strategy import metrics, seconds
 from server.core.serialization import optional_volume
 
 
+def _finite(value):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if np.isfinite(number) else None
+
+
 def run_strategy_backtest(frame, settings):
     runner = get_strategy(settings.strategy)
     duration = TIMEFRAMES[settings.entry_timeframe]
@@ -39,6 +47,7 @@ def run_strategy_backtest(frame, settings):
                 fees=trade['fees'], funding=trade['funding'], executionCost=trade['execution_cost'], netR=trade['pnl']/risk, balance=balance,
                 exitReason=trade['exit_reason'], session='continuous', ambiguous=False, obstacle=None,
                 signalLabel=runner.signal_label, signalCloseTime=entry_time+duration,
+                modelProbability=_finite(trade.get('model_probability')),
                 swingHighs=[], swingLows=[], period=name))
         equity = [dict(time=int(t.timestamp()), value=float(v)) for t, v in result['bars'].equity.items()] if len(result['bars']) else []
         if not equity or equity[0]['time'] > left:

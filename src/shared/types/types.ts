@@ -17,12 +17,31 @@ export type MLConfig = {
   exit_mode: 'learned'|'fixed'|'percent'|'forecast'; tp_quantile: number; sl_quantile: number; min_reward_risk: number;
   trailing: boolean; trail_start: number; trail_noise: number; regimes: string[]; recency_half_life: number; min_atr: number; min_target: number; let_profit_run: boolean; quality_filter: boolean; quality_threshold: number; device: 'auto'|'gpu'|'cpu';
 };
+/** Mirrors server/strategies/ml/directional.py DirectionalSettings. */
+export type MLDirectionalConfig = {
+  take_profit_atr:number;stop_atr:number;max_hold_bars:number;atr_length:number;
+  train_days:number;trade_days:number;calibration_fraction:number;
+  min_probability:number;min_ev_r:number;min_gap:number;vol_low_pct:number;vol_high_pct:number;
+  trade_mode:'Both'|'Long Only'|'Short Only';trades_per_day:number;risk_per_trade_pct:number;max_drawdown_pct:number;
+  trees:number;learning_rate:number;max_depth:number;min_leaf:number;seed:number;
+};
+export type DirectionalFold = {start:number;end:number;trainStart:number;trainEnd:number;trainRows:number;baseRateLong:number;baseRateShort:number;aucLong:number|null;aucShort:number|null;signals:number;trades:number;netPnl:number;calibrated:boolean};
+export type DirectionalReport = {
+  kind:'ml_directional';message:string;folds:DirectionalFold[];skippedFolds:{start:number;end:number;reason:string}[];
+  calibration:{low:number;high:number;count:number;predicted:number;actual:number}[];
+  featureImportance:{name:string;value:number}[];averageCostR:number|null;breakEvenWinRate:number;
+  predictionVsActual?:{trades:number;averagePredicted?:number|null;reachedTarget?:number;profitable?:number;breakEven?:number;
+    buckets:{low:number;high:number;trades:number;predicted:number;reachedTarget:number;profitable:number;averageR:number}[];
+    rows:{signalTime:number|null;entryTime:number;exitTime:number;direction:number;predicted:number|null;other:number|null;entry:number;exit:number;target:number|null;stop:number;exitReason:string;reachedTarget:boolean;netPnl:number;r:number|null}[]};
+  executionAudit?:ModelReport['executionAudit'];
+};
 export type RegimeStat = {name:string;share:number;trades:number;netPnl:number;winRate:number|null;allowed:boolean};
 export type RLConfig = {train_bars:number;retrain_every:number;lookback:number;timesteps:number;learning_rate:number;seed:number;min_atr:number;stop_atr:number;max_drawdown_pct:number;drawdown_penalty:number;turnover_penalty:number;amount_per_trade:number;amount_unit:'percent'|'price'};
+export type ForecastValidation = {samples:number;modelMaeAtr:number|null;baselineMaeAtr:number|null;uncertaintyQuantile:number;calibrationDelay:number;minimumQualitySamples:number;proposedEntries:number;benchmarkPassed:number;uncertaintyPassed:number;qualityPassed:number;message:string;calibrationForecasts?:number;calibrationTradeSamples?:number;rejectionCounts?:Record<string,number>;firstBlockers?:Record<string,number>;funnel?:{step:string;remaining:number}[];eligibleEntries?:number};
 export type ModelReport = {
   kind?:'rl';algorithm?:string;message?:string;rejectedPolicyBlocks?:number;
   executionAudit?:{passed:boolean;cashReconciliationError:number;pnlReconciliationError:number;entryTiming:string;grossPnl:number;fees:number;executionCost:number;funding:number;netPnl:number;evaluatedBars:number;halted:boolean};
-  forecastValidation?:{samples:number;modelMaeAtr:number|null;baselineMaeAtr:number|null;uncertaintyQuantile:number;calibrationDelay:number;minimumQualitySamples:number;proposedEntries:number;benchmarkPassed:number;uncertaintyPassed:number;qualityPassed:number;message:string}|null;
+  forecastValidation?:ForecastValidation|null;
   forecastErrors?:{samples:number;highMaePct:number;lowMaePct:number;closeMaePct:number};
   forecast?:{high:number;low:number;close:number;horizon:number};
   skippedTrainingBlocks?:number;
@@ -37,7 +56,7 @@ export type BacktestSettings = {
   market: 'xag'|'stable';
   atr_active: boolean; atr_period: number; atr_multiplier: number;
   ema_fast: number; ema_slow: number; rsi_period: number; rsi_threshold: number; rsi_active: boolean;
-  strategy: 'sweep'|'mtf'|'chartart_v12'|'bb_outer_reversal'|'ml_ensemble'|'rl_ppo'; rl:RLConfig; ml: MLConfig; bb_period: number; chartart_stop_pct: number;
+  strategy: 'none'|'sweep'|'mtf'|'chartart_v12'|'bb_outer_reversal'|'ml_directional'|'ml_ensemble'|'rl_ppo'; rl:RLConfig; ml: MLConfig; ml_directional: MLDirectionalConfig; bb_period: number; chartart_stop_pct: number;
   bb_reversal: {rsi_exit_enabled:boolean; rsi_exit_length:number; rsi_exit_move:number; rsi_exit_short:number; rsi_exit_long:number; amount_per_trade:number; amount_unit:'price'|'percent'; use_sma_trend_adjustment:boolean; trade_mode: 'Both'|'Long Only'|'Short Only'; bb_length:number; bb_mult:number; min_bb_width_pct:number; atr_length:number; min_atr:number; adx_length:number; adx_threshold:number; pullback_bars:number; initial_sl:number; trail_trigger:number; trail_distance:number; trail_multiplier:number; sma_length:number; sma_slope_bars:number; counter_profit_pct:number; counter_sl_pct:number; quantity:number};
   exit_condition: 'none'|'ema'|'rsi'|'either';
   stop_mode: 'none'|'fixed'|'breakeven'|'trailing'|'breakeven_trailing';
@@ -58,7 +77,7 @@ export type Trade = {
   stopHistory?: {time: number; price: number; reason: string; confirmedAt?: number}[];
   exitSignal?: {time: number; closeTime: number; reason: string; ema20: number | null; ema50: number | null; rsi20: number | null};
   exitReason: string; session: string; ambiguous: boolean; obstacle: number | null;
-  signalLabel?: string; signalCloseTime?: number; confirmations?: Confirmation[];
+  signalLabel?: string; signalCloseTime?: number; confirmations?: Confirmation[]; modelProbability?: number | null;
   swingHighs: number[]; swingLows: number[]; period: string;
 };
 export type Summary = {
@@ -73,14 +92,14 @@ export type PeriodResult = {
 };
 export type Confirmation = {stage: string; timeframe: string; closeTime: number; ema20: number; ema50: number; rsi20: number | null};
 export type IndicatorPoint = {time: number; ema20: number | null; ema50: number | null; rsi20: number | null; bbBasis?: number | null; bbUpper?: number | null; bbLower?: number | null; trendSma?:number|null; adx?:number|null; atr?:number|null; bbWidthPct?:number|null};
-export type BacktestResult = {runId?: number|null; strategy?: string; model?: ModelReport|null; strategyName: string; executionTimeframe: string; barSeconds: number; indicators: IndicatorPoint[]; settings: BacktestSettings; backtest: PeriodResult; candles: Analysis['candles']};
-export type TuneMetrics = {evaluatedBars?:number|null;availableBars?:number;policyBlocks?:number;rejectedPolicyBlocks?:number;policyMessage?:string;rejectionReasons?:string[];halted?:boolean;regimes?:RegimeStat[];averageWin?:number;averageLoss?:number;payoffRatio?:number|null;score:number;trades:number;wins:number;losses:number;winRate:number;netPnl:number;returnPct:number;maxDrawdownPct:number;averageLossPct:number};
+export type BacktestResult = {runId?: number|null; strategy?: string; model?: ModelReport|DirectionalReport|null; strategyName: string; executionTimeframe: string; barSeconds: number; indicators: IndicatorPoint[]; settings: BacktestSettings; backtest: PeriodResult; candles: Analysis['candles']};
+export type TuneMetrics = {forecastValidation?:ForecastValidation;evaluatedBars?:number|null;availableBars?:number;policyBlocks?:number;rejectedPolicyBlocks?:number;policyMessage?:string;rejectionReasons?:string[];halted?:boolean;regimes?:RegimeStat[];averageWin?:number;averageLoss?:number;payoffRatio?:number|null;score:number;trades:number;wins:number;losses:number;winRate:number;netPnl:number;returnPct:number;maxDrawdownPct:number;averageLossPct:number};
 export type FineTuneCase = {
   id:string;rank:number;reliable?:boolean;reliabilityReasons?:string[];skippedTrainingBlocks?:number;bestSettings:BacktestSettings;
   bestParameters:Partial<BacktestSettings['bb_reversal']>&{leverage?:number};
   periods:{train:{metrics:TuneMetrics};validation:{metrics:TuneMetrics};forwardTest:{metrics:TuneMetrics}};
 };
-export type FineTuneResult = {searchMethod?:'grid'|'random'|'training';gridAxes?:Record<string,number[]>|null;
+export type FineTuneResult = {status?:'eligible'|'no_eligible_setup';eligibleCandidates?:number;searchMethod?:'grid'|'random'|'training';gridAxes?:Record<string,number[]>|null;
   bestSettings:BacktestSettings;bestParameters:Partial<BacktestSettings['bb_reversal']>&{leverage?:number};
   model:string;objective:string;candidatesEvaluated:number;seedCandidates:number;adaptiveCandidatesEvaluated:number;shortlisted:number;
   periods:{train:{start:number;end:number;metrics:TuneMetrics};validation:{start:number;end:number;metrics:TuneMetrics};forwardTest:{start:number;end:number;metrics:TuneMetrics}};

@@ -836,6 +836,8 @@ class AutomaticLiveBot:
                         position=self.position,strategyState=self.strategy_state,error=self.error)
 
     def start(self, venue, request):
+        from server.strategies.registry import get_strategy
+        get_strategy(request.strategy)
         exchange, market = self.service.execution_client(venue)
         if self.running:
             raise ValueError('Stop the current live strategy before starting another')

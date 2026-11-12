@@ -7,7 +7,7 @@ import time
 
 import pandas as pd
 
-from server.strategies.registry import get_strategy
+from server.strategies.registry import STRATEGIES, get_strategy
 from server.core.serialization import optional_volume
 from server.market.data import TIMEFRAMES, load_bars
 from server.market.market_refresh import refresh_service
@@ -53,6 +53,9 @@ class PaperTrading:
         try:
             self.state = self.store.load()
             if self.state:
+                if self.state['settings'].get('strategy', 'bb_outer_reversal') not in STRATEGIES:
+                    self.state['running'] = False
+                    self.error = 'This session uses a removed strategy. Start a new virtual session; the previous session will be archived.'
                 old_settings = self.state['settings']['bb_reversal']
                 if old_settings.get('hedge_mode'):
                     self.state['running'] = False
@@ -73,7 +76,7 @@ class PaperTrading:
         with self.lock:
             if self.state is None:
                 return dict(session=None, error=self.error)
-            if self.state['settings']['bb_reversal'].get('hedge_mode'):
+            if self.state['settings'].get('strategy', 'bb_outer_reversal') not in STRATEGIES or self.state['settings']['bb_reversal'].get('hedge_mode'):
                 return dict(session=None, error=self.error)
             session = {k:v for k,v in self.state.items() if k not in ('candles','replayCandles','minuteCandles')}
             session['chartCandles'] = self.state['candles'][-1000:]
@@ -151,6 +154,8 @@ class PaperTrading:
         with self.lock:
             if not self.state:
                 raise ValueError('Start a paper session first')
+            if running and self.state.get('settings', {}).get('strategy', 'bb_outer_reversal') not in STRATEGIES:
+                raise ValueError('This strategy was removed. Start a new virtual session.')
             if self.state.get('settings', {}).get('bb_reversal', {}).get('hedge_mode'):
                 raise ValueError('Hedge mode was removed. Start a new virtual session.')
             if running and self.state['halted']:

@@ -140,7 +140,7 @@ class MLSettings:
 
     @property
     def warmup_bars(self) -> int:
-        return self.train_bars+self.horizon+200
+        return self.train_bars*(2 if self.exit_mode == 'forecast' and self.forecast_guard else 1)+self.horizon+200
 
     def model_key(self) -> str:
         """Identity of everything that changes a trained fold (not sizing or entry rules)."""
@@ -272,7 +272,12 @@ def prepare(frame: pd.DataFrame, settings: MLSettings, start=None, progress=None
         forecast_targets = pd.DataFrame(dict(up=ranges.long_mfe, down=ranges.long_mae, trend=future_trend))
         # Trend truth is independent of any take-profit/stop settings.
         labels = pd.Series(np.sign(future_trend), index=clean.index).where(future_trend.notna())
-    result = walk_forward(features, labels, start_index=start_index, train_bars=settings.train_bars,
+    prediction_start = start_index
+    if settings.exit_mode == 'forecast' and settings.forecast_guard and start_index:
+        # Whole retraining blocks preserve the selected-period block alignment.
+        blocks = (settings.train_bars+settings.retrain_every-1)//settings.retrain_every
+        prediction_start = start_index-min(blocks, start_index//settings.retrain_every)*settings.retrain_every
+    result = walk_forward(features, labels, start_index=prediction_start, train_bars=settings.train_bars,
                           retrain_every=settings.retrain_every, horizon=settings.horizon,
                           models=settings.models, key=settings.model_key(), capacity=settings.capacity, progress=progress,
                           exit_targets=targets, quantiles=(settings.tp_quantile, settings.sl_quantile),
@@ -326,7 +331,8 @@ def execute(prepared: Prepared, settings: MLSettings, *, initial_capital: float,
         from server.strategies.ml.forecast_validation import validate_forecasts
         allowed_entries, validation_report, quality_diagnostics = validate_forecasts(
             prepared, settings, signals.copy(), min_tick=min_tick, bar_seconds=bar_seconds,
-            fee_bps=fee_bps, slippage=slippage, spread=spread, funding_bps=funding_bps)
+            fee_bps=fee_bps, slippage=slippage, spread=spread, funding_bps=funding_bps,
+            evaluation_start=start, evaluation_end=end)
         signals = np.where(allowed_entries, signals, 0.)
         funnel.append(dict(step='Past benchmark, uncertainty and positive trade expectancy', remaining=int(np.count_nonzero(signals[start_index:]))))
     stop_distance = np.where(signals == -1, plan['short_stop'], plan['long_stop'])

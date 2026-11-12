@@ -1,5 +1,5 @@
 """Local CSV price API."""
-from datetime import date
+from datetime import date, timedelta
 from typing import Literal
 from contextlib import asynccontextmanager
 from queue import Queue
@@ -21,7 +21,7 @@ from server.forecast_forward import ForwardForecastRequest, issue_forward_foreca
 from server.forecast_models import TrainForecastRequest, train_saved_model, list_models, load_model, delete_model
 from server.strategies.strategy import BacktestRequest
 from server.strategies.bb_reversal_adapter import run_bb_reversal_backtest
-from server.strategies.registry import get_strategy
+from server.strategies.registry import STRATEGIES, get_strategy
 from server.market.market_refresh import refresh_service
 from server.market.history_backfill import history_backfill
 from server.storage.user_data_store import user_data_store
@@ -30,10 +30,15 @@ from server.core.workspaces import WorkspaceRegistry
 from server.storage.credential_store import credential_store
 from server.core.serialization import optional_volume
 from server.strategies.fine_tuning import fine_tune
-from server.strategies.ml.tuning import ml_fine_tune
+from server.market.orderflow_recorder import orderflow_service
 from server.storage.auth_store import SESSION_DAYS, auth_store
 
 workspaces = WorkspaceRegistry(user_data_store)
+
+
+def require_trading_strategy():
+    if not STRATEGIES:
+        raise HTTPException(status_code=409, detail='No trading strategies are configured. Add a new strategy before starting a backtest or automated trading.')
 
 
 def workspace(request: Request):
@@ -50,9 +55,11 @@ async def lifespan(app):
         except Exception:
             logging.getLogger(__name__).exception('User data storage is unavailable')
     refresh_service.start()
+    orderflow_service.start()
     try:
         yield
     finally:
+        orderflow_service.shutdown()
         await workspaces.shutdown()
         history_backfill.shutdown()
         refresh_service.shutdown()
@@ -232,7 +239,8 @@ def auth_user_level(user_id: int, parameters: AccountLevelRequest, request: Requ
 
 @app.get('/api/profiles')
 def list_profiles(request: Request):
-    return user_data_store.list_profiles(int(request.state.user['id']))
+    return [profile for profile in user_data_store.list_profiles(int(request.state.user['id']))
+            if profile.get('settings', {}).get('strategy', 'bb_outer_reversal') in STRATEGIES]
 
 
 @app.post('/api/profiles')
@@ -497,6 +505,7 @@ def exchange_close(parameters: ExchangeCloseRequest, request: Request):
 
 @app.post('/api/exchange/auto/start')
 def exchange_auto_start(parameters: LiveBotStartRequest, request: Request):
+    require_trading_strategy()
     ws = workspace(request)
     if not get_strategy(parameters.strategy).live_supported:
         raise HTTPException(status_code=400, detail=f'{get_strategy(parameters.strategy).label} runs in backtests and paper trading only. Validate it there before live use.')
@@ -543,6 +552,7 @@ class PaperStartRequest(BBBacktestRequest):
 
 @app.post('/api/paper/start')
 def paper_start(parameters: PaperStartRequest, request: Request):
+    require_trading_strategy()
     ws = workspace(request)
     try:
         return ws.paper.begin(parameters)
@@ -565,6 +575,8 @@ def paper_speed(parameters: ReplaySpeed, request: Request):
 
 @app.post('/api/paper/{action}')
 def paper_action(action: Literal['pause', 'resume'], request: Request):
+    if action == 'resume':
+        require_trading_strategy()
     ws = workspace(request)
     try:
         return ws.paper.set_running(action == 'resume')
@@ -604,6 +616,22 @@ def data_range(market: Literal['xag', 'stable'] = 'xag'):
 def _run_backtest(parameters: BBBacktestRequest):
     frame, _ = load_bars(parameters.entry_timeframe, instrument=parameters.market)
     return run_bb_reversal_backtest(frame, parameters)
+
+
+@app.post('/api/ml-directional/train')
+def train_ml_directional(parameters: BBBacktestRequest):
+    """Train the ML Directional walk-forward models for the chosen period and report their quality."""
+    if parameters.strategy != 'ml_directional':
+        raise HTTPException(status_code=400, detail='Select ML Directional to train its models.')
+    from server.strategies.ml.directional import settings_from, train_blocks
+    from server.strategies.strategy import seconds as day_seconds
+    duration = TIMEFRAMES[parameters.entry_timeframe]
+    frame, _ = load_bars(parameters.entry_timeframe, instrument=parameters.market)
+    end = pd.Timestamp(day_seconds(parameters.end_date+timedelta(days=1)), unit='s', tz='UTC')
+    frame = frame.dropna(subset=['open', 'high', 'low', 'close'])
+    frame = frame.loc[frame.index+pd.Timedelta(seconds=duration) <= end]
+    start = pd.Timestamp(day_seconds(parameters.start_date), unit='s', tz='UTC')
+    return train_blocks(frame, settings_from(parameters.ml_directional), start=start, bar_seconds=duration)
 
 
 class SavedForecastTestRequest(BaseModel):
@@ -744,6 +772,7 @@ def forecast_test(parameters: ForecastRequest):
 
 @app.post('/api/backtest')
 def backtest(parameters: BBBacktestRequest, request: Request):
+    require_trading_strategy()
     try:
         result = _run_backtest(parameters)
     except (ValueError, OSError) as error:
@@ -826,6 +855,9 @@ def fine_tune_stop(request: Request):
 
 @app.post('/api/backtest/fine-tune')
 def fine_tune_backtest(parameters: FineTuneRequest, request: Request):
+    require_trading_strategy()
+    if parameters.settings.strategy != 'bb_outer_reversal':
+        raise HTTPException(status_code=400, detail='Fine-tuning searches BB Outer Band Reversal parameters only.')
     updates = Queue()
     user_id = int(request.state.user['id'])
     previous = search_cancels.get(user_id)
@@ -841,13 +873,7 @@ def fine_tune_backtest(parameters: FineTuneRequest, request: Request):
     def work():
         try:
             frame, _ = load_bars(parameters.settings.entry_timeframe, instrument=parameters.settings.market)
-            if parameters.settings.strategy == 'rl_ppo':
-                from server.strategies.rl.tuning import rl_train_and_evaluate
-                tuner = rl_train_and_evaluate
-            else:
-                tuner = ml_fine_tune if parameters.settings.strategy == 'ml_ensemble' else fine_tune
-            result = tuner(frame, parameters.settings,
-                           **({} if parameters.settings.strategy == 'rl_ppo' else {'search_method': parameters.search_method}),
+            result = fine_tune(frame, parameters.settings, search_method=parameters.search_method,
                            validation_start=parameters.validation_start, forward_start=parameters.forward_start,
                            progress=progress)
             updates.put({'type': 'result', 'result': result})
@@ -930,14 +956,16 @@ def similar_patterns(parameters: PatternRequest):
         raise HTTPException(status_code=400, detail=str(error)) from error
 
 
+@app.get('/api/orderflow/status')
+def orderflow_status():
+    """Order-book and trade-flow recorder health (rows written, connection, last minute)."""
+    return orderflow_service.status()
+
+
 @app.get('/api/strategies')
 def strategies():
-    from server.strategies.ml.features import FEATURE_GROUPS
-    from server.strategies.ml.models import available_models, compute_status
     from server.strategies.registry import STRATEGIES
-    return dict(strategies=[dict(key=r.key, label=r.label, liveSupported=r.live_supported) for r in STRATEGIES.values()],
-                featureGroups=[dict(key=g.key, label=g.label, description=g.description) for g in FEATURE_GROUPS.values()],
-                models=available_models(), compute=compute_status())
+    return dict(strategies=[dict(key=r.key, label=r.label, liveSupported=r.live_supported) for r in STRATEGIES.values()])
 
 
 @app.get('/api/costs/htx')

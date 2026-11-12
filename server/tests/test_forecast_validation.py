@@ -176,3 +176,55 @@ class ForecastValidationTests(unittest.TestCase):
                        {'forecast_max_hold_bars': -1}, {'forecast_next_open': False}):
             with self.subTest(values=values), self.assertRaises(ValueError):
                 BacktestRequest(start_date='2026-01-01', end_date='2026-01-02', strategy='ml_ensemble', ml=values)
+
+
+    def test_period_diagnostics_are_bounded_and_reconcile(self):
+        prepared = self.prepared()
+        settings = MLSettings(horizon=3, train_bars=500, forecast_stop_buffer=1.5)
+        left, right = prepared.clean.index[400], prepared.clean.index[499]
+        _, report, _ = validate_forecasts(prepared, settings, np.ones(700), min_tick=.01, bar_seconds=300,
+                                          fee_bps=0., slippage=0., spread=0., funding_bps=0.,
+                                          evaluation_start=left, evaluation_end=right)
+        self.assertEqual(report['proposedEntries'], 100)
+        self.assertGreater(report['calibrationForecasts'], 0)
+        self.assertGreater(report['calibrationTradeSamples'], 0)
+        self.assertEqual(sum(report['firstBlockers'].values())+report['eligibleEntries'], 100)
+        self.assertTrue(all(value <= 100 for value in report['rejectionCounts'].values()))
+
+    def test_calibration_forecasts_precede_selected_trades(self):
+        from server.strategies.ml.strategy import prepare, execute
+        from server.tests.test_ml_strategy import market
+        frame = market(1800)
+        settings = MLSettings(horizon=6, train_bars=600, retrain_every=200)
+        start = frame.index[1000]
+        prepared = prepare(frame, settings, start=start)
+        earlier = prepared.walk.probabilities.loc[prepared.clean.index < start, 'forecast_trend']
+        self.assertTrue(earlier.notna().any())
+        self.assertEqual(prepared.start_index, 1000)
+        result = execute(prepared, settings, initial_capital=1000., leverage=1., start=start, bar_seconds=300)
+        self.assertTrue((result['bars'].index >= start).all())
+        self.assertGreater(result['report']['forecastValidation']['calibrationForecasts'], 0)
+
+    def test_no_trade_tuning_returns_diagnostics_and_explicit_reasons(self):
+        from unittest.mock import patch
+        from server.strategies.ml import tuning
+        from server.strategies.strategy import BacktestRequest
+        from server.tests.test_ml_strategy import market
+        frame = market(1200)
+        request = BacktestRequest(start_date='2026-01-01', end_date='2026-01-05', strategy='ml_ensemble')
+        validation = dict(proposedEntries=12, eligibleEntries=0, firstBlockers={'Insufficient historical trade samples': 12})
+        score = dict(trades=0, netPnl=0., winRate=0., maxDrawdownPct=0.)
+        output = dict(report=dict(forecastValidation=validation))
+        with patch.object(tuning, '_model_candidates', return_value=[dict(train_bars=6000)]), \
+             patch.object(tuning, 'ENTRY_GRID', dict(entry_threshold=(.4,), min_edge=(.05,))), \
+             patch.object(tuning, 'prepare', return_value=object()), \
+             patch.object(tuning, 'execute', return_value=output), \
+             patch.object(tuning, '_score', side_effect=lambda result, capital: dict(score)):
+            result = tuning.ml_fine_tune(frame, request)
+        self.assertEqual(result['status'], 'no_eligible_setup')
+        self.assertEqual(result['eligibleCandidates'], 0)
+        candidate = result['candidates'][0]
+        self.assertFalse(candidate['reliable'])
+        self.assertIn('no trades', ' '.join(candidate['reliabilityReasons']))
+        self.assertEqual(candidate['periods']['validation']['metrics']['forecastValidation'], validation)
+        self.assertEqual(result['periods']['forwardTest']['end'], int((frame.index[-1]+pd.Timedelta(minutes=5)).timestamp()))

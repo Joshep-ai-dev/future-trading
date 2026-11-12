@@ -21,6 +21,13 @@ export const mlDefaults: BacktestSettings['ml'] = {
 
 export const REGIME_NAMES=['Trend up','Trend down','Range','Volatile'] as const;
 
-export const STRATEGY_LABELS:Record<string,string>={bb_outer_reversal:'BB Outer Band Reversal',ml_ensemble:'ML Strategy',rl_ppo:'RL PPO'};
+export const STRATEGY_LABELS:Record<string,string>={none:'No strategy configured'};
+
+/** Mirrors server/strategies/ml/directional.py DirectionalSettings defaults (tuned for 5m candles). */
+export const mlDirectionalDefaults: BacktestSettings['ml_directional'] = {
+  take_profit_atr:4.5,stop_atr:3,max_hold_bars:48,atr_length:14,train_days:90,trade_days:30,calibration_fraction:.15,
+  min_probability:.5,min_ev_r:.1,min_gap:.1,vol_low_pct:10,vol_high_pct:98,trade_mode:'Both',trades_per_day:0,
+  risk_per_trade_pct:.5,max_drawdown_pct:0,trees:300,learning_rate:.03,max_depth:4,min_leaf:100,seed:7,
+};
 
 export const rlDefaults:BacktestSettings['rl']={train_bars:10000,retrain_every:1000,lookback:100,timesteps:51200,learning_rate:.0003,seed:7,min_atr:.03,stop_atr:3,max_drawdown_pct:20,drawdown_penalty:.1,turnover_penalty:.0001,amount_per_trade:100,amount_unit:'percent'};

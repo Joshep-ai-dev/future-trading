@@ -84,17 +84,24 @@ def ml_fine_tune(frame: pd.DataFrame, request, progress=None, search_method='gri
     if (clean.index < start).sum() < base.train_bars // 2:
         report(1, 'Little history before the start date: the first blocks train on less data')
     validation_at, forward_at = split_points(evaluated_index, validation_start, forward_start)
-    cuts = (evaluated_index[0], evaluated_index[validation_at], evaluated_index[forward_at], evaluated_index[-1])
+    cuts = (evaluated_index[0], evaluated_index[validation_at], evaluated_index[forward_at], evaluated_index[-1]+pd.Timedelta(seconds=duration))
     # Do not let adjacent evaluation segments share their boundary candle.
     tick = pd.Timedelta(nanoseconds=1)
-    segments = dict(train=(cuts[0], cuts[1]-tick), validation=(cuts[1], cuts[2]-tick), forwardTest=(cuts[2], cuts[3]))
+    segments = dict(train=(cuts[0], cuts[1]-tick), validation=(cuts[1], cuts[2]-tick), forwardTest=(cuts[2], cuts[3]-tick))
     costs = dict(fee_bps=request.fee_bps, slippage=request.slippage, spread=request.spread, funding_bps=request.funding_bps)
 
     def run_segment(prepared, settings, name):
         left, right = segments[name]
         result = execute(prepared, settings, initial_capital=request.capital, leverage=request.max_leverage,
                          start=left, end=right, close_at_end=True, bar_seconds=duration, min_tick=request.tick_size, **costs)
-        return _score(result, request.capital)
+        metrics = _score(result, request.capital)
+        model_report = result.get('report', {})
+        if model_report.get('forecastValidation') is not None:
+            metrics['forecastValidation'] = model_report['forecastValidation']
+        if 'bars' in result:
+            metrics['evaluatedBars'] = len(result['bars'])
+            metrics['availableBars'] = int(((clean.index >= left) & (clean.index <= right)).sum())
+        return metrics
 
     report(2, 'Stage 1: selecting the training configuration')
     selection = []
@@ -162,6 +169,19 @@ def ml_fine_tune(frame: pd.DataFrame, request, progress=None, search_method='gri
         if len(finalists) == FINALISTS:
             break
 
+    def reliability_reasons(train_metrics, validation_metrics):
+        reasons = []
+        for name, metrics, minimum in (('Earlier period', train_metrics, MIN_TRAIN_TRADES), ('Validation', validation_metrics, MIN_VALIDATION_TRADES)):
+            if metrics['trades'] == 0:
+                reasons.append(f'{name}: no trades were executed; profitability and win rate are unmeasured.')
+            elif metrics['trades'] < minimum:
+                reasons.append(f'{name}: {metrics["trades"]} trades; at least {minimum} are required.')
+            if metrics['trades'] and metrics['netPnl'] <= 0:
+                reasons.append(f'{name}: net profit after costs is {metrics["netPnl"]:.2f}; positive net profit is required.')
+            if metrics.get('halted', False):
+                reasons.append(f'{name}: a hard loss limit halted execution.')
+        return reasons
+
     candidates = []
     for rank, (validation_metrics, params, key, train_metrics) in enumerate(finalists, start=1):
         settings = replace(base, **params)
@@ -171,6 +191,7 @@ def ml_fine_tune(frame: pd.DataFrame, request, progress=None, search_method='gri
             id=f'case-{rank}', rank=rank, bestParameters=params,
             bestSettings=request.model_copy(update={'ml': asdict(settings)}).model_dump(mode='json'),
             reliable=_ml_ranking_key(train_metrics, validation_metrics)[:2] == (True, True),
+            reliabilityReasons=reliability_reasons(train_metrics, validation_metrics),
             skippedTrainingBlocks=sum(f.get('status') == 'skipped'
                                       for f in getattr(getattr(prepared, 'walk', None), 'folds', [])),
             periods=dict(train=dict(metrics=train_metrics),
@@ -189,7 +210,8 @@ def ml_fine_tune(frame: pd.DataFrame, request, progress=None, search_method='gri
         rankingObjective='win_rate', candidates=candidates, modelHyperparameters=None, modelCrossValidationRmse=None,
         modelSelection=dict(selected=selected_model, candidates=selection),
         candidatesEvaluated=len(scored), seedCandidates=len(model_candidates), adaptiveCandidatesEvaluated=0,
-        shortlisted=len(finalists),
+        shortlisted=len(finalists), eligibleCandidates=sum(candidate['reliable'] for candidate in candidates),
+        status='eligible' if any(candidate['reliable'] for candidate in candidates) else 'no_eligible_setup',
         periods=dict(train=dict(start=stamps[0], end=stamps[1], metrics=best['periods']['train']['metrics']),
                      validation=dict(start=stamps[1], end=stamps[2], metrics=best['periods']['validation']['metrics']),
                      forwardTest=dict(start=stamps[2], end=stamps[3], metrics=best['periods']['forwardTest']['metrics'])),

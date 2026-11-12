@@ -453,6 +453,13 @@ export default function ResultsWorkspace({
                           fmt(selected.finalStop ?? selected.stop, 3),
                         ],
                         ["Planned risk", `$${fmt(selected.plannedRisk)}`],
+                        ...(selected.modelProbability != null
+                          ? [
+                              ["Target", selected.target == null ? "—" : fmt(selected.target, 3)],
+                              ["Model win chance", `${fmt(selected.modelProbability * 100, 1)}%`],
+                              ["Actual", selected.exitReason === "take_profit" ? "Reached target" : selected.netPnl > 0 ? "Closed in profit" : "Did not reach target"],
+                            ]
+                          : []),
                         ["Exit reason", reason(selected.exitReason)],
                       ].map(([label, value]) => (
                         <div key={label}>

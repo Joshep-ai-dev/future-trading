@@ -71,7 +71,7 @@ def proposal_returns(frame, probabilities, atr, signals, settings, costs):
     return pd.Series(result, index=frame.index)
 
 
-def validate_forecasts(prepared, settings, raw_signals, *, min_tick, bar_seconds, fee_bps, slippage, spread, funding_bps):
+def validate_forecasts(prepared, settings, raw_signals, *, min_tick, bar_seconds, fee_bps, slippage, spread, funding_bps, evaluation_start=None, evaluation_end=None):
     frame, p, atr = prepared.clean, prepared.walk.probabilities, prepared.atr
     horizon, window, minimum = settings.horizon, settings.train_bars, 30
     delay = max(horizon, settings.forecast_max_hold_bars)+1
@@ -127,12 +127,41 @@ def validate_forecasts(prepared, settings, raw_signals, *, min_tick, bar_seconds
     allowed = benchmark_ok.to_numpy() & uncertainty_ok.to_numpy() & quality_ok
     diagnostics = pd.DataFrame(dict(p_trade_win=probability, net_expectancy=expectancy,
                                      forecast_uncertainty_atr=uncertainty, quality_samples=count), index=frame.index)
-    evaluated = np.arange(len(frame)) >= prepared.start_index
+    fills = pd.Series(frame.index, index=frame.index).shift(-1)
+    left = evaluation_start if evaluation_start is not None else frame.index[min(prepared.start_index, len(frame)-1)]
+    evaluated = fills.ge(left).to_numpy()
+    if evaluation_end is not None:
+        evaluated &= fills.le(evaluation_end).to_numpy()
     valid = known & evaluated
     proposed = (np.asarray(raw_signals) != 0) & evaluated
+    enough_quality = count >= minimum
+    checks = [
+        ('No matured forecast benchmark', past_error.isna().to_numpy() | past_baseline.isna().to_numpy()),
+        ('Forecast does not beat baseline', ~benchmark_ok.to_numpy()),
+        ('No matured uncertainty estimate', uncertainty.isna().to_numpy()),
+        ('Forecast movement does not exceed uncertainty and costs', ~uncertainty_ok.to_numpy()),
+        ('Insufficient historical trade samples', ~enough_quality),
+        ('Historical win frequency below minimum', ~(probability >= settings.quality_threshold)),
+        ('Historical net expectancy is not positive', ~(expectancy > 0)),
+    ]
+    # Independent counts identify every failing check. Sequential counts assign
+    # each proposal its first blocker and therefore reconcile to proposal count.
+    rejection_counts = {name: int((proposed & failed).sum()) for name, failed in checks}
+    survivors = proposed.copy()
+    funnel = [dict(step='Proposed entries before forecast validation', remaining=int(survivors.sum()))]
+    first_blockers = {}
+    for name, failed in checks:
+        first_blockers[name] = int((survivors & failed).sum())
+        survivors &= ~failed
+        funnel.append(dict(step=name, remaining=int(survivors.sum())))
+    prior = (frame.index < left) & np.isfinite(estimate).all(axis=1)
+    matured_before = sample & outcome.notna().to_numpy() & (frame.index+pd.Timedelta(seconds=costs['bar_seconds']*delay) <= left)
     report = dict(samples=int(valid.sum()), modelMaeAtr=float(model_error[valid].mean()) if valid.any() else None,
                   baselineMaeAtr=float(naive_error[valid].mean()) if valid.any() else None,
                   uncertaintyQuantile=.9, calibrationDelay=delay, minimumQualitySamples=minimum,
+                  calibrationForecasts=int(prior.sum()), calibrationTradeSamples=int(matured_before.sum()),
+                  rejectionCounts=rejection_counts, firstBlockers=first_blockers, funnel=funnel,
+                  eligibleEntries=int(survivors.sum()),
                   proposedEntries=int(np.count_nonzero(np.asarray(raw_signals)[evaluated])),
                   benchmarkPassed=int((benchmark_ok.to_numpy() & proposed).sum()),
                   uncertaintyPassed=int((uncertainty_ok.to_numpy() & proposed).sum()),

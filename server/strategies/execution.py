@@ -31,6 +31,7 @@ class ExecutionSettings:
     daily_loss_pct: float = 0.
     take_profit_pct: float | None = None
     stop_loss_pct: float | None = None
+    max_entries_per_day: int = 0  # 0 = unlimited; counts entries per UTC day.
 
     def __post_init__(self) -> None:
         for name in ('risk_per_trade_pct', 'max_drawdown_pct', 'daily_loss_pct'):
@@ -39,6 +40,8 @@ class ExecutionSettings:
                 raise ValueError(f'{name} must be finite and between 0 and 100 (exclusive)')
         if not isinstance(self.next_open, bool):
             raise ValueError('next_open must be boolean')
+        if isinstance(self.max_entries_per_day, bool) or not isinstance(self.max_entries_per_day, int) or self.max_entries_per_day < 0:
+            raise ValueError('max_entries_per_day must be a nonnegative integer')
 
 
 def _seconds(time) -> float:
@@ -81,6 +84,7 @@ def run_signal_backtest(bars: pd.DataFrame, signals: np.ndarray, stop_distance: 
     cash, position, trades, records = float(settings.initial_capital), None, [], []
     peak, day_equity, day = cash, cash, None
     halted = False
+    entries_today = 0
 
     def risk_floor():
         return max(peak*(1-settings.max_drawdown_pct/100) if settings.max_drawdown_pct else -np.inf,
@@ -113,7 +117,9 @@ def run_signal_backtest(bars: pd.DataFrame, signals: np.ndarray, stop_distance: 
         position = None
 
     def open_position(time, close, direction, stop, target, index, activation=np.nan, distance=np.nan):
-        nonlocal cash, position
+        nonlocal cash, position, entries_today
+        if settings.max_entries_per_day and entries_today >= settings.max_entries_per_day:
+            return
         amount = cash*settings.amount_per_trade/100 if settings.amount_unit == 'percent' else min(settings.amount_per_trade, cash)
         quantity = amount*settings.leverage/close
         if settings.risk_per_trade_pct:
@@ -138,6 +144,7 @@ def run_signal_backtest(bars: pd.DataFrame, signals: np.ndarray, stop_distance: 
                         trail_trigger=float(activation) if np.isfinite(activation) else 0.,
                         trail_distance=float(distance) if np.isfinite(distance) and np.isfinite(activation) else np.nan,
                         stop_history=[dict(time=int(_seconds(time)), price=stop_price, reason='initial')])
+        entries_today += 1
 
     index = bars.index
     for i, bar in enumerate(bars.itertuples()):
@@ -146,6 +153,7 @@ def run_signal_backtest(bars: pd.DataFrame, signals: np.ndarray, stop_distance: 
         current_day = time.floor('D') if hasattr(time, 'floor') else int(_seconds(time)//86400)
         if day != current_day:
             day = current_day
+            entries_today = 0
             day_equity = cash if position is None else records[-1]['equity']
         gap = bool(gaps[i])
         signal = int(signals[i]) if np.isfinite(signals[i]) else 0

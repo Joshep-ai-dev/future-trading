@@ -1,4 +1,5 @@
-import { fmt, type ModelReport } from "../../shared/types/types";
+import { fmt, type DirectionalReport, type ModelReport } from "../../shared/types/types";
+import DirectionalReportPanel from "./DirectionalReportPanel";
 
 const day = (t: number) => new Date(t * 1000).toISOString().slice(0, 10);
 const pct = (value: number | null | undefined, digits = 1) =>
@@ -6,7 +7,8 @@ const pct = (value: number | null | undefined, digits = 1) =>
 const label = (name: string) => name.replaceAll("_", " ");
 
 /** Walk-forward diagnostics for ML strategies: accuracy, outcomes, costs and feature importance. */
-export default function ModelReportPanel({ report }: { report: ModelReport }) {
+export default function ModelReportPanel({ report }: { report: ModelReport | DirectionalReport }) {
+  if (report.kind === "ml_directional") return <DirectionalReportPanel report={report} />;
   if (report.kind === "rl")
     return (
       <div className='model-report'>

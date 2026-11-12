@@ -151,11 +151,11 @@ export default function SavedRuns({
               </td>
               <td>
                 <span
-                  className={`strategy-tag is-${run.strategy === "ml_ensemble" ? "ml" : "bb"}`}
+                  className={`strategy-tag is-${run.strategy === "ml_ensemble" || run.strategy === "ml_directional" ? "ml" : "bb"}`}
                 >
                   {run.strategy === "rl_ppo"
                     ? "RL"
-                    : run.strategy === "ml_ensemble"
+                    : run.strategy === "ml_ensemble" || run.strategy === "ml_directional"
                       ? "ML"
                       : "BB"}
                 </span>

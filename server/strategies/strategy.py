@@ -14,9 +14,10 @@ class BacktestRequest(BaseModel):
     start_date: date
     end_date: date
     validation_date: date | None = None  # Accepted only for older saved settings.
-    strategy: Literal['bb_outer_reversal', 'ml_ensemble', 'rl_ppo'] = 'bb_outer_reversal'
+    strategy: Literal['none'] = 'none'
     market: Literal['xag', 'stable'] = 'xag'
     bb_reversal: dict = Field(default_factory=dict)
+    ml_directional: dict = Field(default_factory=dict)
     ml: dict = Field(default_factory=dict)
     rl: dict = Field(default_factory=dict)
     direction_active: bool = True
@@ -52,34 +53,8 @@ class BacktestRequest(BaseModel):
     def check_ranges(self):
         if self.end_date < self.start_date:
             raise ValueError('End date must be on or after the start date.')
-        from server.strategies.bb_outer_reversal import Settings
-        # Ignore the removed option in older saved browser configurations.
-        self.bb_reversal = {k: v for k, v in self.bb_reversal.items() if k not in ('hedge_mode', 'reward_risk', 'risk_per_trade_pct')}
-        try:
-            config = Settings(**self.bb_reversal)
-            if config.amount_unit == 'price' and config.amount_per_trade > self.capital:
-                raise ValueError('Amount per trade cannot exceed the starting account balance')
-        except (TypeError, ValueError) as error:
-            raise ValueError(str(error)) from error
-        self.bb_reversal = {**self.bb_reversal, 'trade_mode': 'Both'}
-        if self.strategy == 'ml_ensemble':
-            from server.strategies.ml.strategy import MLSettings
-            try:
-                ml = MLSettings(**self.ml)
-            except TypeError as error:
-                raise ValueError(f'Invalid ML setting: {error}') from error
-            if ml.amount_unit == 'price' and ml.amount_per_trade > self.capital:
-                raise ValueError('Amount per trade cannot exceed the starting account balance')
-        if self.strategy == 'rl_ppo':
-            from server.strategies.rl.settings import RLSettings
-            try:
-                rl = RLSettings(**self.rl)
-            except TypeError as error:
-                raise ValueError(f'Invalid RL setting: {error}') from error
-            if rl.amount_unit == 'price' and rl.amount_per_trade > self.capital:
-                raise ValueError('Amount per trade cannot exceed the starting account balance')
         self.exit_condition = 'none'
-        self.stop_mode = 'trailing'
+        self.stop_mode = 'none'
         return self
 
 

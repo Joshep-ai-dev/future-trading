@@ -1,7 +1,7 @@
 {
   "purpose": "Fixed-period integration and ablation check; no profitability claim or forward-based selection",
-  "start": "2026-10-30T07:55:00+00:00",
-  "end": "2026-11-09T17:50:00+00:00",
+  "start": "2026-10-31T00:50:00+00:00",
+  "end": "2026-11-10T10:45:00+00:00",
   "costs": {
     "fee_bps": 6.0,
     "slippage": 0.01,
@@ -15,29 +15,29 @@
     "unguarded_adaptive": {
       "metrics": {
         "halted": false,
-        "averageWin": 9.7117,
-        "averageLoss": 6.1495,
-        "payoffRatio": 1.579,
-        "score": 54.504,
-        "trades": 36,
-        "wins": 9,
+        "averageWin": 8.8628,
+        "averageLoss": 6.1245,
+        "payoffRatio": 1.447,
+        "score": 51.608,
+        "trades": 33,
+        "wins": 6,
         "losses": 27,
-        "winRate": 25.0,
-        "netPnl": -78.6321,
-        "returnPct": -3.932,
-        "maxDrawdownPct": -5.138,
-        "averageLossPct": 0.307
+        "winRate": 18.18,
+        "netPnl": -112.184,
+        "returnPct": -5.609,
+        "maxDrawdownPct": -6.218,
+        "averageLossPct": 0.306
       },
       "audit": {
         "passed": true,
-        "cashReconciliationError": 7.503331289626658e-12,
-        "pnlReconciliationError": 2.220446049250313e-15,
+        "cashReconciliationError": 4.092726157978177e-12,
+        "pnlReconciliationError": 7.216449660063518e-15,
         "entryTiming": "next_open",
-        "grossPnl": 24.753094457939653,
-        "fees": 62.93709122661473,
-        "executionCost": 40.785506752062695,
-        "funding": -0.337413374207637,
-        "netPnl": -78.63209014653015,
+        "grossPnl": -18.21626731251824,
+        "fees": 57.1926960200236,
+        "executionCost": 36.98067824277916,
+        "funding": -0.20563399305564112,
+        "netPnl": -112.18400758226535,
         "evaluatedBars": 3000,
         "halted": false
       },
@@ -73,14 +73,69 @@
         "halted": false
       },
       "validation": {
-        "samples": 2976,
-        "modelMaeAtr": 2.82279024697654,
-        "baselineMaeAtr": 2.675824290159839,
+        "samples": 2977,
+        "modelMaeAtr": 2.8483032431391457,
+        "baselineMaeAtr": 2.706405441803,
         "uncertaintyQuantile": 0.9,
         "calibrationDelay": 25,
         "minimumQualitySamples": 30,
-        "proposedEntries": 109,
-        "benchmarkPassed": 27,
+        "calibrationForecasts": 5000,
+        "calibrationTradeSamples": 31,
+        "rejectionCounts": {
+          "No matured forecast benchmark": 0,
+          "Forecast does not beat baseline": 89,
+          "No matured uncertainty estimate": 0,
+          "Forecast movement does not exceed uncertainty and costs": 89,
+          "Insufficient historical trade samples": 89,
+          "Historical win frequency below minimum": 89,
+          "Historical net expectancy is not positive": 89
+        },
+        "firstBlockers": {
+          "No matured forecast benchmark": 0,
+          "Forecast does not beat baseline": 89,
+          "No matured uncertainty estimate": 0,
+          "Forecast movement does not exceed uncertainty and costs": 0,
+          "Insufficient historical trade samples": 0,
+          "Historical win frequency below minimum": 0,
+          "Historical net expectancy is not positive": 0
+        },
+        "funnel": [
+          {
+            "step": "Proposed entries before forecast validation",
+            "remaining": 89
+          },
+          {
+            "step": "No matured forecast benchmark",
+            "remaining": 89
+          },
+          {
+            "step": "Forecast does not beat baseline",
+            "remaining": 0
+          },
+          {
+            "step": "No matured uncertainty estimate",
+            "remaining": 0
+          },
+          {
+            "step": "Forecast movement does not exceed uncertainty and costs",
+            "remaining": 0
+          },
+          {
+            "step": "Insufficient historical trade samples",
+            "remaining": 0
+          },
+          {
+            "step": "Historical win frequency below minimum",
+            "remaining": 0
+          },
+          {
+            "step": "Historical net expectancy is not positive",
+            "remaining": 0
+          }
+        ],
+        "eligibleEntries": 0,
+        "proposedEntries": 89,
+        "benchmarkPassed": 0,
         "uncertaintyPassed": 0,
         "qualityPassed": 0,
         "message": "Entry checks use matured out-of-sample forecasts and non-overlapping completed proposals. Tree agreement is not trade-win probability."
@@ -116,14 +171,69 @@
         "halted": false
       },
       "validation": {
-        "samples": 2976,
-        "modelMaeAtr": 2.82279024697654,
-        "baselineMaeAtr": 2.675824290159839,
+        "samples": 2977,
+        "modelMaeAtr": 2.8483032431391457,
+        "baselineMaeAtr": 2.706405441803,
         "uncertaintyQuantile": 0.9,
         "calibrationDelay": 25,
         "minimumQualitySamples": 30,
-        "proposedEntries": 109,
-        "benchmarkPassed": 27,
+        "calibrationForecasts": 5000,
+        "calibrationTradeSamples": 31,
+        "rejectionCounts": {
+          "No matured forecast benchmark": 0,
+          "Forecast does not beat baseline": 89,
+          "No matured uncertainty estimate": 0,
+          "Forecast movement does not exceed uncertainty and costs": 89,
+          "Insufficient historical trade samples": 89,
+          "Historical win frequency below minimum": 89,
+          "Historical net expectancy is not positive": 89
+        },
+        "firstBlockers": {
+          "No matured forecast benchmark": 0,
+          "Forecast does not beat baseline": 89,
+          "No matured uncertainty estimate": 0,
+          "Forecast movement does not exceed uncertainty and costs": 0,
+          "Insufficient historical trade samples": 0,
+          "Historical win frequency below minimum": 0,
+          "Historical net expectancy is not positive": 0
+        },
+        "funnel": [
+          {
+            "step": "Proposed entries before forecast validation",
+            "remaining": 89
+          },
+          {
+            "step": "No matured forecast benchmark",
+            "remaining": 89
+          },
+          {
+            "step": "Forecast does not beat baseline",
+            "remaining": 0
+          },
+          {
+            "step": "No matured uncertainty estimate",
+            "remaining": 0
+          },
+          {
+            "step": "Forecast movement does not exceed uncertainty and costs",
+            "remaining": 0
+          },
+          {
+            "step": "Insufficient historical trade samples",
+            "remaining": 0
+          },
+          {
+            "step": "Historical win frequency below minimum",
+            "remaining": 0
+          },
+          {
+            "step": "Historical net expectancy is not positive",
+            "remaining": 0
+          }
+        ],
+        "eligibleEntries": 0,
+        "proposedEntries": 89,
+        "benchmarkPassed": 0,
         "uncertaintyPassed": 0,
         "qualityPassed": 0,
         "message": "Entry checks use matured out-of-sample forecasts and non-overlapping completed proposals. Tree agreement is not trade-win probability."
