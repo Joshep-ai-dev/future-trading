@@ -1,3 +1,4 @@
+import {notifyMarketDataUpdated} from '../charts/marketDataRevision';
 import {useCallback,useEffect,useRef,useState} from 'react';
 import HistoryBackfill from './HistoryBackfill';
 import {api} from '../api/api';
@@ -12,7 +13,7 @@ export default function MarketStatus({onUpdated,accountMode}:{onUpdated:()=>void
   function accept(value:Status) {
     setStatus(value);
     if(value.lastSuccess!==null&&value.lastSuccess!==success.current) {
-      success.current=value.lastSuccess;callback.current();
+      success.current=value.lastSuccess;notifyMarketDataUpdated();callback.current();
     }
   }
   useEffect(()=>{
@@ -21,10 +22,10 @@ export default function MarketStatus({onUpdated,accountMode}:{onUpdated:()=>void
       try {const value=await api<Status>('/api/market-status');if(active){accept(value);setError('');}}
       catch(e){if(active)setError(String(e));}
     }
-    void poll();const timer=setInterval(poll,15000);
+    void poll();const timer=setInterval(poll,status?.running?1000:15000);
     return ()=>{active=false;clearInterval(timer);};
-  },[]);
-  const onBackfilled=useCallback(()=>callback.current(),[]);
+  },[status?.running]);
+  const onBackfilled=useCallback(()=>{notifyMarketDataUpdated();callback.current();},[]);
   async function refresh() {
     setBusy(true);setError('');
     try {accept(await api<Status>('/api/market-refresh',{method:'POST'}));}

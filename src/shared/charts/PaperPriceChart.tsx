@@ -1,3 +1,7 @@
+import {BollingerOverlay} from './BollingerOverlay';
+import {chartBollingerBands} from './bollingerBands';
+import {SupertrendOverlay} from './SupertrendOverlay';
+import {chartSupertrend} from './supertrend';
 import {indicatorColor} from './indicatorColors';
 import IndicatorHeader from './IndicatorHeader';
 import IndicatorSettings,{useIndicatorSettings,type IndicatorConfig,type IndicatorKind} from './IndicatorSettings';
@@ -7,7 +11,7 @@ import {chartTimeOptions,formatChartTime,useChartTimeZone} from './chartTimeZone
 import {TIMEFRAMES} from './chartTimeframe';
 import {StopOverlay} from './StopOverlay';
 import {api} from '../api/api';
-import {mergeHistory} from './candleHistory';
+import {mergeHistory,canAppendCandles} from './candleHistory';
 import {candleLogical,captureViewport,restoreViewport} from './chartViewport';
 import {useEffect,useRef,useState} from 'react';
 import {CandlestickSeries,ColorType,createChart,createSeriesMarkers,HistogramSeries,LineSeries,LineStyle,type AutoscaleInfo,type ISeriesApi,type IChartApi,type UTCTimestamp,type SeriesMarker} from 'lightweight-charts';
@@ -28,13 +32,13 @@ export default function PaperPriceChart(props:Props) {
   const update=useRef<(data:Data)=>void>(()=>{});
   const selectedIndicators=useChartIndicatorSelection();
   const [indicatorConfig,setIndicatorConfig]=useIndicatorSettings();
-  const [settingsOpen,setSettingsOpen]=useState<IndicatorKind|null>(null);
+  const [settingsOpen,setSettingsOpen]=useState<IndicatorKind|'supertrend'|'bollinger'|null>(null);
   const timeZone=useChartTimeZone();
   const timeZoneRef=useRef(timeZone);timeZoneRef.current=timeZone;
   const configRef=useRef(indicatorConfig);configRef.current=indicatorConfig;
   function applyIndicatorConfig(config:IndicatorConfig){setIndicatorConfig(config);}
-  const changePanels=useRef<(selection:{atr:boolean;adx:boolean;rsi:boolean},config:IndicatorConfig)=>void>(()=>{});
-  function toggleIndicator(key:IndicatorKind){toggleChartIndicator(key);}
+  const changePanels=useRef<(selection:{atr:boolean;adx:boolean;rsi:boolean;supertrend:boolean;bollinger:boolean},config:IndicatorConfig)=>void>(()=>{});
+  function toggleIndicator(key:IndicatorKind|'supertrend'|'bollinger'){toggleChartIndicator(key);}
   const [paneHeaders,setPaneHeaders]=useState<{kind:IndicatorKind;top:number}[]>([]);
   const [paneValues,setPaneValues]=useState<{atr:number|null;adx:number|null;rsi:number|null}>({atr:null,adx:null,rsi:null});
   const [hiddenIndicators,setHiddenIndicators]=useState({atr:false,adx:false,rsi:false});
@@ -64,9 +68,12 @@ export default function PaperPriceChart(props:Props) {
     price.priceScale().applyOptions({scaleMargins:{top:.18,bottom:.22}});
     const volume=chart.addSeries(HistogramSeries,{priceScaleId:'',priceFormat:{type:'volume'},lastValueVisible:false,priceLineVisible:false});
     volume.priceScale().applyOptions({scaleMargins:{top:.8,bottom:0}});
+    const supertrendOverlay=new SupertrendOverlay();price.attachPrimitive(supertrendOverlay);
+    let supertrendVisible=false,bollingerVisible=false;
+    const bollingerOverlay=new BollingerOverlay();price.attachPrimitive(bollingerOverlay);
     const markers=createSeriesMarkers(price,[]);
     const fillLabels=new FillLabels();price.attachPrimitive(fillLabels);
-    const overlays=([['bbBasis','#63d6d0','BB middle'],['bbUpper','#7d8da5','BB upper'],['bbLower','#7d8da5','BB lower'],['trendSma','#d7ad69','Trend SMA']] as const).filter(([key])=>key!=='trendSma'||props.showSma).map(([key,color,title])=>({key,series:chart.addSeries(LineSeries,{color,lineWidth:1,title,priceLineVisible:false,lastValueVisible:false})}));
+    const overlays=props.showSma?[{key:'trendSma' as const,series:chart.addSeries(LineSeries,{color:'#d7ad69',lineWidth:1,title:'Trend SMA',priceLineVisible:false,lastValueVisible:false})}]:[];
     updateStrategyVisibility.current=()=>{for(const {series} of overlays)series.applyOptions({visible:strategyVisibleRef.current});};
     const stopOverlay=new StopOverlay();price.attachPrimitive(stopOverlay);
     let liveEntryLines:ReturnType<typeof price.createPriceLine>[]=[];
@@ -102,6 +109,10 @@ export default function PaperPriceChart(props:Props) {
     changePanels.current=(selection,config)=>{
       const viewport=captureViewport(chart,lastTime.current);
       panelConfig=config;oscillatorKey='';
+      bollingerVisible=selection.bollinger;
+      bollingerOverlay.setVisible(bollingerVisible);
+      supertrendVisible=selection.supertrend;
+      supertrendOverlay.setVisible(supertrendVisible);
       adxDecoration=null;
       for(const series of oscillatorSeries.values())chart.removeSeries(series);
       oscillatorSeries.clear();
@@ -172,7 +183,7 @@ export default function PaperPriceChart(props:Props) {
       const stamp=data.candles.at(-1)?.time;
       // Append live candles without rebuilding the time scale. History prepends
       // still need setData, followed by restoration against a visible candle.
-      const appendOnly=previous&&previousTime!==undefined&&data.candles[0]?.time===previous.candles[0]?.time&&data.candles.length>=previous.candles.length&&data.candles[previous.candles.length-1]?.time===previousTime;
+      const appendOnly=previous&&canAppendCandles(previous.candles,data.candles);
       if(appendOnly&&previous){
         for(const candle of data.candles.slice(previous.candles.length-1))price.update({...candle,time:candle.time as UTCTimestamp});
       }else price.setData(data.candles.map(c=>({...c,time:c.time as UTCTimestamp})));
@@ -182,8 +193,16 @@ export default function PaperPriceChart(props:Props) {
         for(const {key,series} of overlays)series.setData(data.indicators.map(p=>p[key]===null?{time:p.time as UTCTimestamp}:{time:p.time as UTCTimestamp,value:p[key]}));
       const duration=TIMEFRAMES[props.timeframe as keyof typeof TIMEFRAMES];
       const completed=data.candles.filter(c=>c.time+duration<=data.indicatorClock);
-      const nextKey=`${completed.length}:${completed[0]?.time}:${completed.at(-1)?.time}`;
+      const lastCompleted=completed.at(-1);
+      if(!appendOnly)oscillatorKey='';
+      const nextKey=`${completed.length}:${completed[0]?.time}:${lastCompleted?.time}:${lastCompleted?.open}:${lastCompleted?.high}:${lastCompleted?.low}:${lastCompleted?.close}`;
       if(nextKey!==oscillatorKey){oscillatorKey=nextKey;oscillatorData=chartOscillators(completed,duration,panelConfig.atrLength,panelConfig.adxLength,panelConfig.atrSmoothing,panelConfig.rsiLength);paintOscillators();}
+      // Both Pine overlays use the same corrected OHLCV, including the live bar.
+      const current=data.candles.filter(c=>c.time<=data.indicatorClock);
+      if(bollingerVisible)bollingerOverlay.setData(chartBollingerBands(current,{length:panelConfig.bbLength,maType:panelConfig.bbMaType,source:panelConfig.bbSource,multiplier:panelConfig.bbMultiplier,offset:panelConfig.bbOffset}),panelConfig.bbOffset);
+      if(supertrendVisible){
+        supertrendOverlay.setData(chartSupertrend(current,duration,panelConfig.supertrendLength,panelConfig.supertrendMultiplier));
+      }
       const nextLiveEntryKey=JSON.stringify(data.livePositions??[]);
       if(nextLiveEntryKey!==liveEntryKey){
         liveEntryKey=nextLiveEntryKey;
@@ -238,5 +257,5 @@ export default function PaperPriceChart(props:Props) {
   useEffect(()=>{updateStrategyVisibility.current();},[strategyVisible]);
   useEffect(()=>{changePanels.current(selectedIndicators,indicatorConfig);},[selectedIndicators,indicatorConfig,props.sessionId,props.showSma,props.timeframe]);
   const canLoadHistory=props.allowLocalHistory!==false||!!props.loadHistory;
-  return <><ChartTools chartRef={chartRef} onLatest={latest} onNavigate={holdView} onEarlier={canLoadHistory?()=>loadEarlier.current():undefined} loading={loading} hasMore={hasMore} showEarlier={canLoadHistory} indicators={selectedIndicators} onToggleIndicator={toggleIndicator} strategyVisible={strategyVisible} onToggleStrategy={()=>setStrategyVisible(value=>!value)} follow={follow} onFollowChange={setFollow}/>{settingsOpen&&<IndicatorSettings key={settingsOpen} kind={settingsOpen} value={indicatorConfig} onApply={applyIndicatorConfig} onClose={()=>setSettingsOpen(null)}/>}{historyError&&<p className="chart-history-status error" role="alert">{historyError} <button type="button" className="text-button" onClick={()=>loadEarlier.current()}>Retry</button></p>}<div className="chart-history-status" role="status">{loading?"Loading earlier candles...":hasMore?props.historyLabel??"Scroll or drag left to load history":"Beginning of available history"}<span>Pan right for newer candles · Latest returns to the current price</span></div><div className="chart-resize"><p className="readout tv-legend">{readout}</p>{paneHeaders.map(({kind,top})=><IndicatorHeader key={kind} kind={kind} top={top} config={indicatorConfig} value={paneValues[kind]} hidden={hiddenIndicators[kind]} onSettings={()=>setSettingsOpen(kind)} onVisibility={()=>setHiddenIndicators(old=>({...old,[kind]:!old[kind]}))} onRemove={()=>{setHiddenIndicators(old=>({...old,[kind]:false}));toggleIndicator(kind);}}/>)}<div ref={container} onWheelCapture={holdView} onPointerDownCapture={holdView} className="chart-container position-chart" aria-label={props.allowLocalHistory===false?"Live exchange price chart":"Virtual bot price chart with buys, sells, exits and trailing stops"}/></div></>;
+  return <><ChartTools chartRef={chartRef} onLatest={latest} onNavigate={holdView} onEarlier={canLoadHistory?()=>loadEarlier.current():undefined} loading={loading} hasMore={hasMore} showEarlier={canLoadHistory} indicators={selectedIndicators} onToggleIndicator={toggleIndicator} onIndicatorSettings={kind=>setSettingsOpen(kind)} strategyVisible={strategyVisible} onToggleStrategy={()=>setStrategyVisible(value=>!value)} follow={follow} onFollowChange={setFollow}/>{settingsOpen&&<IndicatorSettings key={settingsOpen} kind={settingsOpen} value={indicatorConfig} onApply={applyIndicatorConfig} onClose={()=>setSettingsOpen(null)}/>}{historyError&&<p className="chart-history-status error" role="alert">{historyError} <button type="button" className="text-button" onClick={()=>loadEarlier.current()}>Retry</button></p>}<div className="chart-history-status" role="status">{loading?"Loading earlier candles...":hasMore?props.historyLabel??"Scroll or drag left to load history":"Beginning of available history"}<span>Pan right for newer candles · Latest returns to the current price</span></div><div className="chart-resize"><p className="readout tv-legend">{readout}</p>{paneHeaders.map(({kind,top})=><IndicatorHeader key={kind} kind={kind} top={top} config={indicatorConfig} value={paneValues[kind]} hidden={hiddenIndicators[kind]} onSettings={()=>setSettingsOpen(kind)} onVisibility={()=>setHiddenIndicators(old=>({...old,[kind]:!old[kind]}))} onRemove={()=>{setHiddenIndicators(old=>({...old,[kind]:false}));toggleIndicator(kind);}}/>)}<div ref={container} onWheelCapture={holdView} onPointerDownCapture={holdView} className="chart-container position-chart" aria-label={props.allowLocalHistory===false?"Live exchange price chart":"Virtual bot price chart with buys, sells, exits and trailing stops"}/></div></>;
 }

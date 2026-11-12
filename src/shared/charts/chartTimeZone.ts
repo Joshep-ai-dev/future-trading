@@ -4,26 +4,36 @@ import {useSyncExternalStore} from 'react';
 export const CHART_TIME_ZONES=[
   {value:'UTC',label:'UTC'},
   {value:'Asia/Shanghai',label:'Shanghai · UTC+8'},
-  {value:'Asia/Tokyo',label:'Tokyo'},
+  {value:'Asia/Tokyo',label:'Tokyo / GMT+9'},
   {value:'Asia/Singapore',label:'Singapore'},
   {value:'Europe/London',label:'London'},
   {value:'America/New_York',label:'New York'},
 ] as const;
 export type ChartTimeZone=typeof CHART_TIME_ZONES[number]['value'];
 const storageKey='silver.display.timeZone';
+const gmt9MigrationKey='silver.display.timeZone.gmt9.v1';
+const defaultTimeZone:ChartTimeZone='Asia/Tokyo';
 const changedEvent='silver:chart-timezone-changed';
 let activeTimeZone:ChartTimeZone|null=null;
 
 export function readChartTimeZone():ChartTimeZone{
   if(activeTimeZone)return activeTimeZone;
-  try{const saved=(localStorage.getItem(storageKey)??localStorage.getItem('silver.chart.timeZone')??localStorage.getItem('silver.trading.timeZone')) as ChartTimeZone|null;activeTimeZone=CHART_TIME_ZONES.some(zone=>zone.value===saved)?saved!:'UTC';}
-  catch{activeTimeZone='UTC';}
+  try{
+    if(localStorage.getItem(gmt9MigrationKey)!=='1'){
+      activeTimeZone=defaultTimeZone;
+      localStorage.setItem(storageKey,defaultTimeZone);
+      localStorage.setItem(gmt9MigrationKey,'1');
+    }else{
+      const saved=localStorage.getItem(storageKey) as ChartTimeZone|null;
+      activeTimeZone=CHART_TIME_ZONES.some(zone=>zone.value===saved)?saved!:defaultTimeZone;
+    }
+  }catch{activeTimeZone=defaultTimeZone;}
   return activeTimeZone;
 }
 
 export function saveChartTimeZone(value:ChartTimeZone){
   activeTimeZone=value;
-  try{localStorage.setItem(storageKey,value);}catch{/* Keep chart controls usable when storage is unavailable. */}
+  try{localStorage.setItem(storageKey,value);localStorage.setItem(gmt9MigrationKey,'1');}catch{/* Keep chart controls usable when storage is unavailable. */}
   if(typeof window!=='undefined')window.dispatchEvent(new Event(changedEvent));
 }
 
@@ -37,7 +47,7 @@ function subscribe(listener:()=>void){
 }
 
 export function useChartTimeZone(){
-  return useSyncExternalStore<ChartTimeZone>(subscribe,readChartTimeZone,()=> 'UTC');
+  return useSyncExternalStore<ChartTimeZone>(subscribe,readChartTimeZone,()=> defaultTimeZone);
 }
 
 function timestamp(time:Time|number):number{

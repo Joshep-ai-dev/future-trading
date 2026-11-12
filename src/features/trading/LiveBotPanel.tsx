@@ -21,6 +21,7 @@ export default function LiveBotPanel({venue,settings,onSettingsChange,onConfigur
   const config=settings.bb_reversal;
   const amount=validMargin?(config.amount_unit==='percent'?available*config.amount_per_trade/100:Math.min(config.amount_per_trade,available)):null;
   const active=bot.running&&bot.venue===venue;
+  if(settings.strategy==='none')return <div id="bot-ticket-panel" role="tabpanel" aria-labelledby="execution-tab-bot" className="live-bot-panel bot-control"><h3>No strategy configured</h3><p>Automated trading is disabled. Use Manual for the order ticket.</p>{active&&<button type="button" disabled={busy} onClick={()=>void onRun('/api/exchange/auto/stop')}>Stop existing automation</button>}</div>;
   const locked=bot.running||busy||!onSettingsChange;
   const validAllocation=Number.isFinite(config.amount_per_trade)&&config.amount_per_trade>0&&(config.amount_unit==='percent'?config.amount_per_trade<=100:!validMargin||config.amount_per_trade<=available);
   const validLeverage=Number.isInteger(Number(leverage))&&Number(leverage)>=1&&Number(leverage)<=100;

@@ -1,3 +1,4 @@
+import {useMarketDataRevision} from './marketDataRevision';
 ﻿import {useEffect,useMemo,useRef,useState} from 'react';
 import {api} from '../api/api';
 import {candleAt,type Candle} from '../../features/trading/replayAnimation';
@@ -8,6 +9,7 @@ import type {BacktestSettings} from '../types/types';
 
 type Page={candles:Candle[];hasMore:boolean};
 export function useChartTimeframe(timeframe:BacktestSettings['entry_timeframe'],sessionId:number,clock:number,enabled:boolean,updates:Candle[],config:BacktestSettings['bb_reversal'],synthetic:boolean){
+  const revision=useMarketDataRevision();
   const duration=TIMEFRAMES[timeframe];
   const latest=useRef({clock,duration});latest.current={clock,duration};
   const [state,setState]=useState<{id:number;minutes:Candle[];error:string}>({id:sessionId,minutes:[],error:''});
@@ -36,7 +38,7 @@ export function useChartTimeframe(timeframe:BacktestSettings['entry_timeframe'],
       finally{if(!disposed)timer=setTimeout(refresh,1000);}
     }
     void refresh();return ()=>{disposed=true;abort.abort();clearTimeout(timer);};
-  },[sessionId,enabled]);
+  },[sessionId,enabled,revision]);
   const minutes=useMemo(()=>mergeHistory(state.id===sessionId?state.minutes:[],updates),[state,sessionId,updates]);
   const cutoff=Math.floor(clock/60)*60;
   const candles=useMemo(()=>aggregateMinutes(minutes,duration,cutoff),[minutes,duration,cutoff]);

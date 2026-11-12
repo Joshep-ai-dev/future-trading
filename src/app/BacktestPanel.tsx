@@ -8,6 +8,9 @@ import {api} from '../shared/api/api';
 
 const ForecastPage=lazy(()=>import('../features/research/ForecastPage'));
 const AccountPage=lazy(()=>import('../features/account/AccountPage'));
+const PaperTrading=lazy(()=>import('../features/trading/PaperTrading'));
+const LiveTrading=lazy(()=>import('../features/trading/LiveTrading'));
+const LiveExecution=lazy(()=>import('../features/trading/LiveExecution'));
 
 function initial(range: {
   startDate: string;
@@ -55,7 +58,7 @@ function initial(range: {
 }
 
 export default function BacktestPanel({range,view,onViewChange,accountMode,onAccountModeChange}:{range:{startDate:string;endDate:string};view:Page;onViewChange:(page:Page)=>void;accountMode:'live'|'paper';onAccountModeChange:(mode:'live'|'paper')=>void}) {
-  const [settings]=useState(()=>initial(range));
+  const [settings,setSettings]=useState(()=>initial(range));
   const [message,setMessage]=useState('');
   const [stopping,setStopping]=useState(false);
   async function stopAutomation(){
@@ -68,6 +71,9 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
   return <section className="backtest"><Suspense fallback={<div className="workspace-loading" role="status">Loading workspace...</div>}>
     {view==='account'?<AccountPage settings={settings} onBack={()=>onViewChange('paper')} accountMode={accountMode} onAccountModeChange={onAccountModeChange}/>
       :view==='forecast'?<ForecastPage range={range}/>
+      :view==='paper'?(accountMode==='live'
+        ?<LiveTrading settings={settings} controls={<LiveExecution view="terminal" settings={settings} onSettingsChange={setSettings} onConfigure={()=>onViewChange('strategy')} onManageAccount={()=>onViewChange('account')}/>}/>
+        :<PaperTrading settings={settings} onChange={setSettings} onConfigure={()=>onViewChange('strategy')} visible={true} profiles={[]} onApplySetup={()=>{}}/>)
       :<div id={`page-${view}`} role="tabpanel" aria-labelledby={`tab-${view}`} className="setup-page">
         <PageHeader eyebrow="STRATEGY WORKSPACE" title="No strategy configured" description="All trading strategies have been removed. This workspace is ready for a new implementation."/>
         <p>Strategy settings, backtests and automated trading are unavailable until a new strategy is added.</p>

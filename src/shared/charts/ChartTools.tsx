@@ -19,12 +19,12 @@ export function resizeChart(chart:IChartApi,element:HTMLDivElement,initialView:(
   return ()=>observer.disconnect();
 }
 
-export default function ChartTools({chartRef,valueLabel='Price',horizontalLabel='Time',onFullscreen,fullscreen=false,endLabel='Latest',onLatest,onEarlier,onNavigate,loading=false,hasMore=false,indicators,onToggleIndicator,strategyVisible,onToggleStrategy,follow,onFollowChange,showEarlier=false}: {
+export default function ChartTools({chartRef,valueLabel='Price',horizontalLabel='Time',onFullscreen,fullscreen=false,endLabel='Latest',onLatest,onEarlier,onNavigate,loading=false,hasMore=false,indicators,onToggleIndicator,onIndicatorSettings,strategyVisible,onToggleStrategy,follow,onFollowChange,showEarlier=false}: {
   chartRef: {current:IChartApi|null}; valueLabel?:string; onLatest?:()=>void;
   endLabel?:string;horizontalLabel?:string;onFullscreen?:()=>void;fullscreen?:boolean;
   onEarlier?:()=>void; loading?:boolean; hasMore?:boolean;
   onNavigate?:()=>void;
-  indicators?:{atr:boolean;adx:boolean;rsi:boolean};onToggleIndicator?:(key:'atr'|'adx'|'rsi')=>void;
+  indicators?:{atr:boolean;adx:boolean;rsi:boolean;supertrend:boolean;bollinger:boolean};onToggleIndicator?:(key:'atr'|'adx'|'rsi'|'supertrend'|'bollinger')=>void;onIndicatorSettings?:(key:'supertrend'|'bollinger')=>void;
   strategyVisible?:boolean;onToggleStrategy?:()=>void;
   follow?:boolean;onFollowChange?:(value:boolean)=>void;showEarlier?:boolean;
 }) {
@@ -55,12 +55,14 @@ export default function ChartTools({chartRef,valueLabel='Price',horizontalLabel=
     chartRef.current?.timeScale().fitContent();
   }
   const overlays=strategyVisible!==undefined&&onToggleStrategy,studies=indicators&&onToggleIndicator;
-  const activeCount=(overlays&&strategyVisible?1:0)+(studies?(['atr','adx','rsi'] as const).filter(key=>indicators[key]).length:0);
+  const activeCount=(overlays&&strategyVisible?1:0)+(studies?(['atr','adx','rsi','supertrend','bollinger'] as const).filter(key=>indicators[key]).length:0);
   return <div className="chart-actions tv-toolbar">
     {(overlays||studies)&&<details className="tv-menu" ref={menu}><summary title="Indicators"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 15l4-5 3 3 6-8" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>Indicators{activeCount>0&&<span className="tv-count">{activeCount}</span>}</summary>
       <div className="tv-menu-popover" role="group" aria-label="Chart overlays and indicators">
-        {overlays&&<label><input type="checkbox" checked={strategyVisible} onChange={onToggleStrategy}/><span>Strategy bands<small>Bollinger bands and trend SMA</small></span></label>}
-        {studies&&(['atr','adx','rsi'] as const).map(key=><label key={key}><input type="checkbox" checked={indicators[key]} onChange={()=>onToggleIndicator(key)}/><span>{{atr:'ATR',adx:'ADX',rsi:'RSI'}[key]}<small>{{atr:'Average true range',adx:'Trend strength',rsi:'Relative strength index'}[key]}</small></span></label>)}
+        {overlays&&<label><input type="checkbox" checked={strategyVisible} onChange={onToggleStrategy}/><span>Trend overlays<small>Moving averages from chart history</small></span></label>}
+        {studies&&(['atr','adx','rsi','supertrend','bollinger'] as const).map(key=><label key={key}><input type="checkbox" checked={indicators[key]} onChange={()=>onToggleIndicator(key)}/><span>{{atr:'ATR',adx:'ADX',rsi:'RSI',supertrend:'Supertrend',bollinger:'Bollinger Bands'}[key]}<small>{{atr:'Average true range',adx:'Trend strength',rsi:'Relative strength index',supertrend:'ATR trend overlay',bollinger:'Moving average and standard-deviation bands'}[key]}</small></span></label>)}
+        {studies&&indicators.bollinger&&onIndicatorSettings&&<button type="button" className="text-button" onClick={()=>onIndicatorSettings('bollinger')}>Bollinger Bands settings</button>}
+        {studies&&indicators.supertrend&&onIndicatorSettings&&<button type="button" className="text-button" onClick={()=>onIndicatorSettings('supertrend')}>Supertrend settings</button>}
       </div>
     </details>}
     {(overlays||studies)&&<i className="tv-divider" aria-hidden="true"/>}
