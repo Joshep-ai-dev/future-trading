@@ -62,7 +62,7 @@ export default function PaperPriceChart(props:Props) {
   useEffect(()=>{
     if(!container.current)return;
     following.current=true;setFollow(true);
-    const chart=createChart(container.current,{autoSize:false,...chartInteraction,localization:chartTimeOptions(timeZone).localization,layout:{background:{type:ColorType.Solid,color:'#12161c'},textColor:'#7d8da5'},timeScale:{timeVisible:true,minBarSpacing:.2,rightOffset:6,fixRightEdge:false,lockVisibleTimeRangeOnResize:true,shiftVisibleRangeOnNewBar:false,allowShiftVisibleRangeOnWhitespaceReplacement:false,...chartTimeOptions(timeZone).timeScale},grid:{vertLines:{visible:false},horzLines:{color:'#1b2028'}}});
+    const chart=createChart(container.current,{autoSize:false,...chartInteraction,localization:chartTimeOptions(timeZone).localization,layout:{background:{type:ColorType.Solid,color:'#12161c'},textColor:'#7d8da5'},timeScale:{timeVisible:true,minBarSpacing:.2,rightOffset:6,fixRightEdge:false,lockVisibleTimeRangeOnResize:true,shiftVisibleRangeOnNewBar:false,allowShiftVisibleRangeOnWhitespaceReplacement:false,...chartTimeOptions(timeZone).timeScale},grid:{vertLines:{visible:true,color:'#29313d',style:LineStyle.Dotted},horzLines:{color:'#1b2028'}}});
     chartRef.current=chart;
     const price=chart.addSeries(CandlestickSeries,{borderVisible:false,upColor:'#26a69a',downColor:'#ef5350',wickUpColor:'#26a69a',wickDownColor:'#ef5350',priceFormat:{type:'price',precision:3,minMove:.001}});
     price.priceScale().applyOptions({scaleMargins:{top:.18,bottom:.22}});
