@@ -68,7 +68,7 @@ overlay.setVisible(true);
 const render=()=>overlay.paneViews()[0].renderer().draw({useMediaCoordinateSpace:callback=>callback({context:ctx,mediaSize:{width:1000,height:1000}})});
 render();
 assert.deepEqual(strokes,[{points:[[20,10],[30,11]],color:'#2962ff'},{points:[[20,12],[30,13]],color:'#f23645'},{points:[[20,8],[30,9]],color:'#089981'}]);
-assert.deepEqual(fills,[{points:[[20,12],[30,13],[30,9],[20,8]],color:'rgba(33,150,243,0.05)'}]);
+assert.deepEqual(fills,[{points:[[20,12],[30,13],[30,9],[20,8]],color:'rgba(33,150,243,0.015)'}]);
 overlay.setData([{time:0,basis:10,upper:12,lower:8},{time:86400,basis:11,upper:13,lower:9}],-1);
 render();assert.deepEqual(strokes.at(-3).points,[[-10,10],[0,11]]);
 overlay.setVisible(false);const count=strokes.length;render();assert.equal(strokes.length,count);

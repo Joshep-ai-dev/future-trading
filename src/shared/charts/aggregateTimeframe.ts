@@ -9,7 +9,7 @@ export function aggregateMinutes(minutes:Candle[],duration:number,clock:number){
     if(time+duration>clock)continue;
     const bucket=buckets.get(time);
     if(!bucket)buckets.set(time,{candle:{...row,time},count:1,last:row.time,valid:row.time===time});
-    else{bucket.valid&&=row.time===bucket.last+60;bucket.count++;bucket.last=row.time;bucket.candle.high=Math.max(bucket.candle.high,row.high);bucket.candle.low=Math.min(bucket.candle.low,row.low);bucket.candle.close=row.close;}
+    else{bucket.valid&&=row.time===bucket.last+60;bucket.count++;bucket.last=row.time;bucket.candle.high=Math.max(bucket.candle.high,row.high);bucket.candle.low=Math.min(bucket.candle.low,row.low);bucket.candle.close=row.close;bucket.candle.volume=bucket.candle.volume!==undefined&&row.volume!==undefined?bucket.candle.volume+row.volume:undefined;}
   }
   return [...buckets.values()].filter(b=>b.valid&&b.count===duration/60).map(b=>b.candle);
 }

@@ -674,6 +674,19 @@ def test_saved_forecast(model_id: str, parameters: SavedForecastTestRequest, req
         raise HTTPException(status_code=400, detail=str(error)) from error
 
 
+@app.get('/api/market/live-candles')
+def live_chart_candles():
+    """Public OHLCV for chart display; never starts a trading session."""
+    try:
+        rows = workspaces.minute_feed(300)
+        now = time.time()
+        if not rows:
+            raise ValueError('No live candles returned')
+        return dict(candles=rows, checkedAt=now, stale=now-rows[-1]['time'] > 120)
+    except (OSError, ValueError, KeyError, IndexError) as error:
+        raise HTTPException(status_code=503, detail='Live chart candles are unavailable. Displaying existing history and retrying.') from error
+
+
 @app.get('/api/forecast/quote')
 def forecast_quote():
     try:

@@ -51,5 +51,10 @@ def fetch_live_minutes(limit=2):
                 row['high']<max(row['open'],row['close'],row['low']) or
                 row['low']>min(row['open'],row['close'],row['high'])):
             raise ValueError('Invalid live minute candle')
+        if len(raw)>5 and raw[5] not in (None, ''):
+            volume = float(raw[5])
+            if not np.isfinite(volume) or volume < 0:
+                raise ValueError('Invalid live minute volume')
+            row['volume'] = volume
         rows.append(row)
     return sorted(rows,key=lambda r:r['time'])

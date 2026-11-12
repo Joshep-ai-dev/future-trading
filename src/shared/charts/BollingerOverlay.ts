@@ -26,7 +26,7 @@ export class BollingerOverlay implements ISeriesPrimitive<Time>{
         const a=rows[i-1],b=rows[i];
         if(!a||!b||a.x===null||b.x===null||b.x<0||a.x>mediaSize.width)continue;
         if(a.upper!==null&&a.lower!==null&&b.upper!==null&&b.lower!==null){
-          ctx.fillStyle='rgba(33,150,243,0.05)';ctx.beginPath();ctx.moveTo(a.x,a.upper);ctx.lineTo(b.x,b.upper);
+          ctx.fillStyle='rgba(33,150,243,0.015)';ctx.beginPath();ctx.moveTo(a.x,a.upper);ctx.lineTo(b.x,b.upper);
           ctx.lineTo(b.x,b.lower);ctx.lineTo(a.x,a.lower);ctx.closePath();ctx.fill();
         }
         for(const [key,color] of [['basis','#2962ff'],['upper','#f23645'],['lower','#089981']] as const){

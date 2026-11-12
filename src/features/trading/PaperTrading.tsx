@@ -1,3 +1,5 @@
+import {useLiveMarketMinutes} from '../../shared/charts/useLiveMarketMinutes';
+import {mergeHistory} from '../../shared/charts/candleHistory';
 import {useMarketDataRevision} from '../../shared/charts/marketDataRevision';
 import {Metric,StatusBadge,TabBar,TableFrame} from '../../shared/ui/ui';
 import {useChartTimeframe} from '../../shared/charts/useChartTimeframe';
@@ -5,7 +7,7 @@ import {TIMEFRAMES,chartPosition} from '../../shared/charts/chartTimeframe';
 import TradeView from '../../shared/ui/TradeView';
 import {STOP_COLORS,type StopPoint} from '../../shared/charts/StopOverlay';
 import {FILL_COLORS} from '../../shared/charts/fillMarkers';
-import {useEffect,useRef,useState} from 'react';
+import {useEffect,useMemo,useRef,useState} from 'react';
 import {api} from '../../shared/api/api';
 import {EquityChart} from '../../shared/charts/BacktestChart';
 import PaperPriceChart from '../../shared/charts/PaperPriceChart';
@@ -34,6 +36,7 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
   const [chartTimeframe,setChartTimeframe]=useState<BacktestSettings['entry_timeframe']>(settings.entry_timeframe);
   const [data,setData]=useState<Response>({session:null,error:null});
   const [error,setError]=useState(''),[busy,setBusy]=useState(false);
+  const liveMarket=useLiveMarketMinutes(visible&&!data.session);
   const revision=useRef(0);
   const [bottomTab,setBottomTab]=useState<'position'|'history'|'equity'|'sessions'|'patterns'>('position');
   const [preview,setPreview]=useState<Analysis['candles']>([]),[previewError,setPreviewError]=useState('');
@@ -60,6 +63,7 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
     catch(e){setError(String(e));}finally{revision.current++;setBusy(false);}
   }
   const s=data.session;
+  const previewMinutes=useMemo(()=>mergeHistory(preview,liveMarket.minutes),[preview,liveMarket.minutes]);
   const durations=TIMEFRAMES;
   const duration=durations[s?.settings.entry_timeframe??settings.entry_timeframe];
   const displayClock=useReplayAnimation(visible&&s?.mode==='replay',s?.startedAt??0,s?.virtualTime??0);
@@ -69,7 +73,7 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
   const chartStops=(s?.chartStops??[]).filter(row=>s?.mode!=='replay'||row.time+duration<=displayClock);
   useEffect(()=>{if(s)setChartTimeframe(s.settings.entry_timeframe);},[s?.startedAt]);
   const config=s?.running?s.settings:settings;
-  const price=s?(s.mode==='replay'?(animated?.close??chartCandles.at(-1)?.close??null):(s.displayPrice??s.latestPrice)):preview.at(-1)?.close??null;
+  const price=s?(s.mode==='replay'?(animated?.close??chartCandles.at(-1)?.close??null):(s.displayPrice??s.latestPrice)):liveMarket.minutes.at(-1)?.close??preview.at(-1)?.close??null;
 
   const replay=s?.mode==='replay'?accountAt(s.trades,s.openPosition,s.settings.capital,displayClock,duration,price,chartStops):null;
   const p=replay?.open??(replay?null:s?.openPosition??null);
@@ -85,7 +89,7 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
   const status=s?.halted?(balance>0?'Risk limit reached':'Balance depleted'):s?.completed?'Replay complete':s?.running?'Running':s?'Paused':'Ready to start';
   const chartDuration=TIMEFRAMES[chartTimeframe];
   const alternate=!!s&&chartTimeframe!==s.settings.entry_timeframe;
-  const chartView=useChartTimeframe(s?chartTimeframe:settings.entry_timeframe,s?.startedAt??0,s?(s.mode==='replay'?displayClock:s.quoteTime??s.virtualTime??0):Date.now()/1000,visible,s?.animationMinutes??preview,(s?.settings??settings).bb_reversal,s?.mode==='replay');
+  const chartView=useChartTimeframe(s?chartTimeframe:settings.entry_timeframe,s?.startedAt??0,s?(s.mode==='replay'?displayClock:s.quoteTime??s.virtualTime??0):liveMarket.checkedAt??Date.now()/1000,visible,s?.animationMinutes??previewMinutes,(s?.settings??settings).bb_reversal,s?.mode==='replay');
   const view=chartView.view;
   const viewForming=view.forming;
   const visibleCandles=alternate||!s?(view?[...view.candles.filter(c=>(s?.mode!=='replay'||c.time+chartDuration<=displayClock)&&(!viewForming||c.time<viewForming.time)),...(viewForming?[viewForming]:[])]:[]):s?chartCandles:preview;
@@ -96,15 +100,16 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
   function changeChartTimeframe(value:BacktestSettings['entry_timeframe']){setChartTimeframe(value);if(!s){onChange({...settings,entry_timeframe:value});}}
   return <div id="page-paper" role="tabpanel" aria-labelledby="tab-paper" hidden={!visible}>
     <div className="market-bar"><div className="instrument"><span className="instrument-icon">Ag</span><div><h1>XAG / USDT <span>PERP</span></h1><small>Local chart data / paper execution</small></div></div>
-      <div className="market-price"><strong>{fmt(price,3)}</strong><small>USDT {s?'· current price':'· historical preview'}</small></div>
+      <div className="market-price"><strong>{fmt(price,3)}</strong><small>USDT {s?'current price':liveMarket.checkedAt&&!liveMarket.stale?'live market':'historical / delayed'}</small></div>
       <Metric label="Account equity" value={`$${fmt(equity)}`}/><Metric label="Total P&L" value={`${pnl>=0?'+':''}${fmt(pnl)}`} unit="USDT" tone={pnl>=0?'positive':'negative'}/>
-      <div className="market-stat clock-stat"><small>{s?.mode==='replay'?'Replay clock':'Last candle'}</small><b>{date(s?(s.mode==='replay'?displayClock:s.virtualTime??s.lastProcessed):preview.at(-1)?.time??null,tradingTimeZone)}</b></div>
+      <div className="market-stat clock-stat"><small>{s?.mode==='replay'?'Replay clock':'Last candle'}</small><b>{date(s?(s.mode==='replay'?displayClock:s.virtualTime??s.lastProcessed):liveMarket.minutes.at(-1)?.time??preview.at(-1)?.time??null,tradingTimeZone)}</b></div>
     </div>
     <div className="terminal-grid"><div className="terminal-main">
       <section className="terminal-panel price-panel"><TradingChartHeader timeframe={s?chartTimeframe:settings.entry_timeframe} onTimeframeChange={value=>changeChartTimeframe(value as BacktestSettings['entry_timeframe'])} mode={s?s.mode==='replay'?'HISTORICAL REPLAY':'PAPER SESSION':'MARKET PREVIEW'} caption={s?`Bot executes on ${s.settings.entry_timeframe} candles`:'Choose a timeframe to view the market chart'}/><BotChartBadge state={s?.strategyState} running={!!s?.running}/>
         {hasChart?<PaperPriceChart atrLength={(s?.settings??settings).bb_reversal.atr_length} adxLength={(s?.settings??settings).bb_reversal.adx_length} indicatorClock={s?(s.mode==='replay'?displayClock:s.quoteTime??s.virtualTime??0):Date.now()/1000} timeframe={s?chartTimeframe:settings.entry_timeframe} sessionId={s?.startedAt??0} candles={visibleCandles} indicators={visibleIndicators} stops={alternate?[]:chartStops} trades={visibleTrades} position={visiblePosition??null} showSma={settings.strategy!=='none'&&(s?.settings??settings).bb_reversal.use_sma_trend_adjustment!==false}/>:<div className="chart-empty"><span className="empty-chart-icon">⌁</span><h3>{chartView.error||previewError?'Chart unavailable':'Preparing your chart'}</h3><p>{previewError||'Loading downloaded market candles…'}</p></div>}
         {alternate&&chartView.error&&hasChart&&<p className="chart-history-status error" role="alert">{chartView.error}</p>}
         <div className="chart-legend"><span><b style={{color:FILL_COLORS.buy}}>↑</b> Buy / close short</span><span><b style={{color:FILL_COLORS.sell}}>↓</b> Sell / close long</span><span><i className="legend-line" style={{borderColor:STOP_COLORS.initial}}/> Stop loss</span><span><i className="legend-line" style={{borderColor:STOP_COLORS.trailing}}/> Trailing stop / TRAIL activation</span></div>
+        {!s&&(liveMarket.error||liveMarket.stale)&&<p className="chart-history-status" role="status">{liveMarket.error||'Waiting for fresh public market candles. Existing history remains visible.'}</p>}
       </section>
       <TerminalSplitter/>
       <section className="terminal-panel activity-panel exchange-activity">

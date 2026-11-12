@@ -47,7 +47,7 @@ export function useChartTimeframe(timeframe:BacktestSettings['entry_timeframe'],
   if(synthetic)forming=candleAt(minutes,clock,duration);
   else{
     const start=Math.floor(clock/duration)*duration,rows=minutes.filter(r=>r.time>=start&&r.time<=clock);
-    forming=rows.length&&rows.every((r,i)=>r.time===start+i*60)?{time:start,open:rows[0].open,high:Math.max(...rows.map(r=>r.high)),low:Math.min(...rows.map(r=>r.low)),close:rows.at(-1)!.close}:null;
+    forming=rows.length&&rows.every((r,i)=>r.time===start+i*60)?{time:start,open:rows[0].open,high:Math.max(...rows.map(r=>r.high)),low:Math.min(...rows.map(r=>r.low)),close:rows.at(-1)!.close,...(rows.every(row=>row.volume!==undefined)?{volume:rows.reduce((sum,row)=>sum+row.volume!,0)}:{})}:null;
   }
   return {view:{candles,indicators,minutes,forming},error:state.id===sessionId?state.error:''};
 }
