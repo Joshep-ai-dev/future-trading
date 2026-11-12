@@ -65,9 +65,9 @@ export default function PaperPriceChart(props:Props) {
     const chart=createChart(container.current,{autoSize:false,...chartInteraction,localization:chartTimeOptions(timeZone).localization,layout:{background:{type:ColorType.Solid,color:'#12161c'},textColor:'#7d8da5'},timeScale:{timeVisible:true,minBarSpacing:.2,rightOffset:6,fixRightEdge:false,lockVisibleTimeRangeOnResize:true,shiftVisibleRangeOnNewBar:false,allowShiftVisibleRangeOnWhitespaceReplacement:false,...chartTimeOptions(timeZone).timeScale},grid:{vertLines:{visible:true,color:'#29313d',style:LineStyle.Dotted},horzLines:{color:'#1b2028'}}});
     chartRef.current=chart;
     const price=chart.addSeries(CandlestickSeries,{borderVisible:false,upColor:'#26a69a',downColor:'#ef5350',wickUpColor:'#26a69a',wickDownColor:'#ef5350',priceFormat:{type:'price',precision:3,minMove:.001}});
-    price.priceScale().applyOptions({scaleMargins:{top:.18,bottom:.22}});
+    price.priceScale().applyOptions({scaleMargins:{top:.06,bottom:.10}});
     const volume=chart.addSeries(HistogramSeries,{priceScaleId:'',priceFormat:{type:'volume'},lastValueVisible:false,priceLineVisible:false});
-    volume.priceScale().applyOptions({scaleMargins:{top:.8,bottom:0}});
+    volume.priceScale().applyOptions({scaleMargins:{top:.9,bottom:0}});
     const supertrendOverlay=new SupertrendOverlay();price.attachPrimitive(supertrendOverlay);
     let supertrendVisible=false,bollingerVisible=false;
     const bollingerOverlay=new BollingerOverlay();price.attachPrimitive(bollingerOverlay);
