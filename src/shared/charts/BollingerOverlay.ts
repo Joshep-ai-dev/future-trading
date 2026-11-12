@@ -17,30 +17,45 @@ export class BollingerOverlay implements ISeriesPrimitive<Time>{
       upper:point.upper===null?null:host.series.priceToCoordinate(point.upper),
       lower:point.lower===null?null:host.series.priceToCoordinate(point.lower)};
   }
-  private renderer:IPrimitivePaneRenderer={draw:target=>{
+  private renderer(lines:boolean):IPrimitivePaneRenderer{return {draw:target=>{
     if(!this.host||!this.visible)return;
     target.useMediaCoordinateSpace(({context:ctx,mediaSize})=>{
       const rows=this.points.map(point=>this.coordinates(point));
       ctx.save();ctx.lineWidth=1;
-      for(let i=1;i<rows.length;i++){
+      if(!lines)for(let i=1;i<rows.length;i++){
         const a=rows[i-1],b=rows[i];
         if(!a||!b||a.x===null||b.x===null||b.x<0||a.x>mediaSize.width)continue;
         if(a.upper!==null&&a.lower!==null&&b.upper!==null&&b.lower!==null){
           ctx.fillStyle='rgba(33,150,243,0.015)';ctx.beginPath();ctx.moveTo(a.x,a.upper);ctx.lineTo(b.x,b.upper);
           ctx.lineTo(b.x,b.lower);ctx.lineTo(a.x,a.lower);ctx.closePath();ctx.fill();
         }
-        for(const [key,color] of [['basis','#2962ff'],['upper','#f23645'],['lower','#089981']] as const){
-          if(a[key]===null||b[key]===null)continue;
-          ctx.strokeStyle=color;ctx.beginPath();ctx.moveTo(a.x,a[key]!);ctx.lineTo(b.x,b[key]!);ctx.stroke();
+      }
+      // Stroke each band as one path so antialiased segment ends cannot leave seams.
+      ctx.lineJoin='round';ctx.lineCap='round';
+      if(lines)for(const [key,color] of [['basis','#2962ff'],['upper','#f23645'],['lower','#089981']] as const){
+        ctx.strokeStyle=color;ctx.beginPath();
+        let connected=false;
+        for(let i=1;i<rows.length;i++){
+          const a=rows[i-1],b=rows[i];
+          if(!a||!b||a.x===null||b.x===null||a[key]===null||b[key]===null||b.x<0||a.x>mediaSize.width){
+            connected=false;continue;
+          }
+          if(!connected)ctx.moveTo(a.x,a[key]!);
+          ctx.lineTo(b.x,b[key]!);connected=true;
         }
+        ctx.stroke();
       }
       ctx.restore();
     });
-  }};
-  private view={zOrder:()=> 'bottom' as const,renderer:()=>this.renderer};
+  }};}
+  // The library draws its grid after bottom primitives. Keep only the fill there.
+  private fillRenderer=this.renderer(false);
+  private lineRenderer=this.renderer(true);
+  private fillView={zOrder:()=> 'bottom' as const,renderer:()=>this.fillRenderer};
+  private lineView={zOrder:()=> 'normal' as const,renderer:()=>this.lineRenderer};
   attached(host:SeriesAttachedParameter<Time>){this.host=host;}
   detached(){this.host=null;}
-  paneViews(){return [this.view];}
+  paneViews(){return [this.fillView,this.lineView];}
   setVisible(value:boolean){this.visible=value;this.host?.requestUpdate();}
   setData(points:BollingerPoint[],offset:number){this.points=points;this.offset=offset;this.host?.requestUpdate();}
   autoscaleInfo(start:number,end:number){

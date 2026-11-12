@@ -65,12 +65,28 @@ const times=new Map([[0,0],[86400,10]]);
 overlay.attached({requestUpdate(){},chart:{timeScale:()=>({timeToCoordinate:t=>times.get(t)??null,coordinateToLogical:x=>x/10,logicalToCoordinate:i=>i*10})},series:{priceToCoordinate:v=>v}});
 overlay.setData([{time:0,basis:10,upper:12,lower:8},{time:86400,basis:11,upper:13,lower:9}],2);
 overlay.setVisible(true);
-const render=()=>overlay.paneViews()[0].renderer().draw({useMediaCoordinateSpace:callback=>callback({context:ctx,mediaSize:{width:1000,height:1000}})});
+const render=()=>overlay.paneViews().forEach(view=>view.renderer().draw({useMediaCoordinateSpace:callback=>callback({context:ctx,mediaSize:{width:1000,height:1000}})}));
+assert.deepEqual(overlay.paneViews().map(view=>view.zOrder()),['bottom','normal']);
+// Grid drawing happens between these layers: no band strokes may be underneath it.
+overlay.paneViews()[0].renderer().draw({useMediaCoordinateSpace:callback=>callback({context:ctx,mediaSize:{width:1000,height:1000}})});
+assert.equal(strokes.length,0);
+assert.equal(fills.length,1);
+fills.length=0;
 render();
 assert.deepEqual(strokes,[{points:[[20,10],[30,11]],color:'#2962ff'},{points:[[20,12],[30,13]],color:'#f23645'},{points:[[20,8],[30,9]],color:'#089981'}]);
 assert.deepEqual(fills,[{points:[[20,12],[30,13],[30,9],[20,8]],color:'rgba(33,150,243,0.015)'}]);
 overlay.setData([{time:0,basis:10,upper:12,lower:8},{time:86400,basis:11,upper:13,lower:9}],-1);
 render();assert.deepEqual(strokes.at(-3).points,[[-10,10],[0,11]]);
+// Fractional pixel coordinates must share one continuous stroke per band.
+times.set(172800,20.25);
+overlay.setData([{time:0,basis:10,upper:12,lower:8},{time:86400,basis:11,upper:13,lower:9},{time:172800,basis:10.5,upper:12.5,lower:8.5}],0);
+const before=strokes.length;
+render();
+assert.equal(strokes.length-before,3);
+assert.deepEqual(strokes.at(-2).points,[[0,12],[10,13],[20.25,12.5]]);
+assert.equal(ctx.lineJoin,'round');
+assert.equal(ctx.lineCap,'round');
+
 overlay.setVisible(false);const count=strokes.length;render();assert.equal(strokes.length,count);
 assert.equal(overlay.autoscaleInfo(0,3),null);
 console.log('Bollinger MA, population deviation, source, offset and rendering checks passed.');
