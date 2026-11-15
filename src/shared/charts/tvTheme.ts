@@ -47,8 +47,8 @@ export const tvLayout = {
 };
 
 export const tvGrid = {
-  vertLines: { visible: true, color: TV.grid, style: LineStyle.Dotted },
-  horzLines: { visible: true, color: TV.grid, style: LineStyle.Dotted },
+  vertLines: { visible: true, color: TV.grid, style: LineStyle.SparseDotted },
+  horzLines: { visible: true, color: TV.grid, style: LineStyle.SparseDotted },
 };
 
 export const tvCrosshair = {
