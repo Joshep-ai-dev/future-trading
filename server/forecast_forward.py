@@ -6,16 +6,14 @@ import pandas as pd
 from pydantic import BaseModel, Field
 from typing import Literal
 
-from server.forecast_research import forecast_inputs
+from server.forecast_research import fit_forecast_model, forecast_inputs
 from server.market.data import TIMEFRAMES
-from server.strategies.ml.forecast import ForecastModel
-from server.strategies.ml.sequence_forecast import SequenceForecast
 
 
 class ForwardForecastRequest(BaseModel):
     path_forecast: bool = False
     model_id: str | None = Field(default=None, pattern=r'^[0-9a-f]{32}$')
-    model: Literal['extra_trees', 'rnn', 'lstm', 'gru'] = 'gru'
+    model: Literal['boost', 'extra_trees', 'rnn', 'lstm', 'gru'] = 'gru'
     timeframe: Literal['1m', '3m', '5m', '10m', '15m', '30m', '1h', '4h', '1d'] = '15m'
     train_bars: int = Field(default=6000, ge=500, le=50000)
     lookback: int = Field(default=100, ge=1, le=500)
@@ -38,7 +36,7 @@ def issue_forward_forecast(frame: pd.DataFrame, request: ForwardForecastRequest,
     features, atr, targets, _ = forecast_inputs(bars, request, duration)
     if metadata and list(features.columns) != metadata['featureNames']:
         raise ValueError('Market feature schema differs from the saved model; train a new model')
-    context = request.lookback if request.model != 'extra_trees' else 1
+    context = request.lookback if request.model not in ('extra_trees', 'boost') else 1
     if len(bars) < context or not (bars.index[-1]-bars.index[-context] == duration*(context-1)) or not np.isfinite(atr.iloc[-1]):
         raise ValueError('Latest candles do not provide a complete observation window after a data gap')
     train_end = len(bars)-request.horizon
@@ -49,12 +47,11 @@ def issue_forward_forecast(frame: pd.DataFrame, request: ForwardForecastRequest,
     if saved_model is not None:
         model = saved_model
         training_rows = metadata['trainingRows']
-    elif request.model == 'extra_trees':
-        model = ForecastModel.fit(features, targets, rows)
     else:
-        model = SequenceForecast.fit(features, targets, rows, kind=request.model, lookback=request.lookback,
-                                     epochs=request.epochs, horizon=request.horizon)
+        model = fit_forecast_model(features, targets, rows, request)
     up, down, trend = model.forecast_rows(features, slice(len(bars)-1, len(bars)))[0]
+    last = slice(len(bars)-1, len(bars))
+    extra = {}
     close, scale = float(bars.close.iloc[-1]), float(atr.iloc[-1])
     issued = int(clock())
     target = origin+seconds*request.horizon
@@ -62,13 +59,18 @@ def issue_forward_forecast(frame: pd.DataFrame, request: ForwardForecastRequest,
         raise ValueError('Training finished after the forecast target. Increase the horizon or reduce epochs and retry.')
     if not np.isfinite([up, down, trend, close, scale]).all():
         raise ValueError('Forecast produced invalid values')
+    if callable(getattr(type(model), 'forecast_interval_rows', None)):
+        lo, hi = model.forecast_interval_rows(features, last)[0]
+        extra.update(predictedLowerBand=float(close+lo*scale), predictedUpperBand=float(close+hi*scale))
+    if callable(getattr(type(model), 'direction_rows', None)):
+        extra['upProbability'] = float(model.direction_rows(features, last)[0])
     path = []
     if request.path_forecast and hasattr(model, 'forecast_path_rows'):
         moves = model.forecast_path_rows(features, slice(len(bars)-1, len(bars)))[0]
         if len(moves) != request.horizon or not np.isfinite(moves).all():
             raise ValueError('Saved model has no complete multi-step forecast; train a new model')
         path = [dict(time=origin+seconds*(step+1), close=float(close+move*scale)) for step, move in enumerate(moves)]
-    return dict(**request.model_dump(), startedAt=started, issuedAt=issued, originTime=origin, targetTime=target,
+    return dict(**request.model_dump(), **extra, startedAt=started, issuedAt=issued, originTime=origin, targetTime=target,
                 path=path, originClose=close, predictedClose=float(close+trend*scale), predictedHigh=float(close+up*scale),
                 predictedLow=float(close-down*scale), modelId=metadata['id'] if metadata else None, trainingRows=training_rows,
                 history=[dict(time=int((stamp+duration).timestamp()), close=float(row.close)) for stamp, row in bars.tail(100).iterrows()],

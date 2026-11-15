@@ -37,7 +37,7 @@ class SavedModelTests(unittest.TestCase):
         frame = market(1400)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            for kind in ('extra_trees', 'rnn', 'lstm', 'gru'):
+            for kind in ('boost', 'extra_trees', 'rnn', 'lstm', 'gru'):
                 with self.subTest(kind=kind):
                     config = TrainForecastRequest(name='Silver GRU', model=kind, timeframe='5m', horizon=6, epochs=1,
                                                   training_end='2026-01-02', train_bars=600)
@@ -46,7 +46,7 @@ class SavedModelTests(unittest.TestCase):
                     self.assertEqual(metadata, restored_meta)
                     self.assertEqual(metadata['config']['model'], kind)
                     self.assertTrue(metadata['config']['path_forecast'])
-                    self.assertEqual(metadata['name'], 'Silver '+('Extra Trees' if kind == 'extra_trees' else kind.upper()))
+                    self.assertEqual(metadata['name'], 'Silver '+{'extra_trees': 'Extra Trees', 'boost': 'Quantile Boost'}.get(kind, kind.upper()))
                     features, _, _, _ = forecast_inputs(frame, config, pd.Timedelta(minutes=5))
                     expected = model.forecast_rows(features, slice(900, 910))
                     restored, _ = load_model(7, metadata['id'], root)
@@ -66,7 +66,7 @@ class SavedModelTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, 'this account'):
                         load_model(8, metadata['id'], root)
                     self.assertEqual(list_models(8, root), [])
-            self.assertEqual(len(list_models(7, root)), 4)
+            self.assertEqual(len(list_models(7, root)), 5)
             with self.assertRaises(ValueError):
                 load_model(7, '../outside', root)
 
@@ -114,3 +114,28 @@ class SavedModelTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class BoostForecastTests(unittest.TestCase):
+    def test_boost_reports_calibrated_band_probability_and_shrink(self):
+        frame = market(1400)
+        config = ForecastRequest(model='boost', timeframe='5m', horizon=6, start_date='2026-01-04', end_date='2026-01-04',
+                                 train_bars=900, path_forecast=True)
+        features, _, targets, _ = forecast_inputs(frame, config, pd.Timedelta(minutes=5))
+        from server.strategies.ml.boost_forecast import BoostForecast
+        model = BoostForecast.fit(features, targets, slice(100, 1100), horizon=6)
+        self.assertTrue(0 <= model.shrink <= 1.5)
+        self.assertGreaterEqual(model.band, -1e9)
+        rows = slice(1150, 1160)
+        band = model.forecast_interval_rows(features, rows)
+        bounds = model.forecast_rows(features, rows)
+        self.assertTrue((band[:, 0] <= band[:, 1]).all())
+        chance = model.direction_rows(features, rows)
+        self.assertTrue(((chance > 0) & (chance < 1)).all())
+        path = model.forecast_path_rows(features, rows)
+        self.assertEqual(path.shape, (10, 6))
+        np.testing.assert_allclose(path[:, -1], bounds[:, 2])
+        for key in ('shrink', 'bandAtr', 'coverage', 'maeAtr', 'baselineMaeAtr'):
+            self.assertIn(key, model.calibration)
+        # Calibration MAE can never be worse than predicting no change (shrink 0 is in the grid).
+        self.assertLessEqual(model.calibration['maeAtr'], model.calibration['baselineMaeAtr']+1e-12)

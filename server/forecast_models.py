@@ -12,13 +12,13 @@ import pandas as pd
 from pydantic import Field
 
 from server.forecast_forward import ForwardForecastRequest
-from server.forecast_research import forecast_inputs
+from server.forecast_research import fit_forecast_model, forecast_inputs
 from server.market.data import TIMEFRAMES
-from server.strategies.ml.forecast import ForecastModel
 from server.strategies.ml.sequence_forecast import SequenceForecast, forecast_network
 
 ROOT = Path(__file__).resolve().parent.parent/'data'/'forecast_models'
 VERSION = 3
+MODEL_LABELS = {'boost': 'Quantile Boost', 'extra_trees': 'Extra Trees', 'rnn': 'RNN', 'lstm': 'LSTM', 'gru': 'GRU'}
 
 
 class TrainForecastRequest(ForwardForecastRequest):
@@ -49,45 +49,47 @@ def train_saved_model(frame: pd.DataFrame, request: TrainForecastRequest, owner:
     count = int(np.isfinite(targets.iloc[fit_rows].to_numpy()).all(axis=1).sum())
     if count < 300:
         raise ValueError('Need 300 training samples plus a separate validation tail; increase training history')
-    if request.model == 'extra_trees':
-        model = ForecastModel.fit(features, targets, fit_rows)
-        payload = dict(model=model)
-    else:
-        model = SequenceForecast.fit(features, targets, fit_rows, kind=request.model, lookback=request.lookback,
-                                     epochs=request.epochs, horizon=request.horizon)
-        payload = dict(state={key: value.detach().cpu() for key, value in model.network.state_dict().items()},
-                       mean=model.mean, std=model.std, lookback=model.lookback, direction_scale=model.direction_scale,
-                       epochs_trained=model.epochs_trained, features=features.shape[1], outputs=model.network.head.out_features)
+    model = fit_forecast_model(features, targets, fit_rows, request)
     validation_rows = slice(int(validation[0]), int(validation[-1])+1)
     predicted = model.forecast_rows(features, validation_rows)[validation-validation[0]]
     scale = atr.iloc[validation].to_numpy()
     error = (predicted[:, 2]-targets.iloc[validation, 2].to_numpy())*scale
     baseline = np.abs(targets.iloc[validation, 2].to_numpy()*scale)
     mae, baseline_mae = float(np.abs(error).mean()), float(baseline.mean())
+    direction = np.sign(predicted[:, 2]) == np.sign(targets.iloc[validation, 2].to_numpy())
     quality = dict(samples=len(validation), closeMae=mae, baselineMae=baseline_mae,
+                   directionAccuracy=float(direction.mean()*100),
                    skillPct=100*(1-mae/baseline_mae) if baseline_mae > 0 else None,
                    beatsBaseline=mae < baseline_mae, meanError=float(error.mean()),
                    start=bars.index[validation[0]].isoformat(), end=bars.index[validation[-1]].isoformat())
     # Report the holdout diagnostic, then use all available historical training
     # samples for the final fixed-configuration fit. Never use external test data.
+    if callable(getattr(type(model), 'forecast_interval_rows', None)):
+        band = model.forecast_interval_rows(features, validation_rows)[validation-validation[0]]
+        truth = targets.iloc[validation, 2].to_numpy()
+        quality['intervalCoverage'] = float(((truth >= band[:, 0]) & (truth <= band[:, 1])).mean()*100)
+    if callable(getattr(type(model), 'direction_rows', None)):
+        chance = model.direction_rows(features, validation_rows)[validation-validation[0]]
+        truth = targets.iloc[validation, 2].to_numpy()
+        moved = truth != 0
+        quality['probabilityDirectionAccuracy'] = float(((chance[moved] > .5) == (truth[moved] > 0)).mean()*100) if moved.any() else None
     quality['stage'] = 'Chronological holdout diagnostic before final full-history refit'
-    if request.model == 'extra_trees':
-        model = ForecastModel.fit(features, targets, rows)
+    model = fit_forecast_model(features, targets, rows, request)
+    if request.model in ('extra_trees', 'boost'):
         payload = dict(model=model)
     else:
-        model = SequenceForecast.fit(features, targets, rows, kind=request.model, lookback=request.lookback,
-                                     epochs=request.epochs, horizon=request.horizon)
         payload = dict(state={key: value.detach().cpu() for key, value in model.network.state_dict().items()},
                        mean=model.mean, std=model.std, lookback=model.lookback, direction_scale=model.direction_scale,
                        epochs_trained=model.epochs_trained, features=features.shape[1], outputs=model.network.head.out_features)
     count = int(np.isfinite(targets.iloc[rows].to_numpy()).all(axis=1).sum())
     model_id = uuid.uuid4().hex
-    label = 'Extra Trees' if request.model == 'extra_trees' else request.model.upper()
-    name = f'Silver {label}' if request.name in ('Silver GRU', 'Silver LSTM', 'Silver RNN', 'Silver Extra Trees') else request.name
+    label = MODEL_LABELS.get(request.model, request.model.upper())
+    name = f'Silver {label}' if request.name in tuple(f'Silver {value}' for value in MODEL_LABELS.values()) else request.name
     metadata = dict(id=model_id, version=VERSION, name=name, createdAt=int(time.time()),
                     config=request.model_dump(exclude={'model_id', 'name', 'training_end'}),
                     trainStart=bars.index[rows.start].isoformat(), trainedThrough=(bars.index[-1]+duration).isoformat(),
-                    trainingRows=count, validation=quality, featureNames=list(features.columns), epochsTrained=getattr(model, 'epochs_trained', None))
+                    trainingRows=count, validation=quality,
+                    calibration=getattr(model, 'calibration', None) or None, featureNames=list(features.columns), epochsTrained=getattr(model, 'epochs_trained', None))
     directory = root/str(int(owner))
     directory.mkdir(parents=True, exist_ok=True)
     joblib.dump(payload, directory/f'{model_id}.joblib')
@@ -115,7 +117,7 @@ def load_model(owner: int, model_id: str, root: Path = ROOT) -> tuple:
         raise ValueError('This model version is no longer supported; train a new model')
     # Only server-created artifacts are loaded; no user-supplied pickle uploads.
     payload = joblib.load(directory/f'{model_id}.joblib')
-    if metadata['config']['model'] == 'extra_trees':
+    if metadata['config']['model'] in ('extra_trees', 'boost'):
         return payload['model'], metadata
     network = forecast_network(metadata['config']['model'], payload['features'], payload.get('outputs', 3))
     network.load_state_dict(payload['state'])

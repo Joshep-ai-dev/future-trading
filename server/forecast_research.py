@@ -7,7 +7,10 @@ import pandas as pd
 from pydantic import BaseModel, Field, model_validator
 
 from server.market.data import TIMEFRAMES
+from server.strategies.ml.boost_forecast import BoostForecast
 from server.strategies.ml.features import build_features
+
+BOOST_GROUPS = ('adx_supertrend', 'returns', 'volatility', 'calendar')
 from server.strategies.ml.forecast import ForecastModel
 from server.strategies.ml.labels import excursions
 from server.strategies.ml.sequence_forecast import SequenceForecast
@@ -16,7 +19,7 @@ from server.strategies.ml.strategy import _atr
 
 class ForecastRequest(BaseModel):
     path_forecast: bool = False
-    model: Literal['extra_trees', 'rnn', 'lstm', 'gru'] = 'gru'
+    model: Literal['boost', 'extra_trees', 'rnn', 'lstm', 'gru'] = 'gru'
     timeframe: Literal['1m', '3m', '5m', '10m', '15m', '30m', '1h', '4h', '1d'] = '15m'
     start_date: date
     end_date: date
@@ -76,13 +79,12 @@ def run_forecast_test(frame: pd.DataFrame, request: ForecastRequest, saved_model
     if saved_model is not None:
         model = saved_model
         training_rows = metadata['trainingRows']
-    elif request.model == 'extra_trees':
-        model = ForecastModel.fit(features, targets, rows)
     else:
-        model = SequenceForecast.fit(features, targets, rows, kind=request.model,
-                                     lookback=request.lookback, epochs=request.epochs, horizon=request.horizon)
+        model = fit_forecast_model(features, targets, rows, request)
     # Freeze the model for the entire holdout. Actual outcomes never retrain it.
     predictions = model.forecast_rows(features, slice(first, stop))
+    bands = model.forecast_interval_rows(features, slice(first, stop)) if callable(getattr(type(model), 'forecast_interval_rows', None)) else None
+    chances = model.direction_rows(features, slice(first, stop)) if callable(getattr(type(model), 'direction_rows', None)) else None
     points = []
     for offset, index in enumerate(range(first, stop)):
         if not usable_test[offset]:
@@ -90,7 +92,12 @@ def run_forecast_test(frame: pd.DataFrame, request: ForecastRequest, saved_model
         close, scale = float(bars.close.iloc[index]), float(atr.iloc[index])
         future = bars.iloc[index+1:index+1+request.horizon]
         up, down, trend = predictions[offset]
-        points.append(dict(originTime=int((bars.index[index]+duration).timestamp()),
+        extra = {}
+        if bands is not None:
+            extra.update(predictedLowerBand=float(close+bands[offset, 0]*scale), predictedUpperBand=float(close+bands[offset, 1]*scale))
+        if chances is not None:
+            extra['upProbability'] = float(chances[offset])
+        points.append(dict(**extra, originTime=int((bars.index[index]+duration).timestamp()),
                            targetTime=int((bars.index[index+request.horizon]+duration).timestamp()),
                            originClose=close, predictedClose=float(close+trend*scale),
                            predictedHigh=float(close+up*scale), predictedLow=float(close-down*scale),
@@ -108,6 +115,7 @@ def run_forecast_test(frame: pd.DataFrame, request: ForecastRequest, saved_model
     metrics['skillPct'] = 100*(1-metrics['closeMae']/metrics['baselineMae']) if metrics['baselineMae'] > 0 else None
     metrics['meanError'] = float((predicted-actual).mean())
     metrics['beatsBaseline'] = metrics['closeMae'] < metrics['baselineMae']
+    metrics.update(probability_metrics(points))
     return dict(model=request.model, timeframe=request.timeframe, horizon=request.horizon,
                 trainStart=metadata['trainStart'] if metadata else bars.index[train_start].isoformat(),
                 trainEnd=metadata['trainedThrough'] if metadata else (bars.index[train_end-1]+duration).isoformat(),
@@ -122,10 +130,12 @@ def run_forecast_test(frame: pd.DataFrame, request: ForecastRequest, saved_model
 def forecast_inputs(bars: pd.DataFrame, request, duration: pd.Timedelta) -> tuple:
     feature_parts, atr_parts, target_parts = [], [], []
     segments = bars.index.to_series().diff().ne(duration).cumsum()
-    context = request.lookback if request.model != 'extra_trees' else 1
+    context = request.lookback if request.model not in ('extra_trees', 'boost') else 1
+    # Quantile Boost: ADX + Supertrend are the core drivers; a few minor context features only.
+    groups = list(BOOST_GROUPS) if request.model == 'boost' else ['returns', 'volatility', 'trend', 'volume', 'candles']
     eligible = pd.Series(False, index=bars.index)
     for _, segment in bars.groupby(segments):
-        features_part = build_features(segment, ['returns', 'volatility', 'trend', 'volume', 'candles'])
+        features_part = build_features(segment, groups)
         previous = segment.close.shift().replace(0., np.nan)
         for column in ('open', 'high', 'low', 'close'):
             features_part[f'candle_{column}_relative'] = segment[column]/previous-1
@@ -150,3 +160,33 @@ def forecast_inputs(bars: pd.DataFrame, request, duration: pd.Timedelta) -> tupl
     atr = pd.concat(atr_parts).reindex(bars.index)
     targets = pd.concat(target_parts).reindex(bars.index)
     return features, atr, targets, eligible
+
+
+def fit_forecast_model(features: pd.DataFrame, targets: pd.DataFrame, rows: slice, request):
+    """Train the requested architecture on ``rows`` (past data only)."""
+    if request.model == 'boost':
+        return BoostForecast.fit(features, targets, rows, horizon=request.horizon)
+    if request.model == 'extra_trees':
+        return ForecastModel.fit(features, targets, rows)
+    return SequenceForecast.fit(features, targets, rows, kind=request.model,
+                                lookback=request.lookback, epochs=request.epochs, horizon=request.horizon)
+
+
+def probability_metrics(points: list[dict]) -> dict:
+    """Band coverage and direction hit rates for models that report them."""
+    out: dict = {}
+    banded = [p for p in points if 'predictedLowerBand' in p]
+    if banded:
+        out['intervalCoverage'] = float(np.mean([p['predictedLowerBand'] <= p['actualClose'] <= p['predictedUpperBand'] for p in banded])*100)
+        out['intervalWidth'] = float(np.mean([p['predictedUpperBand']-p['predictedLowerBand'] for p in banded]))
+    scored = [p for p in points if 'upProbability' in p and p['actualClose'] != p['originClose']]
+    if scored:
+        chance = np.array([p['upProbability'] for p in scored])
+        moved_up = np.array([p['actualClose'] > p['originClose'] for p in scored])
+        out['probabilityDirectionAccuracy'] = float(((chance > .5) == moved_up).mean()*100)
+        out['brierScore'] = float(np.mean((chance-moved_up)**2))
+        confidence = np.abs(chance-.5)
+        top = confidence >= np.quantile(confidence, .7)
+        out['confidentSamples'] = int(top.sum())
+        out['confidentDirectionAccuracy'] = float(((chance[top] > .5) == moved_up[top]).mean()*100) if top.any() else None
+    return out

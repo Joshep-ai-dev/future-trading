@@ -20,7 +20,10 @@ export type ForecastPoint = {
   predictedClose: number;
   predictedHigh: number;
   predictedLow: number;
+  predictedLowerBand?: number;
+  predictedUpperBand?: number;
 };
+export type BandPoint = { time: number; low: number; high: number };
 const stamp = (time: Time) =>
   typeof time === "number"
     ? new Date(time * 1000).toISOString().replace("T", " ").slice(0, 19)
@@ -44,17 +47,21 @@ export default function ForecastPriceChart({
   actual = [],
   forecast,
   predictions = [],
+  band = [],
 }: {
   history: PricePoint[];
   actual?: PricePoint[];
   forecast?: ForecastPoint;
   predictions?: PricePoint[];
+  /** Conformal 80% prediction band (Quantile Boost models). */
+  band?: BandPoint[];
 }) {
   const host = useRef<HTMLDivElement>(null),
     frame = useRef<HTMLDivElement>(null),
     chart = useRef<IChartApi | null>(null),
     realSeries = useRef<ISeriesApi<"Line"> | null>(null),
     predictionSeries = useRef<ISeriesApi<"Line"> | null>(null),
+    bandSeries = useRef<ISeriesApi<"Line">[]>([]),
     guides = useRef<IPriceLine[]>([]);
   const [span, setSpan] = useState(3600),
     [follow, setFollow] = useState(true),
@@ -136,6 +143,17 @@ export default function ForecastPriceChart({
       });
     realSeries.current = real;
     predictionSeries.current = predicted;
+    bandSeries.current = ["80% low", "80% high"].map((title) =>
+      instance.addSeries(LineSeries, {
+        ...options,
+        color: "rgba(41,98,255,0.55)",
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        lastValueVisible: false,
+        priceLineVisible: false,
+        title,
+      }),
+    );
     instance.subscribeCrosshairMove((event) => {
       if (!event.time) {
         setReadout(
@@ -156,6 +174,7 @@ export default function ForecastPriceChart({
       chart.current = null;
       realSeries.current = null;
       predictionSeries.current = null;
+      bandSeries.current = [];
       guides.current = [];
     };
   }, []);
@@ -194,6 +213,11 @@ export default function ForecastPriceChart({
     const predictedData = ordered(predictionPoints);
     real.setData(realData);
     predicted.setData(predictedData);
+    const [bandLow, bandHigh] = bandSeries.current;
+    bandLow?.setData(ordered(band.map((p) => ({ time: p.time, close: p.low }))));
+    bandHigh?.setData(ordered(band.map((p) => ({ time: p.time, close: p.high }))));
+    for (const series of bandSeries.current)
+      series.applyOptions({ visible: showPrediction && band.length > 0 });
     real.applyOptions({ visible: showReal });
     predicted.applyOptions({ visible: showPrediction });
     for (const guide of guides.current) predicted.removePriceLine(guide);
@@ -202,6 +226,12 @@ export default function ForecastPriceChart({
       for (const [price, title] of [
         [forecast.predictedHigh, "Est. high"],
         [forecast.predictedLow, "Est. low"],
+        ...(forecast.predictedUpperBand != null && forecast.predictedLowerBand != null
+          ? ([
+              [forecast.predictedUpperBand, "80% high"],
+              [forecast.predictedLowerBand, "80% low"],
+            ] as const)
+          : []),
       ] as const)
         guides.current.push(
           predicted.createPriceLine({
@@ -229,6 +259,7 @@ export default function ForecastPriceChart({
     actual,
     forecast,
     predictions,
+    band,
     span,
     follow,
     showReal,

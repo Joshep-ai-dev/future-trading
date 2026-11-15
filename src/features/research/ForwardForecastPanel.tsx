@@ -22,6 +22,9 @@ type Prediction = {
   originClose: number;
   predictedClose: number;
   predictedHigh: number;
+  predictedLowerBand?: number;
+  predictedUpperBand?: number;
+  upProbability?: number;
   predictedLow: number;
   note: string;
 };
@@ -429,6 +432,32 @@ export default function ForwardForecastPanel({
               </strong>
               <small>vs last closed price</small>
             </div>
+            {prediction.upProbability != null && (
+              <div
+                className={`forecast-change forecast-probability ${prediction.upProbability >= 0.5 ? "is-up" : "is-down"}`}
+              >
+                <strong>
+                  {prediction.upProbability >= 0.5 ? "▲ Up " : "▼ Down "}
+                  {fmt(
+                    Math.max(prediction.upProbability, 1 - prediction.upProbability) * 100,
+                    1,
+                  )}
+                  %
+                </strong>
+                <small>calibrated direction probability</small>
+              </div>
+            )}
+            {prediction.predictedLowerBand != null &&
+              prediction.predictedUpperBand != null && (
+                <div className='forecast-estimate-quote forecast-band-quote'>
+                  <span>80% range at target</span>
+                  <strong>
+                    {fmt(prediction.predictedLowerBand, 3)} –{" "}
+                    {fmt(prediction.predictedUpperBand, 3)}
+                  </strong>
+                  <small>conformal band</small>
+                </div>
+              )}
             <details className='forecast-quote-details'>
               <summary>Forecast details</summary>
               <dl>

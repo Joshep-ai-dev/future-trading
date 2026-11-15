@@ -160,6 +160,72 @@ def higher_timeframe(frame: pd.DataFrame) -> pd.DataFrame:
     }, index=frame.index)
 
 
+def _dmi(frame: pd.DataFrame, di_length: int = 14, adx_length: int = 14) -> tuple[pd.Series, pd.Series, pd.Series]:
+    """Pine ta.dmi(di_length, adx_length): Wilder +DI, -DI and ADX."""
+    up, down = frame.high.diff(), -frame.low.diff()
+    plus_dm = pd.Series(np.where((up > down) & (up > 0), up, 0.), index=frame.index)
+    minus_dm = pd.Series(np.where((down > up) & (down > 0), down, 0.), index=frame.index)
+    atr = _wilder(_true_range(frame), di_length)
+    plus_di, minus_di = 100*_wilder(plus_dm, di_length)/(atr+EPS), 100*_wilder(minus_dm, di_length)/(atr+EPS)
+    adx = _wilder(100*(plus_di-minus_di).abs()/(plus_di+minus_di+EPS), adx_length)
+    return plus_di, minus_di, adx
+
+
+def _supertrend(frame: pd.DataFrame, length: int = 10, multiplier: float = 3.) -> tuple[np.ndarray, np.ndarray]:
+    """Pine ta.supertrend(multiplier, length): line and direction (+1 up, -1 down)."""
+    atr = _wilder(_true_range(frame), length).to_numpy()
+    hl2 = ((frame.high+frame.low)/2).to_numpy()
+    close = frame.close.to_numpy()
+    n = len(frame)
+    line, direction = np.full(n, np.nan), np.zeros(n)
+    upper_prev = lower_prev = np.nan
+    trend = 1.
+    for i in range(n):
+        if not np.isfinite(atr[i]):
+            continue
+        upper, lower = hl2[i]+multiplier*atr[i], hl2[i]-multiplier*atr[i]
+        if np.isfinite(lower_prev) and not (lower > lower_prev or close[i-1] < lower_prev):
+            lower = lower_prev
+        if np.isfinite(upper_prev) and not (upper < upper_prev or close[i-1] > upper_prev):
+            upper = upper_prev
+        if np.isfinite(upper_prev):
+            # Pine: previous line was the upper band -> flip up when close > upper.
+            if trend < 0 and close[i] > upper:
+                trend = 1.
+            elif trend > 0 and close[i] < lower:
+                trend = -1.
+        line[i] = lower if trend > 0 else upper
+        direction[i] = trend
+        upper_prev, lower_prev = upper, lower
+    return line, direction
+
+
+def adx_supertrend(frame: pd.DataFrame) -> pd.DataFrame:
+    """Core forecast drivers: ADX/DMI (14, 14) and Supertrend (10, 3), plus a 4x slower copy."""
+    out = {}
+    atr = _wilder(_true_range(frame), 14)
+    for tag, scale in (('', 1), ('_4x', 4)):
+        plus_di, minus_di, adx = _dmi(frame, 14*scale, 14*scale)
+        line, direction = _supertrend(frame, 10*scale, 3.)
+        line, direction = pd.Series(line, index=frame.index), pd.Series(direction, index=frame.index)
+        flips = direction.ne(direction.shift()) & direction.ne(0)
+        since = flips.groupby(flips.cumsum()).cumcount().astype(float)
+        out.update({
+            f'adx{tag}': adx, f'plus_di{tag}': plus_di, f'minus_di{tag}': minus_di,
+            f'di_spread{tag}': plus_di-minus_di,
+            f'adx_slope{tag}': adx.diff(3*scale),
+            f'adx_level{tag}': pd.cut(adx, [-np.inf, 20, 25, 50, 75, np.inf], labels=False).astype(float),
+            f'st_direction{tag}': direction.replace(0, np.nan),
+            f'st_distance_atr{tag}': (frame.close-line)/(atr+EPS),
+            f'st_bars_since_flip{tag}': np.log1p(since),
+            f'st_line_slope_atr{tag}': line.diff(3*scale)/(atr+EPS),
+            # Interactions: trend strength in the Supertrend direction.
+            f'adx_x_st{tag}': adx*direction,
+            f'di_spread_x_st{tag}': (plus_di-minus_di)*direction,
+        })
+    return pd.DataFrame(out, index=frame.index)
+
+
 @dataclass(frozen=True)
 class FeatureGroup:
     key: str
@@ -178,8 +244,10 @@ FEATURE_GROUPS: dict[str, FeatureGroup] = {group.key: group for group in (
     FeatureGroup('candles', 'Candle shape', 'Body and wick ratios, close position, gaps', candles),
     FeatureGroup('calendar', 'Time of day', 'Hour and weekday cycles', calendar),
     FeatureGroup('higher_timeframe', 'Higher timeframe', 'Slower trend and momentum context', higher_timeframe),
+    FeatureGroup('adx_supertrend', 'ADX + Supertrend', 'DMI/ADX 14 and Supertrend 10/3 with a 4x slower copy', adx_supertrend),
 )}
-DEFAULT_GROUPS = tuple(FEATURE_GROUPS)
+# adx_supertrend is opt-in (forecast Quantile Boost); existing defaults are unchanged.
+DEFAULT_GROUPS = tuple(key for key in FEATURE_GROUPS if key != 'adx_supertrend')
 
 
 def build_features(frame: pd.DataFrame, groups: tuple[str, ...] | list[str] = DEFAULT_GROUPS) -> pd.DataFrame:

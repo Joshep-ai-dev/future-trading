@@ -1,7 +1,6 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { api } from "../../shared/api/api";
-import { PageHeader } from "../../shared/ui/ui";
-import { Field, TIMEFRAME_CHOICES } from "../strategy/BBReversalSettings";
+import { TIMEFRAME_CHOICES } from "../strategy/BBReversalSettings";
 import { fmt } from "../../shared/types/types";
 import ForwardForecastPanel from "./ForwardForecastPanel";
 import ForecastPriceChart from "./ForecastPriceChart";
@@ -22,7 +21,15 @@ export type SavedForecastModel = {
     skillPct: number | null;
     beatsBaseline: boolean;
     stage: string;
+    directionAccuracy?: number;
+    intervalCoverage?: number;
+    probabilityDirectionAccuracy?: number | null;
   };
+  calibration?: {
+    shrink: number;
+    coverage: number;
+    coreImportancePct?: number;
+  } | null;
   config: {
     model: string;
     timeframe: string;
@@ -42,6 +49,9 @@ type TestPoint = {
   predictedLow: number;
   actualHigh: number;
   actualLow: number;
+  predictedLowerBand?: number;
+  predictedUpperBand?: number;
+  upProbability?: number;
 };
 type TestResult = {
   modelId: string;
@@ -56,43 +66,87 @@ type TestResult = {
     skillPct?: number | null;
     beatsBaseline?: boolean;
     meanError?: number;
+    intervalCoverage?: number;
+    intervalWidth?: number;
+    probabilityDirectionAccuracy?: number;
+    confidentDirectionAccuracy?: number | null;
+    confidentSamples?: number;
+    brierScore?: number;
   };
   predictions: TestPoint[];
   note: string;
 };
+type Step = "train" | "historical" | "live";
+
+const ARCHITECTURES: [string, string, string][] = [
+  ["boost", "Quantile Boost", "ADX + Supertrend core · calibrated band and direction (recommended)"],
+  ["extra_trees", "Extra Trees", "Tree ensemble on general indicators"],
+  ["gru", "GRU", "Recurrent network over recent candles"],
+  ["lstm", "LSTM", "Recurrent network over recent candles"],
+  ["rnn", "RNN", "Simple recurrent network"],
+];
 const architectureLabel = (model: string) =>
-  model === "extra_trees" ? "Extra Trees" : model.toUpperCase();
+  ARCHITECTURES.find(([value]) => value === model)?.[1] ?? model.toUpperCase();
 const dayAfter = (value: string) =>
-  new Date(Math.ceil(Date.parse(value) / 86400000) * 86400000)
-    .toISOString()
-    .slice(0, 10);
+  new Date(Math.ceil(Date.parse(value) / 86400000) * 86400000).toISOString().slice(0, 10);
 const dayOffset = (value: string, n: number) =>
   new Date(Date.parse(value) + n * 86400000).toISOString().slice(0, 10);
-const stamp = (time: number) =>
-  new Date(time * 1000).toISOString().replace("T", " ").slice(0, 16);
+const stamp = (time: number) => new Date(time * 1000).toISOString().replace("T", " ").slice(0, 16);
+const pct = (value: number | null | undefined, digits = 1) =>
+  value == null || !Number.isFinite(value) ? "—" : `${fmt(value, digits)}%`;
 
-export default function ForecastPage({
-  range,
-}: {
-  range: { startDate: string; endDate: string };
-}) {
-  const [step, setStep] = useState<"train" | "historical" | "live">("train"),
+/** Best honest headline number for a saved model. */
+function modelScore(model: SavedForecastModel): { text: string; tone: "up" | "down" | "flat"; title: string } {
+  const v = model.validation;
+  if (v?.probabilityDirectionAccuracy != null)
+    return {
+      text: `${fmt(v.probabilityDirectionAccuracy, 1)}%`,
+      tone: v.probabilityDirectionAccuracy > 52 ? "up" : v.probabilityDirectionAccuracy < 50 ? "down" : "flat",
+      title: "Holdout direction accuracy (calibrated probability)",
+    };
+  if (v?.skillPct != null)
+    return {
+      text: `${v.skillPct >= 0 ? "+" : ""}${fmt(v.skillPct, 1)}%`,
+      tone: v.skillPct > 0.5 ? "up" : v.skillPct < 0 ? "down" : "flat",
+      title: "Holdout error improvement vs no-change baseline",
+    };
+  return { text: "—", tone: "flat", title: "No holdout diagnostic" };
+}
+
+function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+  return (
+    <label className='fc-field'>
+      <span>{label}</span>
+      {children}
+      {hint && <small>{hint}</small>}
+    </label>
+  );
+}
+
+function Kpi({ label, value, tone, hint }: { label: string; value: string; tone?: "up" | "down"; hint?: string }) {
+  return (
+    <div className='fc-kpi' title={hint}>
+      <span>{label}</span>
+      <strong className={tone ? `is-${tone}` : undefined}>{value}</strong>
+    </div>
+  );
+}
+
+export default function ForecastPage({ range }: { range: { startDate: string; endDate: string } }) {
+  const [step, setStep] = useState<Step>("train"),
     [models, setModels] = useState<SavedForecastModel[]>([]),
     [selectedId, setSelectedId] = useState("");
   const [config, setConfig] = useState({
-    name: "Silver GRU",
-    model: "gru",
+    name: "Silver Quantile Boost",
+    model: "boost",
     timeframe: "15m",
     training_end: dayOffset(range.endDate, -3),
-    train_bars: 6000,
+    train_bars: 8000,
     lookback: 100,
     horizon: 12,
     epochs: 30,
   });
-  const [dates, setDates] = useState({
-    start_date: dayOffset(range.endDate, -2),
-    end_date: range.endDate,
-  });
+  const [dates, setDates] = useState({ start_date: dayOffset(range.endDate, -2), end_date: range.endDate });
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [result, setResult] = useState<TestResult | null>(null);
@@ -101,7 +155,10 @@ export default function ForecastPage({
     void api<SavedForecastModel[]>("/api/forecast/models")
       .then((rows) => {
         setModels(rows);
-        if (rows.length) choose(rows[0]);
+        if (rows.length) {
+          choose(rows[0]);
+          setStep("historical");
+        }
       })
       .catch((e) => setError(String(e)));
   }, []);
@@ -109,12 +166,10 @@ export default function ForecastPage({
     setSelectedId(model.id);
     setResult(null);
     const start = dayAfter(model.trainedThrough);
-    setDates({
-      start_date: start,
-      end_date: start > range.endDate ? start : range.endDate,
-    });
+    setDates({ start_date: start, end_date: start > range.endDate ? start : range.endDate });
   }
   async function remove(model: SavedForecastModel) {
+    if (!window.confirm(`Delete model "${model.name}"? Saved predictions stay.`)) return;
     setBusy(true);
     setError("");
     try {
@@ -175,9 +230,7 @@ export default function ForecastPage({
   }
   function download() {
     const url = URL.createObjectURL(
-      new Blob([JSON.stringify({ model: selected, result }, null, 2)], {
-        type: "application/json",
-      }),
+      new Blob([JSON.stringify({ model: selected, result }, null, 2)], { type: "application/json" }),
     );
     const a = document.createElement("a");
     a.href = url;
@@ -185,13 +238,8 @@ export default function ForecastPage({
     a.click();
     URL.revokeObjectURL(url);
   }
-  const number = (
-    key: "train_bars" | "lookback" | "horizon" | "epochs",
-    label: string,
-    min: number,
-    max: number,
-  ) => (
-    <Field key={key} label={label}>
+  const number = (key: "train_bars" | "lookback" | "horizon" | "epochs", label: string, min: number, max: number, hint?: string) => (
+    <Field key={key} label={label} hint={hint}>
       <input
         required
         type='number'
@@ -199,358 +247,319 @@ export default function ForecastPage({
         max={max}
         step={1}
         value={config[key]}
-        onChange={(e) =>
-          setConfig({ ...config, [key]: Number(e.target.value) })
-        }
+        onChange={(e) => setConfig({ ...config, [key]: Number(e.target.value) })}
       />
     </Field>
   );
+  const sequence = !["boost", "extra_trees"].includes(config.model);
+  const m = result?.metrics;
+  const hasBand = !!result?.predictions.some((p) => p.predictedLowerBand != null);
+  const hasProbability = !!result?.predictions.some((p) => p.upProbability != null);
+  const shrunk = selected?.calibration?.shrink === 0;
+
   return (
-    <section
-      id='page-forecast'
-      role='tabpanel'
-      aria-labelledby='tab-forecast'
-      className='forecast-page'
-    >
-      <PageHeader
-        eyebrow='SILVER / USDT | PREDICTION LAB'
-        title='Forecast workspace'
-        description='Train once. Explore historical predictions. Follow live outcomes with the same saved model.'
-      />
-      <nav className='forecast-steps' aria-label='Forecast workflow'>
-        {(
-          [
-            ["train", "01", "Train model", "Build your model library"],
+    <section id='page-forecast' role='tabpanel' aria-labelledby='tab-forecast' className='forecast-page fc'>
+      <header className='fc-topbar'>
+        <div className='fc-title'>
+          <h1>Forecast</h1>
+          <span>XAG/USDT perpetual · prediction lab</span>
+        </div>
+        <div className='fc-tabs' role='tablist' aria-label='Forecast workflow'>
+          {(
             [
-              "historical",
-              "02",
-              "Historical test",
-              "Compare against known prices",
-            ],
-            ["live", "03", "Live forecast", "Predict ahead, verify later"],
-          ] as const
-        ).map(([key, n, title, description]) => (
-          <button
-            key={key}
-            type='button'
-            disabled={busy || (key !== "train" && !selected)}
-            aria-current={step === key ? "step" : undefined}
-            onClick={() => {
-              setStep(key);
-              setError("");
-            }}
-          >
-            <span>{n}</span>
-            <div>
-              <strong>{title}</strong>
-              <small>{description}</small>
-            </div>
-          </button>
-        ))}
-      </nav>
-      <div className='forecast-workbench'>
-        <aside className='forecast-library'>
-          <div className='forecast-section-title'>
-            <h2>Model library</h2>
-            <span>{models.length} saved</span>
-          </div>
-          <p className='setup-note'>
-            Select a model to reuse its learned weights and scaling.
-          </p>
-          {!models.length && (
-            <p className='forecast-empty'>
-              Train your first model to unlock historical and live tests.
-            </p>
-          )}
-          {models.map((model) => (
-            <div
-              key={model.id}
-              className={`forecast-model-card ${model.id === selectedId ? "is-selected" : ""}`}
+              ["train", "Train"],
+              ["historical", "Backtest"],
+              ["live", "Live"],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              type='button'
+              role='tab'
+              aria-selected={step === key}
+              disabled={busy || (key !== "train" && !selected)}
+              onClick={() => {
+                setStep(key);
+                setError("");
+              }}
             >
-              <button
-                disabled={busy}
-                type='button'
-                className='forecast-model-select'
-                aria-pressed={model.id === selectedId}
-                onClick={() => choose(model)}
-              >
-                <strong>{model.name}</strong>
-                <span>
-                  {model.config.model.toUpperCase()} | {model.config.timeframe}{" "}
-                  | {model.config.horizon} bars ahead
-                </span>
-                <small>
-                  {model.trainingRows.toLocaleString()} training samples
-                </small>
-                {model.validation && (
-                  <small>
-                    {model.validation.beatsBaseline
-                      ? "Holdout diagnostic beats baseline"
-                      : "Holdout diagnostic: no baseline advantage"}
-                  </small>
-                )}
-                <small>
-                  Cutoff {model.trainedThrough.slice(0, 16).replace("T", " ")}{" "}
-                  UTC
-                </small>
-              </button>
-              <button
-                type='button'
-                className='forecast-model-remove'
-                disabled={busy}
-                aria-label={`Remove saved model ${model.name}`}
-                title='Remove model'
-                onClick={() => void remove(model)}
-              >
-                <svg
-                  viewBox='0 0 16 16'
-                  width='14'
-                  height='14'
-                  fill='none'
-                  aria-hidden='true'
-                >
-                  <path
-                    d='m4 4 8 8M12 4l-8 8'
-                    stroke='currentColor'
-                    strokeWidth='1.7'
-                    strokeLinecap='round'
-                  />
-                </svg>
-              </button>
-            </div>
+              {label}
+            </button>
           ))}
+        </div>
+      </header>
+
+      <div className='fc-layout'>
+        <aside className='fc-models' aria-label='Saved models'>
+          <div className='fc-panel-head'>
+            <span>Models</span>
+            <small>{models.length}</small>
+            <button
+              type='button'
+              className='fc-icon-button'
+              title='Train a new model'
+              aria-label='Train a new model'
+              disabled={busy}
+              onClick={() => setStep("train")}
+            >
+              <svg viewBox='0 0 18 18' aria-hidden='true'>
+                <path d='M9 4v10M4 9h10' />
+              </svg>
+            </button>
+          </div>
+          {!models.length && <p className='fc-empty'>No models yet. Train one to unlock Backtest and Live.</p>}
+          <ul className='fc-model-list'>
+            {models.map((model) => {
+              const score = modelScore(model);
+              return (
+                <li key={model.id} className={model.id === selectedId ? "is-selected" : undefined}>
+                  <button
+                    type='button'
+                    className='fc-model-row'
+                    disabled={busy}
+                    aria-pressed={model.id === selectedId}
+                    onClick={() => {
+                      choose(model);
+                      if (step === "train") setStep("historical");
+                    }}
+                  >
+                    <span className='fc-model-name'>{model.name}</span>
+                    <span className={`fc-score is-${score.tone}`} title={score.title}>
+                      {score.text}
+                    </span>
+                    <span className='fc-model-meta'>
+                      {architectureLabel(model.config.model)} · {model.config.timeframe} · {model.config.horizon} bars
+                    </span>
+                    <span className='fc-model-meta'>Trained to {model.trainedThrough.slice(0, 10)}</span>
+                  </button>
+                  <button
+                    type='button'
+                    className='fc-model-remove'
+                    disabled={busy}
+                    aria-label={`Delete model ${model.name}`}
+                    title='Delete model'
+                    onClick={() => void remove(model)}
+                  >
+                    <svg viewBox='0 0 18 18' aria-hidden='true'>
+                      <path d='M4.5 4.5l9 9M13.5 4.5l-9 9' />
+                    </svg>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
         </aside>
-        <div className='forecast-main'>
+
+        <main className='fc-main'>
           {error && (
-            <p className='error' role='alert'>
+            <p className='fc-alert is-error' role='alert'>
               {error}
             </p>
           )}
-          {selected && (
-            <div className='forecast-active-model'>
-              <span className='forecast-ready-dot' />
-              <div>
+
+          {selected && step !== "train" && (
+            <div className='fc-summary'>
+              <div className='fc-summary-name'>
                 <strong>{selected.name}</strong>
-                <small>
-                  {selected.config.model.toUpperCase()} |{" "}
-                  {selected.config.timeframe} | {selected.config.lookback}{" "}
-                  observed candles | {selected.config.horizon}-candle horizon
-                </small>
+                <span>
+                  {architectureLabel(selected.config.model)} · {selected.config.timeframe} · {selected.config.horizon}-candle
+                  horizon · {selected.trainingRows.toLocaleString()} samples
+                </span>
               </div>
-              <span>Saved & ready</span>
+              <Kpi label='Trained through' value={`${selected.trainedThrough.slice(0, 16).replace("T", " ")}`} />
+              <Kpi
+                label='Holdout skill'
+                value={
+                  selected.validation?.skillPct == null
+                    ? "—"
+                    : `${selected.validation.skillPct >= 0 ? "+" : ""}${fmt(selected.validation.skillPct, 1)}%`
+                }
+                tone={selected.validation?.skillPct == null ? undefined : selected.validation.skillPct > 0 ? "up" : selected.validation.skillPct < 0 ? "down" : undefined}
+                hint='Close-price error improvement vs predicting no change'
+              />
+              <Kpi
+                label='Direction'
+                value={pct(selected.validation?.probabilityDirectionAccuracy ?? selected.validation?.directionAccuracy)}
+                hint='Holdout share of correct up/down calls'
+              />
+              {selected.validation?.intervalCoverage != null && (
+                <Kpi label='80% band hit' value={pct(selected.validation.intervalCoverage)} hint='Holdout share of outcomes inside the 80% band' />
+              )}
+              {selected.calibration?.coreImportancePct != null && (
+                <Kpi label='ADX + Supertrend' value={pct(selected.calibration.coreImportancePct, 0)} hint='Share of model gain from ADX/DMI and Supertrend features' />
+              )}
             </div>
           )}
+
           {step === "train" && (
-            <form className='forecast-controls' onSubmit={(e) => void train(e)}>
-              <fieldset disabled={busy}>
-                <legend>Train a new forecast model</legend>
-                <p className='setup-note'>
-                  Choose a cutoff before the historical period you want to test.
-                  New models learn a close-price prediction for every candle in
-                  the future horizon. Each training run creates a new saved
-                  model; testing never changes it.
+            <form className='fc-panel' onSubmit={(e) => void train(e)}>
+              <div className='fc-panel-title'>
+                <h2>New forecast model</h2>
+                <p>
+                  Trains on candles up to the cutoff date, checks itself on a held-back tail, then saves. Backtests and live
+                  forecasts never retrain it.
                 </p>
-                <div className='setup-grid'>
-                  <Field label='Model name'>
-                    <input
-                      required
-                      maxLength={80}
-                      value={config.name}
-                      onChange={(e) =>
-                        setConfig({ ...config, name: e.target.value })
-                      }
-                    />
-                  </Field>
-                  <Field label='Architecture'>
-                    <select
-                      value={config.model}
-                      onChange={(e) => {
-                        const model = e.target.value;
-                        setConfig({
-                          ...config,
-                          model,
-                          name: /^Silver (GRU|LSTM|RNN|Extra Trees)$/.test(
-                            config.name,
-                          )
-                            ? `Silver ${architectureLabel(model)}`
-                            : config.name,
-                        });
-                      }}
-                    >
-                      {[
-                        ["gru", "GRU"],
-                        ["lstm", "LSTM"],
-                        ["rnn", "RNN"],
-                        ["extra_trees", "Extra Trees"],
-                      ].map(([value, label]) => (
-                        <option key={value} value={value}>
-                          {label}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                  <Field label='Timeframe'>
-                    <select
-                      value={config.timeframe}
-                      onChange={(e) =>
-                        setConfig({ ...config, timeframe: e.target.value })
-                      }
-                    >
-                      {TIMEFRAME_CHOICES.map((tf) => (
-                        <option key={tf}>{tf}</option>
-                      ))}
-                    </select>
-                  </Field>
-                  <Field label='Training through date (UTC)'>
-                    <input
-                      required
-                      type='date'
-                      min={range.startDate}
-                      max={range.endDate}
-                      value={config.training_end}
-                      onChange={(e) =>
-                        setConfig({ ...config, training_end: e.target.value })
-                      }
-                    />
-                  </Field>
-                  {number("train_bars", "Training candles", 500, 50000)}
-                  {number("horizon", "Prediction horizon (candles)", 1, 100)}
-                  {config.model !== "extra_trees" && (
-                    <>
-                      {number("lookback", "Observed candles", 1, 500)}
-                      {number("epochs", "Maximum epochs", 1, 100)}
-                    </>
-                  )}
-                </div>
-                <button type='submit'>
-                  {busy ? "Training and saving model..." : "Train & save model"}
-                </button>
+              </div>
+              <fieldset disabled={busy} className='fc-grid'>
+                <Field label='Model name'>
+                  <input required maxLength={80} value={config.name} onChange={(e) => setConfig({ ...config, name: e.target.value })} />
+                </Field>
+                <Field label='Method' hint={ARCHITECTURES.find(([value]) => value === config.model)?.[2]}>
+                  <select
+                    value={config.model}
+                    onChange={(e) => {
+                      const model = e.target.value;
+                      const auto = ARCHITECTURES.some(([, label]) => config.name === `Silver ${label}`);
+                      setConfig({ ...config, model, name: auto ? `Silver ${architectureLabel(model)}` : config.name });
+                    }}
+                  >
+                    {ARCHITECTURES.map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                        {value === "boost" ? " (recommended)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label='Timeframe'>
+                  <select value={config.timeframe} onChange={(e) => setConfig({ ...config, timeframe: e.target.value })}>
+                    {TIMEFRAME_CHOICES.map((tf) => (
+                      <option key={tf}>{tf}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label='Training cutoff (UTC)'>
+                  <input
+                    required
+                    type='date'
+                    min={range.startDate}
+                    max={range.endDate}
+                    value={config.training_end}
+                    onChange={(e) => setConfig({ ...config, training_end: e.target.value })}
+                  />
+                </Field>
+                {number("train_bars", "Training candles", 500, 50000, "More history usually helps boosting")}
+                {number("horizon", "Horizon (candles)", 1, 100)}
+                {sequence && number("lookback", "Observed candles", 1, 500)}
+                {sequence && number("epochs", "Max epochs", 1, 100)}
               </fieldset>
+              <div className='fc-actions'>
+                <button type='submit' className='fc-primary' disabled={busy}>
+                  {busy ? "Training…" : "Train & save"}
+                </button>
+                {busy && <span className='fc-muted'>Learning from past candles. Neural models can take several minutes.</span>}
+              </div>
             </form>
           )}
+
           {step === "historical" && selected && (
             <>
-              {selected.version === 1 && (
-                <p className='notice'>
-                  Legacy model: train a new model to get independent close
-                  prediction for Extra Trees and training holdout diagnostics.
-                  Existing model weights remain unchanged.
-                </p>
-              )}
-              <form
-                className='forecast-controls'
-                onSubmit={(e) => void test(e)}
-              >
-                <fieldset disabled={busy}>
-                  <legend>Historical prediction test</legend>
-                  <p className='setup-note'>
-                    Uses the selected saved model without retraining. Test dates
-                    must follow its training cutoff. This evaluates prices, not
-                    trade profits.
-                  </p>
-                  <div className='setup-grid'>
-                    <Field label='Test start (UTC)'>
-                      <input
-                        type='date'
-                        required
-                        min={dayAfter(selected.trainedThrough)}
-                        max={dates.end_date}
-                        value={dates.start_date}
-                        onChange={(e) => {
-                          setDates({ ...dates, start_date: e.target.value });
-                          setResult(null);
-                        }}
-                      />
-                    </Field>
-                    <Field label='Test end (UTC)'>
-                      <input
-                        type='date'
-                        required
-                        min={dates.start_date}
-                        max={range.endDate}
-                        value={dates.end_date}
-                        onChange={(e) => {
-                          setDates({ ...dates, end_date: e.target.value });
-                          setResult(null);
-                        }}
-                      />
-                    </Field>
-                  </div>
-                  <button type='submit'>
-                    {busy
-                      ? "Predicting historical prices..."
-                      : "Run historical test"}
-                  </button>
+              <form className='fc-panel fc-inline' onSubmit={(e) => void test(e)}>
+                <fieldset disabled={busy} className='fc-grid fc-grid-tight'>
+                  <Field label='Test start (UTC)'>
+                    <input
+                      type='date'
+                      required
+                      min={dayAfter(selected.trainedThrough)}
+                      max={dates.end_date}
+                      value={dates.start_date}
+                      onChange={(e) => {
+                        setDates({ ...dates, start_date: e.target.value });
+                        setResult(null);
+                      }}
+                    />
+                  </Field>
+                  <Field label='Test end (UTC)'>
+                    <input
+                      type='date'
+                      required
+                      min={dates.start_date}
+                      max={range.endDate}
+                      value={dates.end_date}
+                      onChange={(e) => {
+                        setDates({ ...dates, end_date: e.target.value });
+                        setResult(null);
+                      }}
+                    />
+                  </Field>
                 </fieldset>
-              </form>
-              {result && (
-                <>
-                  <div className='forecast-result-heading'>
-                    <h2>Prediction performance</h2>
-                    <button className='secondary' onClick={download}>
-                      Export test
+                <div className='fc-actions'>
+                  <button type='submit' className='fc-primary' disabled={busy}>
+                    {busy ? "Running…" : "Run backtest"}
+                  </button>
+                  {result && (
+                    <button type='button' className='fc-secondary' onClick={download}>
+                      Export
                     </button>
-                  </div>
-                  {result.metrics.beatsBaseline === false && (
-                    <p className='notice'>
-                      No predictive advantage in this test: forecasting no price
-                      change has lower error. More epochs or a closer-looking
-                      line do not establish accuracy.
+                  )}
+                </div>
+              </form>
+              {selected.version === 1 && (
+                <p className='fc-alert'>Legacy model: train a new one for holdout diagnostics and multi-step paths.</p>
+              )}
+              {result && m && (
+                <>
+                  {shrunk && hasProbability && (
+                    <p className='fc-alert'>
+                      The held-back check found no reliable edge in move size, so the price estimate stays at “no change”. Use the
+                      direction probability and the 80% band instead.
                     </p>
                   )}
-                  <div className='model-kpis'>
-                    {[
-                      ["Predictions", result.metrics.samples.toLocaleString()],
-                      ["Close MAE", fmt(result.metrics.closeMae, 4)],
-                      ["Baseline MAE", fmt(result.metrics.baselineMae, 4)],
-                      [
-                        "MAE improvement vs baseline",
-                        result.metrics.skillPct == null
-                          ? "-"
-                          : `${fmt(result.metrics.skillPct, 2)}%`,
-                      ],
-                      [
-                        "Mean forecast bias",
-                        result.metrics.meanError == null
-                          ? "-"
-                          : fmt(result.metrics.meanError, 4),
-                      ],
-                      ["RMSE", fmt(result.metrics.closeRmse, 4)],
-                      [
-                        "Direction accuracy",
-                        `${fmt(result.metrics.directionAccuracy)}%`,
-                      ],
-                    ].map(([label, value]) => (
-                      <div key={label}>
-                        <span>{label}</span>
-                        <strong>{value}</strong>
-                      </div>
-                    ))}
+                  {m.beatsBaseline === false && !shrunk && (
+                    <p className='fc-alert is-error'>
+                      No price-error advantage in this period: predicting “no change” had lower error.
+                    </p>
+                  )}
+                  <div className='fc-kpis'>
+                    <Kpi label='Predictions' value={m.samples.toLocaleString()} />
+                    {hasProbability && (
+                      <Kpi
+                        label='Direction (probability)'
+                        value={pct(m.probabilityDirectionAccuracy)}
+                        tone={m.probabilityDirectionAccuracy != null && m.probabilityDirectionAccuracy > 52 ? "up" : undefined}
+                      />
+                    )}
+                    {hasProbability && (
+                      <Kpi
+                        label={`Confident ${m.confidentSamples ?? ""}`}
+                        value={pct(m.confidentDirectionAccuracy)}
+                        tone={m.confidentDirectionAccuracy != null && m.confidentDirectionAccuracy > 52 ? "up" : undefined}
+                        hint='Direction accuracy on the 30% most confident calls'
+                      />
+                    )}
+                    {hasBand && <Kpi label='80% band hit' value={pct(m.intervalCoverage)} hint='Target is about 80%' />}
+                    {!hasProbability && <Kpi label='Direction' value={pct(m.directionAccuracy)} />}
+                    <Kpi
+                      label='Skill vs no change'
+                      value={m.skillPct == null ? "—" : `${m.skillPct >= 0 ? "+" : ""}${fmt(m.skillPct, 2)}%`}
+                      tone={m.skillPct != null && m.skillPct > 0 ? "up" : m.skillPct != null && m.skillPct < 0 ? "down" : undefined}
+                    />
+                    <Kpi label='Close MAE' value={fmt(m.closeMae, 4)} />
+                    <Kpi label='No-change MAE' value={fmt(m.baselineMae, 4)} />
+                    {m.brierScore != null && <Kpi label='Brier score' value={fmt(m.brierScore, 3)} hint='Lower is better; 0.25 = coin flip' />}
+                    <Kpi label='Bias' value={m.meanError == null ? "—" : fmt(m.meanError, 4)} />
                   </div>
                   <ForecastPriceChart
-                    history={result.predictions.map((p) => ({
-                      time: p.targetTime,
-                      close: p.actualClose,
-                    }))}
-                    predictions={result.predictions.map((p) => ({
-                      time: p.targetTime,
-                      close: p.predictedClose,
-                    }))}
+                    history={result.predictions.map((p) => ({ time: p.targetTime, close: p.actualClose }))}
+                    predictions={result.predictions.map((p) => ({ time: p.targetTime, close: p.predictedClose }))}
+                    band={
+                      hasBand
+                        ? result.predictions.map((p) => ({ time: p.targetTime, low: p.predictedLowerBand!, high: p.predictedUpperBand! }))
+                        : []
+                    }
                   />
-                  <p className='setup-note'>
-                    Lower errors are better. Baseline predicts no price change.{" "}
-                    {result.note}
-                  </p>
-                  <details>
-                    <summary>Inspect prediction prices</summary>
+                  <details className='fc-panel fc-details'>
+                    <summary>Prediction table (latest 100)</summary>
                     <div className='table-scroll'>
-                      <table>
+                      <table className='fc-table'>
                         <thead>
                           <tr>
-                            <th>Target close (UTC)</th>
-                            <th>Start price</th>
-                            <th>Predicted close</th>
-                            <th>Actual close</th>
+                            <th>Target (UTC)</th>
+                            <th>Start</th>
+                            <th>Predicted</th>
+                            {hasBand && <th>80% band</th>}
+                            {hasProbability && <th>P(up)</th>}
+                            <th>Actual</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -562,28 +571,31 @@ export default function ForecastPage({
                                 <td>{stamp(p.targetTime)}</td>
                                 <td>{fmt(p.originClose, 3)}</td>
                                 <td>{fmt(p.predictedClose, 3)}</td>
-                                <td>{fmt(p.actualClose, 3)}</td>
+                                {hasBand && (
+                                  <td>
+                                    {fmt(p.predictedLowerBand ?? null, 3)} – {fmt(p.predictedUpperBand ?? null, 3)}
+                                  </td>
+                                )}
+                                {hasProbability && (
+                                  <td className={p.upProbability != null && p.upProbability >= 0.5 ? "is-up" : "is-down"}>
+                                    {pct((p.upProbability ?? NaN) * 100, 0)}
+                                  </td>
+                                )}
+                                <td className={p.actualClose >= p.originClose ? "is-up" : "is-down"}>{fmt(p.actualClose, 3)}</td>
                               </tr>
                             ))}
                         </tbody>
                       </table>
                     </div>
                   </details>
+                  <p className='fc-muted fc-note'>{result.note}</p>
                 </>
               )}
             </>
           )}
-          {step === "live" && selected && (
-            <ForwardForecastPanel key={selected.id} selectedModel={selected} />
-          )}
-          {busy && (
-            <p role='status'>
-              {step === "train"
-                ? "Learning from past candles. Neural training can take several minutes."
-                : "Running inference with the saved model."}
-            </p>
-          )}
-        </div>
+
+          {step === "live" && selected && <ForwardForecastPanel key={selected.id} selectedModel={selected} />}
+        </main>
       </div>
     </section>
   );
