@@ -25,13 +25,13 @@ export function overlayLegends(
   });
   return [
     ...(selection.triplema
-      ? [row("triplema", "Triple MA", `${config.maFast} ${config.maMid} ${config.maSlow}${config.maType === "EMA" ? " EMA" : ""}`, "#00ff00")]
+      ? [row("triplema", "Triple MA", `${config.maFast} ${config.maMid} ${config.maSlow}${config.maType === "EMA" ? " EMA" : ""}`, config.maFastColor)]
       : []),
     ...(selection.bollinger
-      ? [row("bollinger", "BB", `${config.bbLength} ${config.bbMaType} ${config.bbSource} ${config.bbMultiplier}${config.bbOffset ? ` ${config.bbOffset}` : ""}`, TV.blue)]
+      ? [row("bollinger", "BB", `${config.bbLength} ${config.bbMaType} ${config.bbSource} ${config.bbMultiplier}${config.bbOffset ? ` ${config.bbOffset}` : ""}`, config.bbBasisColor)]
       : []),
     ...(selection.supertrend
-      ? [row("supertrend", "Supertrend", `${config.supertrendLength} ${config.supertrendMultiplier}`, TV.green)]
+      ? [row("supertrend", "Supertrend", `${config.supertrendLength} ${config.supertrendMultiplier}`, config.stUpColor)]
       : []),
   ];
 }

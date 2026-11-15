@@ -5,12 +5,13 @@ import { chartSupertrend } from "./supertrend";
 import { indicatorColor } from "./indicatorColors";
 import IndicatorHeader from "./IndicatorHeader";
 import IndicatorSettings, {
+  alpha,
   useIndicatorSettings,
   type IndicatorConfig,
   type IndicatorKind,
   type OverlayKind,
 } from "./IndicatorSettings";
-import { AdxDecoration, ADX_COLORS, displayAdx } from "./adxDisplay";
+import { AdxVisualizer, adxColor, DI_COLORS } from "./adxDisplay";
 import { PaneBand } from "./PaneBand";
 import ChartLegend, {
   legendData,
@@ -23,13 +24,12 @@ import { useChartDrawings } from "./drawings";
 import { trackPriceAxis } from "./priceAxisCountdown";
 import {
   chartTripleMa,
-  TRIPLE_MA_COLORS,
-  TRIPLE_MA_LABEL_COLORS,
+  TRIPLE_MA_OPACITY,
+  tripleMaColors,
 } from "./tripleMa";
 import type { ChartIndicatorSelection } from "./chartIndicatorSelection";
 import {
   TV,
-  TV_STUDY_COLORS,
   tvCandleOptions,
   tvChartOptions,
   tvTimeScaleOptions,
@@ -149,6 +149,10 @@ export default function PaperPriceChart(props: Props) {
     adx: number | null;
     rsi: number | null;
   }>({ atr: null, adx: null, rsi: null });
+  const [diValues, setDiValues] = useState<{
+    pdi: number | null;
+    mdi: number | null;
+  }>({ pdi: null, mdi: null });
   const [hiddenIndicators, setHiddenIndicators] = useState({
     atr: false,
     adx: false,
@@ -223,9 +227,8 @@ export default function PaperPriceChart(props: Props) {
     });
     volume.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
     const detachDrawings = drawing.attach(chart, price, container.current);
-    const tripleSeries = TRIPLE_MA_COLORS.map((color) =>
+    const tripleSeries = [0, 1, 2].map(() =>
       chart.addSeries(LineSeries, {
-        color,
         lineWidth: 2,
         priceLineVisible: false,
         lastValueVisible: true,
@@ -277,7 +280,8 @@ export default function PaperPriceChart(props: Props) {
       oscillatorKey = "",
       panelConfig = configRef.current;
     const oscillatorSeries = new Map<IndicatorKind, ISeriesApi<"Line">>();
-    let adxDecoration: AdxDecoration | null = null;
+    let adxDecoration: AdxVisualizer | null = null;
+    let diSeries: ISeriesApi<"Line">[] = [];
     let rsiBand: PaneBand | null = null;
     let paneFrame = 0,
       paneResize: ResizeObserver | null = null;
@@ -313,6 +317,10 @@ export default function PaperPriceChart(props: Props) {
       for (const [kind, series] of oscillatorSeries)
         series.applyOptions({ visible: !hiddenRef.current[kind] });
       adxDecoration?.setVisible(!hiddenRef.current.adx);
+      for (const series of diSeries)
+        series.applyOptions({
+          visible: !hiddenRef.current.adx && panelConfig.showDi,
+        });
       rsiBand?.setVisible(!hiddenRef.current.rsi);
       const hiddenOverlay = hiddenOverlaysRef.current;
       bollingerOverlay.setVisible(bollingerVisible && !hiddenOverlay.bollinger);
@@ -331,6 +339,7 @@ export default function PaperPriceChart(props: Props) {
         adx: last?.adx ?? null,
         rsi: last?.rsi ?? null,
       });
+      setDiValues({ pdi: last?.pdi ?? null, mdi: last?.mdi ?? null });
       for (const [key, series] of oscillatorSeries) {
         if (key !== "adx")
           series.setData(
@@ -345,25 +354,27 @@ export default function PaperPriceChart(props: Props) {
             ),
           );
         else {
-          const displayed = displayAdx(
-            oscillatorData,
-            panelConfig.displaySmoothing,
-          );
           series.setData(
-            displayed.map((p) =>
-              p.display === null
+            oscillatorData.map((p) =>
+              p.adx === null
                 ? { time: p.time as UTCTimestamp }
                 : {
                     time: p.time as UTCTimestamp,
-                    value: p.display,
-                    color: p.color,
+                    value: p.adx,
+                    color: adxColor(p.adx),
                   },
             ),
           );
-          adxDecoration?.update(
-            oscillatorData.at(-1)?.adx ?? null,
-            oscillatorData.at(-2)?.adx ?? null,
+          (["pdi", "mdi"] as const).forEach((field, index) =>
+            diSeries[index]?.setData(
+              oscillatorData.map((p) =>
+                p[field] === null
+                  ? { time: p.time as UTCTimestamp }
+                  : { time: p.time as UTCTimestamp, value: p[field]! },
+              ),
+            ),
           );
+          adxDecoration?.setData(oscillatorData);
         }
       }
     }
@@ -374,8 +385,27 @@ export default function PaperPriceChart(props: Props) {
       bollingerVisible = selection.bollinger;
       supertrendVisible = selection.supertrend;
       tripleSelected = selection.triplema;
+      bollingerOverlay.setStyle({
+        basis: config.bbBasisColor,
+        upper: config.bbUpperColor,
+        lower: config.bbLowerColor,
+        width: config.bbWidth,
+      });
+      supertrendOverlay.setStyle({
+        up: config.stUpColor,
+        down: config.stDownColor,
+        width: config.stWidth,
+      });
+      tripleMaColors(config).forEach((color, index) =>
+        tripleSeries[index].applyOptions({
+          color: alpha(color, TRIPLE_MA_OPACITY),
+          lineWidth: config.maWidth as 1 | 2 | 3 | 4,
+        }),
+      );
       adxDecoration = null;
       rsiBand = null;
+      for (const series of diSeries) chart.removeSeries(series);
+      diSeries = [];
       for (const series of oscillatorSeries.values())
         chart.removeSeries(series);
       oscillatorSeries.clear();
@@ -385,8 +415,17 @@ export default function PaperPriceChart(props: Props) {
           const series = chart.addSeries(
             LineSeries,
             {
-              color: key === "adx" ? TV.muted : TV_STUDY_COLORS[key],
-              lineWidth: 1,
+              color:
+                key === "adx"
+                  ? adxColor(null)
+                  : key === "atr"
+                    ? config.atrColor
+                    : config.rsiColor,
+              lineWidth: (key === "adx"
+                ? config.adxWidth
+                : key === "atr"
+                  ? config.atrWidth
+                  : config.rsiWidth) as 1 | 2 | 3 | 4,
               title: "",
               priceLineVisible: false,
               priceFormat: {
@@ -407,23 +446,23 @@ export default function PaperPriceChart(props: Props) {
             });
           oscillatorSeries.set(key, series);
           if (key === "adx") {
-            for (const [value, color, title, style] of [
-              [20, ADX_COLORS.range, "20 Weak", LineStyle.Dotted],
-              [25, ADX_COLORS.trend, "25 Trend", LineStyle.Dashed],
-              [config.adxThreshold, TV.blue, "Entry", LineStyle.Dashed],
-            ] as const)
-              series.createPriceLine({
-                price: value,
-                color,
-                title: value === config.adxThreshold ? title : "",
-                lineStyle: style,
-                lineWidth: 1,
-                axisLabelVisible: false,
-              });
-            adxDecoration = new AdxDecoration(
-              config.showStatus,
-              config.adxThreshold,
+            diSeries = [DI_COLORS.plus, DI_COLORS.minus].map((color) =>
+              chart.addSeries(
+                LineSeries,
+                {
+                  color,
+                  lineWidth: 1,
+                  title: "",
+                  priceLineVisible: false,
+                  lastValueVisible: config.showDi,
+                  crosshairMarkerVisible: config.showDi,
+                  visible: config.showDi,
+                  priceFormat: { type: "price", precision: 2, minMove: 0.01 },
+                },
+                series.getPane().paneIndex(),
+              ),
             );
+            adxDecoration = new AdxVisualizer(config.showStatus);
             series.attachPrimitive(adxDecoration);
           }
           if (key === "atr") {
@@ -616,6 +655,7 @@ export default function PaperPriceChart(props: Props) {
           panelConfig.adxLength,
           panelConfig.atrSmoothing,
           panelConfig.rsiLength,
+          panelConfig.diLength,
         );
         paintOscillators();
       }
@@ -640,9 +680,9 @@ export default function PaperPriceChart(props: Props) {
         for (const point of bands)
           if (point.basis !== null)
             addStudy(point.time, "bollinger", [
-              { text: point.basis.toFixed(3), color: TV.blue },
-              { text: point.upper!.toFixed(3), color: TV.down },
-              { text: point.lower!.toFixed(3), color: TV.up },
+              { text: point.basis.toFixed(3), color: panelConfig.bbBasisColor },
+              { text: point.upper!.toFixed(3), color: panelConfig.bbUpperColor },
+              { text: point.lower!.toFixed(3), color: panelConfig.bbLowerColor },
             ]);
       }
       if (supertrendVisible) {
@@ -658,7 +698,10 @@ export default function PaperPriceChart(props: Props) {
             addStudy(point.time, "supertrend", [
               {
                 text: point.value.toFixed(3),
-                color: point.direction === "down" ? TV.down : TV.green,
+                color:
+                  point.direction === "down"
+                    ? panelConfig.stDownColor
+                    : panelConfig.stUpColor,
               },
             ]);
       }
@@ -686,7 +729,7 @@ export default function PaperPriceChart(props: Props) {
             "triplema",
             point.values.map((value, index) => ({
               text: value === null ? "∅" : value.toFixed(3),
-              color: TRIPLE_MA_LABEL_COLORS[index],
+              color: tripleMaColors(panelConfig)[index],
             })),
           );
       } else for (const series of tripleSeries) series.setData([]);
@@ -837,6 +880,7 @@ export default function PaperPriceChart(props: Props) {
         adx: value?.adx ?? null,
         rsi: value?.rsi ?? null,
       });
+      setDiValues({ pdi: value?.pdi ?? null, mdi: value?.mdi ?? null });
       hoverTime = c ? c.time : null;
       setLegend(
         c
@@ -937,7 +981,6 @@ export default function PaperPriceChart(props: Props) {
         showEarlier={canLoadHistory}
         indicators={selectedIndicators}
         onToggleIndicator={toggleIndicator}
-        onIndicatorSettings={(kind) => setSettingsOpen(kind)}
         strategyVisible={strategyVisible}
         onToggleStrategy={() => setStrategyVisible((value) => !value)}
         follow={follow}
@@ -1011,6 +1054,14 @@ export default function PaperPriceChart(props: Props) {
             top={top}
             config={indicatorConfig}
             value={paneValues[kind]}
+            extra={
+              kind === "adx" && indicatorConfig.showDi
+                ? [
+                    { value: diValues.pdi, color: DI_COLORS.plus },
+                    { value: diValues.mdi, color: DI_COLORS.minus },
+                  ]
+                : undefined
+            }
             hidden={hiddenIndicators[kind]}
             onSettings={() => setSettingsOpen(kind)}
             onVisibility={() =>

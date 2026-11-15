@@ -1,52 +1,81 @@
-import type {ISeriesPrimitive,SeriesAttachedParameter,Time,IPrimitivePaneRenderer} from 'lightweight-charts';
+import type {ISeriesPrimitive,SeriesAttachedParameter,Time,IPrimitivePaneRenderer,UTCTimestamp} from 'lightweight-charts';
 import {TV} from './tvTheme';
 
-export const ADX_COLORS={trend:TV.up,range:TV.orange,weak:TV.muted};
-export const strengthColor=(raw:number|null)=>raw!==null&&raw>25?ADX_COLORS.trend:raw!==null&&raw>=20?ADX_COLORS.range:ADX_COLORS.weak;
-export function displayAdx(rows:{time:number;adx:number|null}[],length:number){
-  let ema:number|null=null;
-  return rows.map(row=>{if(row.adx===null)ema=null;else ema=ema===null?row.adx:ema+2/(length+1)*(row.adx-ema);return {...row,display:ema,color:strengthColor(row.adx)};});
-}
-function roundRect(ctx:CanvasRenderingContext2D,x:number,y:number,w:number,h:number,r:number){
-  ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();
-}
-export class AdxDecoration implements ISeriesPrimitive<Time>{
+/**
+ * "ADX 14 Trend Strength Visualizer v6" (ggs92, MPL-2.0) ported to the chart.
+ * Pine color constants: blue #2962ff, green #4caf50, yellow #ffeb3b,
+ * orange #ff9800, red #f23645, lime #00e676.
+ */
+export const ADX_LEVELS=[
+  {below:20,color:'#2962ff',label:'Weak'},
+  {below:25,color:'#4caf50',label:'Emerging'},
+  {below:50,color:'#ffeb3b',label:'Strong'},
+  {below:75,color:'#ff9800',label:'Very Strong'},
+  {below:Infinity,color:'#f23645',label:'Extremely Strong'},
+] as const;
+export const DI_COLORS={plus:'#00e676',minus:'#f23645'};
+const level=(adx:number)=>ADX_LEVELS.find(item=>adx<item.below)!;
+export const adxColor=(adx:number|null)=>adx===null||!Number.isFinite(adx)?TV.muted:level(adx).color;
+export const adxLabel=(adx:number)=>level(adx).label;
+
+export type AdxRow={time:number;adx:number|null;pdi:number|null;mdi:number|null};
+
+/** bgcolor(+DI > -DI ? green 90% : red 90%) and the last-bar trend label. */
+export class AdxVisualizer implements ISeriesPrimitive<Time>{
   private host:SeriesAttachedParameter<Time>|null=null;
-  private raw:number|null=null;private previous:number|null=null;
+  private rows:AdxRow[]=[];
   private visible=true;
+  constructor(private showLabel:boolean){}
   setVisible(visible:boolean){this.visible=visible;this.host?.requestUpdate();}
-  constructor(private showStatus:boolean,private threshold:number){}
-  autoscaleInfo(){return {priceRange:{minValue:0,maxValue:Math.max(30,this.threshold)}};}
+  setData(rows:AdxRow[]){this.rows=rows;this.host?.requestUpdate();}
   private renderer:IPrimitivePaneRenderer={
-    // 20-25 range zone, filled like a TradingView hline band.
     drawBackground:target=>target.useMediaCoordinateSpace(({context:ctx,mediaSize})=>{
-      if(!this.visible)return;
-      const a=this.host?.series.priceToCoordinate(20),b=this.host?.series.priceToCoordinate(25);
-      if(a==null||b==null)return;
-      ctx.save();ctx.fillStyle='rgba(255,152,0,0.06)';ctx.fillRect(0,Math.min(a,b),mediaSize.width,Math.abs(a-b));ctx.restore();
-    }),
-    draw:target=>{if(!this.showStatus||!this.visible)return;target.useMediaCoordinateSpace(({context:ctx,mediaSize})=>{
-      const raw=this.raw,previous=this.previous;
-      const strength=raw===null?'Warming up':raw>25?'Trend':raw>=20?'Range':'Weak';
-      const arrow=raw===null||previous===null?'':raw>previous?'▲':raw<previous?'▼':'■';
-      const color=strengthColor(raw);
-      ctx.save();ctx.font=`12px ${TV.font}`;ctx.textBaseline='middle';
-      const label=strength,value=raw===null?'':raw.toFixed(2);
-      const dot=8,gap=6,pad=8;
-      const width=pad+dot+gap+ctx.measureText(label).width+(value?gap+ctx.measureText(value).width:0)+(arrow?gap+9:0)+pad;
-      const height=22,x=Math.max(4,mediaSize.width-width-8),y=6;
-      roundRect(ctx,x,y,width,height,4);ctx.fillStyle='rgba(19,23,34,0.9)';ctx.fill();ctx.strokeStyle=TV.border;ctx.lineWidth=1;ctx.stroke();
-      let cursor=x+pad;
-      ctx.fillStyle=color;ctx.beginPath();ctx.arc(cursor+dot/2,y+height/2,dot/2-1,0,Math.PI*2);ctx.fill();cursor+=dot+gap;
-      ctx.fillStyle=TV.textStrong;ctx.fillText(label,cursor,y+height/2+0.5);cursor+=ctx.measureText(label).width+gap;
-      if(value){ctx.fillStyle=color;ctx.fillText(value,cursor,y+height/2+0.5);cursor+=ctx.measureText(value).width+gap;}
-      if(arrow){ctx.font=`9px ${TV.font}`;ctx.fillStyle=raw!==null&&previous!==null&&raw>previous?TV.up:raw!==null&&previous!==null&&raw<previous?TV.down:TV.muted;ctx.fillText(arrow,cursor,y+height/2+0.5);}
+      const host=this.host;if(!host||!this.visible||!this.rows.length)return;
+      const scale=host.chart.timeScale(),spacing=scale.options().barSpacing;
+      // Collect visible bars, then paint each run of equal color as one block.
+      // Neighbouring blocks share the same rounded edge (midpoint between bars),
+      // so there are no seams or overlapping alpha lines between bars.
+      const bars:{x:number;bull:boolean|null}[]=[];
+      for(const row of this.rows){
+        const x=scale.timeToCoordinate(row.time as UTCTimestamp);
+        if(x===null||x<-spacing*2||x>mediaSize.width+spacing*2)continue;
+        bars.push({x,bull:row.pdi===null||row.mdi===null?null:row.pdi>row.mdi});
+      }
+      const edge=(i:number)=>Math.round(i<=0?bars[0].x-spacing/2:i>=bars.length?bars[bars.length-1].x+spacing/2:(bars[i-1].x+bars[i].x)/2);
+      ctx.save();
+      let start=0;
+      for(let i=1;i<=bars.length;i++){
+        if(i<bars.length&&bars[i].bull===bars[start].bull)continue;
+        const bull=bars[start].bull;
+        if(bull!==null){
+          const left=edge(start),right=edge(i);
+          ctx.fillStyle=bull?'rgba(76,175,80,0.1)':'rgba(242,54,69,0.1)';
+          ctx.fillRect(left,0,right-left,mediaSize.height);
+        }
+        start=i;
+      }
       ctx.restore();
-    });},
+    }),
+    draw:target=>target.useMediaCoordinateSpace(({context:ctx,mediaSize})=>{
+      const host=this.host;if(!host||!this.visible||!this.showLabel)return;
+      const last=[...this.rows].reverse().find(row=>row.adx!==null);if(!last)return;
+      const x=host.chart.timeScale().timeToCoordinate(last.time as UTCTimestamp),y=host.series.priceToCoordinate(last.adx!);
+      if(x===null||y===null||x<0||x>mediaSize.width)return;
+      // label.style_label_up: box under the point with an arrow pointing up at it.
+      const text=adxLabel(last.adx!),color=adxColor(last.adx);
+      ctx.save();ctx.font=`11px ${TV.font}`;
+      const width=ctx.measureText(text).width+12,height=18,arrow=5;
+      const tip=Math.min(y,mediaSize.height-height-arrow-1),left=Math.max(2,Math.min(mediaSize.width-width-2,x-width/2));
+      ctx.fillStyle=color;
+      ctx.beginPath();ctx.moveTo(x,tip);ctx.lineTo(x-arrow,tip+arrow);ctx.lineTo(x+arrow,tip+arrow);ctx.closePath();ctx.fill();
+      ctx.beginPath();ctx.roundRect(left,tip+arrow,width,height,3);ctx.fill();
+      ctx.fillStyle='#ffffff';ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillText(text,left+width/2,tip+arrow+height/2+.5);
+      ctx.restore();
+    }),
   };
   private view={renderer:()=>this.renderer};
   attached(host:SeriesAttachedParameter<Time>){this.host=host;}
   detached(){this.host=null;}
   paneViews(){return [this.view];}
-  update(raw:number|null,previous:number|null){this.raw=raw;this.previous=previous;this.host?.requestUpdate();}
 }

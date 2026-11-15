@@ -32,6 +32,7 @@ import {
 } from "./chartTimeZone";
 import { chartOscillators } from "./chartOscillators";
 import IndicatorSettings, {
+  alpha,
   useIndicatorSettings,
   type IndicatorKind,
   type OverlayKind,
@@ -50,7 +51,7 @@ import {
 } from "../types/types";
 import { chartVolume } from "./chartVolume";
 import { indicatorColor } from "./indicatorColors";
-import { ADX_COLORS, displayAdx } from "./adxDisplay";
+import { AdxVisualizer, adxColor, DI_COLORS } from "./adxDisplay";
 import { PaneBand } from "./PaneBand";
 import ChartLegend, {
   legendData,
@@ -64,13 +65,12 @@ import { useChartDrawings } from "./drawings";
 import { trackPriceAxis } from "./priceAxisCountdown";
 import {
   chartTripleMa,
-  TRIPLE_MA_COLORS,
-  TRIPLE_MA_LABEL_COLORS,
+  TRIPLE_MA_OPACITY,
+  tripleMaColors,
 } from "./tripleMa";
 import type { ChartIndicatorSelection } from "./chartIndicatorSelection";
 import {
   TV,
-  TV_STUDY_COLORS,
   tvCandleOptions,
   tvChartOptions,
   tvTimeScaleOptions,
@@ -259,6 +259,10 @@ export default function BacktestChart({
   const [hiddenIndicators, setHiddenIndicators] = useState<
     Record<IndicatorKind, boolean>
   >({ atr: false, adx: false, rsi: false });
+  const [diValues, setDiValues] = useState<{
+    pdi: number | null;
+    mdi: number | null;
+  }>({ pdi: null, mdi: null });
   const indicatorSeries = useRef(new Map<IndicatorKind, ISeriesApi<"Line">>());
   function toggleIndicator(key: keyof ChartIndicatorSelection) {
     if (key === "bollinger" || key === "supertrend" || key === "triplema")
@@ -339,14 +343,20 @@ export default function BacktestChart({
         multiplier: indicatorConfig.bbMultiplier,
         offset: indicatorConfig.bbOffset,
       });
+      bollingerOverlay.setStyle({
+        basis: indicatorConfig.bbBasisColor,
+        upper: indicatorConfig.bbUpperColor,
+        lower: indicatorConfig.bbLowerColor,
+        width: indicatorConfig.bbWidth,
+      });
       bollingerOverlay.setData(bands, indicatorConfig.bbOffset);
       bollingerOverlay.setVisible(!hiddenOverlays.bollinger);
       for (const point of bands)
         if (point.basis !== null)
           addStudy(point.time, "bollinger", [
-            { text: point.basis.toFixed(3), color: TV.blue },
-            { text: point.upper!.toFixed(3), color: TV.down },
-            { text: point.lower!.toFixed(3), color: TV.up },
+            { text: point.basis.toFixed(3), color: indicatorConfig.bbBasisColor },
+            { text: point.upper!.toFixed(3), color: indicatorConfig.bbUpperColor },
+            { text: point.lower!.toFixed(3), color: indicatorConfig.bbLowerColor },
           ]);
     }
     if (selectedIndicators.supertrend) {
@@ -358,6 +368,11 @@ export default function BacktestChart({
         indicatorConfig.supertrendLength,
         indicatorConfig.supertrendMultiplier,
       );
+      supertrendOverlay.setStyle({
+        up: indicatorConfig.stUpColor,
+        down: indicatorConfig.stDownColor,
+        width: indicatorConfig.stWidth,
+      });
       supertrendOverlay.setData(trend);
       supertrendOverlay.setVisible(!hiddenOverlays.supertrend);
       for (const point of trend)
@@ -365,7 +380,10 @@ export default function BacktestChart({
           addStudy(point.time, "supertrend", [
             {
               text: point.value.toFixed(3),
-              color: point.direction === "down" ? TV.down : TV.green,
+              color:
+                point.direction === "down"
+                  ? indicatorConfig.stDownColor
+                  : indicatorConfig.stUpColor,
             },
           ]);
     }
@@ -375,11 +393,11 @@ export default function BacktestChart({
         [indicatorConfig.maFast, indicatorConfig.maMid, indicatorConfig.maSlow],
         indicatorConfig.maType,
       );
-      TRIPLE_MA_COLORS.forEach((color, index) =>
+      tripleMaColors(indicatorConfig).forEach((color, index) =>
         chart
           .addSeries(LineSeries, {
-            color,
-            lineWidth: 2,
+            color: alpha(color, TRIPLE_MA_OPACITY),
+            lineWidth: indicatorConfig.maWidth as 1 | 2 | 3 | 4,
             priceLineVisible: false,
             lastValueVisible: true,
             crosshairMarkerVisible: false,
@@ -403,7 +421,7 @@ export default function BacktestChart({
           "triplema",
           point.values.map((value, index) => ({
             text: value === null ? "∅" : value.toFixed(3),
-            color: TRIPLE_MA_LABEL_COLORS[index],
+            color: tripleMaColors(indicatorConfig)[index],
           })),
         );
     }
@@ -414,6 +432,7 @@ export default function BacktestChart({
       indicatorConfig.adxLength,
       indicatorConfig.atrSmoothing,
       indicatorConfig.rsiLength,
+      indicatorConfig.diLength,
     );
     const lastOscillator = oscillatorData.at(-1);
     setPaneValues({
@@ -421,17 +440,30 @@ export default function BacktestChart({
       adx: lastOscillator?.adx ?? null,
       rsi: lastOscillator?.rsi ?? null,
     });
+    setDiValues({
+      pdi: lastOscillator?.pdi ?? null,
+      mdi: lastOscillator?.mdi ?? null,
+    });
     const oscillatorKinds = (["atr", "adx", "rsi"] as const).filter(
       (key) => selectedIndicators[key],
     );
     indicatorSeries.current.clear();
     for (const [index, key] of oscillatorKinds.entries()) {
-      const colors = { ...TV_STUDY_COLORS, adx: TV.muted };
+      const colors = {
+        atr: indicatorConfig.atrColor,
+        rsi: indicatorConfig.rsiColor,
+        adx: adxColor(null),
+      };
+      const widths = {
+        atr: indicatorConfig.atrWidth,
+        rsi: indicatorConfig.rsiWidth,
+        adx: indicatorConfig.adxWidth,
+      };
       const series = chart.addSeries(
         LineSeries,
         {
           color: colors[key],
-          lineWidth: 1,
+          lineWidth: widths[key] as 1 | 2 | 3 | 4,
           title: "",
           priceLineVisible: false,
           priceFormat: {
@@ -460,20 +492,45 @@ export default function BacktestChart({
             });
       series.applyOptions({ visible: !hiddenIndicators[key] });
       indicatorSeries.current.set(key, series);
-      if (key === "adx")
+      if (key === "adx") {
         series.setData(
-          displayAdx(oscillatorData, indicatorConfig.displaySmoothing).map(
-            (point) =>
-              point.display === null
-                ? { time: point.time as UTCTimestamp }
-                : {
-                    time: point.time as UTCTimestamp,
-                    value: point.display,
-                    color: point.color,
-                  },
+          oscillatorData.map((point) =>
+            point.adx === null
+              ? { time: point.time as UTCTimestamp }
+              : {
+                  time: point.time as UTCTimestamp,
+                  value: point.adx,
+                  color: adxColor(point.adx),
+                },
           ),
         );
-      else
+        if (indicatorConfig.showDi && !hiddenIndicators.adx)
+          (["pdi", "mdi"] as const).forEach((field) =>
+            chart
+              .addSeries(
+                LineSeries,
+                {
+                  color: field === "pdi" ? DI_COLORS.plus : DI_COLORS.minus,
+                  lineWidth: 1,
+                  title: "",
+                  priceLineVisible: false,
+                  priceFormat: { type: "price", precision: 2, minMove: 0.01 },
+                },
+                index + 1,
+              )
+              .setData(
+                oscillatorData.map((point) =>
+                  point[field] === null
+                    ? { time: point.time as UTCTimestamp }
+                    : { time: point.time as UTCTimestamp, value: point[field]! },
+                ),
+              ),
+          );
+        const visualizer = new AdxVisualizer(indicatorConfig.showStatus);
+        visualizer.setVisible(!hiddenIndicators.adx);
+        visualizer.setData(oscillatorData);
+        series.attachPrimitive(visualizer);
+      } else
         series.setData(
           oscillatorData.map((point) =>
             point[key] === null
@@ -517,20 +574,6 @@ export default function BacktestChart({
           lineWidth: 1,
           axisLabelVisible: false,
         });
-      if (key === "adx")
-        for (const [value, color, title, style] of [
-          [20, ADX_COLORS.range, "20 Weak", LineStyle.Dotted],
-          [25, ADX_COLORS.trend, "25 Trend", LineStyle.Dashed],
-          [indicatorConfig.adxThreshold, TV.blue, "Entry", LineStyle.Dashed],
-        ] as const)
-          series.createPriceLine({
-            price: value,
-            color,
-            title: title === "Entry" ? title : "",
-            lineStyle: style,
-            lineWidth: 1,
-            axisLabelVisible: false,
-          });
     }
     if (oscillatorKinds.length)
       chart
@@ -894,6 +937,7 @@ export default function BacktestChart({
         adx: oscillator?.adx ?? null,
         rsi: oscillator?.rsi ?? null,
       });
+      setDiValues({ pdi: oscillator?.pdi ?? null, mdi: oscillator?.mdi ?? null });
       const time = c ? c.time : view.at(-1)!.time;
       setLegend(
         legendData(
@@ -994,7 +1038,6 @@ export default function BacktestChart({
         showEarlier
         indicators={selectedIndicators}
         onToggleIndicator={toggleIndicator}
-        onIndicatorSettings={(kind) => setSettingsOpen(kind)}
         strategyVisible={strategyVisible}
         onToggleStrategy={() => setStrategyVisible((value) => !value)}
         follow={follow}
@@ -1050,6 +1093,14 @@ export default function BacktestChart({
             top={top}
             config={indicatorConfig}
             value={paneValues[kind]}
+            extra={
+              kind === "adx" && indicatorConfig.showDi
+                ? [
+                    { value: diValues.pdi, color: DI_COLORS.plus },
+                    { value: diValues.mdi, color: DI_COLORS.minus },
+                  ]
+                : undefined
+            }
             hidden={hiddenIndicators[kind]}
             onSettings={() => setSettingsOpen(kind)}
             onVisibility={() =>

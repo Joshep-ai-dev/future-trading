@@ -6,6 +6,8 @@ export class SupertrendOverlay implements ISeriesPrimitive<Time>{
   private host:SeriesAttachedParameter<Time>|null=null;
   private visible=false;
   private segments:SupertrendPoint[][]=[];
+  private style={up:'#4caf50',down:'#f23645',width:1};
+  setStyle(style:{up:string;down:string;width:number}){this.style=style;this.host?.requestUpdate();}
   private renderer:IPrimitivePaneRenderer={draw:target=>{
     const host=this.host;if(!host||!this.visible)return;
     target.useMediaCoordinateSpace(({context:ctx,mediaSize})=>{
@@ -16,8 +18,8 @@ export class SupertrendOverlay implements ISeriesPrimitive<Time>{
           y:host.series.priceToCoordinate(point.value!),
           body:host.series.priceToCoordinate(point.bodyMiddle!),
         }));
-        const color=segment[0].direction==='up'?'#4caf50':'#f23645';
-        ctx.fillStyle=ctx.strokeStyle=color;ctx.lineWidth=1;
+        const color=segment[0].direction==='up'?this.style.up:this.style.down;
+        ctx.fillStyle=ctx.strokeStyle=color;ctx.lineWidth=this.style.width;
         for(let i=1;i<points.length;i++){
           const left=points[i-1],right=points[i];
           if(left.x===null||right.x===null||left.y===null||right.y===null||left.body===null||right.body===null)continue;

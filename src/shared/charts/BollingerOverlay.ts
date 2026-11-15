@@ -7,6 +7,8 @@ export class BollingerOverlay implements ISeriesPrimitive<Time>{
   private points:BollingerPoint[]=[];
   private visible=false;
   private offset=0;
+  private style={basis:'#2962ff',upper:'#f23645',lower:'#089981',width:1};
+  setStyle(style:{basis:string;upper:string;lower:string;width:number}){this.style=style;this.host?.requestUpdate();}
   private coordinates(point:BollingerPoint){
     const host=this.host;if(!host)return null;
     const scale=host.chart.timeScale(),x=scale.timeToCoordinate(point.time as UTCTimestamp);
@@ -21,7 +23,7 @@ export class BollingerOverlay implements ISeriesPrimitive<Time>{
     if(!this.host||!this.visible)return;
     target.useMediaCoordinateSpace(({context:ctx,mediaSize})=>{
       const rows=this.points.map(point=>this.coordinates(point));
-      ctx.save();ctx.lineWidth=1;
+      ctx.save();ctx.lineWidth=this.style.width;
       if(!lines)for(let i=1;i<rows.length;i++){
         const a=rows[i-1],b=rows[i];
         if(!a||!b||a.x===null||b.x===null||b.x<0||a.x>mediaSize.width)continue;
@@ -32,7 +34,7 @@ export class BollingerOverlay implements ISeriesPrimitive<Time>{
       }
       // Stroke each band as one path so antialiased segment ends cannot leave seams.
       ctx.lineJoin='round';ctx.lineCap='round';
-      if(lines)for(const [key,color] of [['basis','#2962ff'],['upper','#f23645'],['lower','#089981']] as const){
+      if(lines)for(const [key,color] of [['basis',this.style.basis],['upper',this.style.upper],['lower',this.style.lower]] as const){
         ctx.strokeStyle=color;ctx.beginPath();
         let connected=false;
         for(let i=1;i<rows.length;i++){

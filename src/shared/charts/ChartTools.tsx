@@ -1,7 +1,6 @@
 import {useEffect,useRef,useState} from 'react';
 import type {IChartApi} from 'lightweight-charts';
 import type {ChartIndicatorSelection} from './chartIndicatorSelection';
-import type {OverlayKind} from './IndicatorSettings';
 
 export const chartInteraction = {
   handleScale: {mouseWheel:true,pinch:true,axisPressedMouseMove:{time:true,price:true},axisDoubleClickReset:{time:true,price:true}},
@@ -21,12 +20,12 @@ export function resizeChart(chart:IChartApi,element:HTMLDivElement,initialView:(
   return ()=>observer.disconnect();
 }
 
-export default function ChartTools({chartRef,valueLabel='Price',horizontalLabel='Time',onFullscreen,fullscreen=false,endLabel='Latest',onLatest,onEarlier,onNavigate,loading=false,hasMore=false,indicators,onToggleIndicator,onIndicatorSettings,strategyVisible,onToggleStrategy,follow,onFollowChange,showEarlier=false}: {
+export default function ChartTools({chartRef,valueLabel='Price',horizontalLabel='Time',onFullscreen,fullscreen=false,endLabel='Latest',onLatest,onEarlier,onNavigate,loading=false,hasMore=false,indicators,onToggleIndicator,strategyVisible,onToggleStrategy,follow,onFollowChange,showEarlier=false}: {
   chartRef: {current:IChartApi|null}; valueLabel?:string; onLatest?:()=>void;
   endLabel?:string;horizontalLabel?:string;onFullscreen?:()=>void;fullscreen?:boolean;
   onEarlier?:()=>void; loading?:boolean; hasMore?:boolean;
   onNavigate?:()=>void;
-  indicators?:ChartIndicatorSelection;onToggleIndicator?:(key:keyof ChartIndicatorSelection)=>void;onIndicatorSettings?:(key:OverlayKind)=>void;
+  indicators?:ChartIndicatorSelection;onToggleIndicator?:(key:keyof ChartIndicatorSelection)=>void;
   strategyVisible?:boolean;onToggleStrategy?:()=>void;
   follow?:boolean;onFollowChange?:(value:boolean)=>void;showEarlier?:boolean;
 }) {
@@ -77,9 +76,6 @@ export default function ChartTools({chartRef,valueLabel='Price',horizontalLabel=
         <p className="tv-menu-section">Script name</p>
         {overlays&&matches('Trend overlays moving averages')&&<label><input type="checkbox" checked={strategyVisible} onChange={onToggleStrategy}/><span>Trend overlays<small>Moving averages from chart history</small></span></label>}
         {studies&&studyList.filter(study=>matches(`${study.name} ${study.description}`)).map(study=><label key={study.key}><input type="checkbox" checked={indicators[study.key]} onChange={()=>onToggleIndicator(study.key)}/><span>{study.name}<small>{study.description}</small></span></label>)}
-        {studies&&indicators.bollinger&&onIndicatorSettings&&<button type="button" className="tv-menu-link" onClick={()=>onIndicatorSettings('bollinger')}>Bollinger Bands settings…</button>}
-        {studies&&indicators.triplema&&onIndicatorSettings&&<button type="button" className="tv-menu-link" onClick={()=>onIndicatorSettings('triplema')}>Triple MA settings…</button>}
-        {studies&&indicators.supertrend&&onIndicatorSettings&&<button type="button" className="tv-menu-link" onClick={()=>onIndicatorSettings('supertrend')}>Supertrend settings…</button>}
       </div>
     </details>}
     {(overlays||studies)&&<i className="tv-divider" aria-hidden="true"/>}

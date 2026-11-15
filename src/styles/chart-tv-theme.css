@@ -593,3 +593,342 @@
     left: 8px;
   }
 }
+
+/* ===== TradingView indicator settings dialog =========================== */
+.indicator-modal.tv-dialog {
+  width: min(420px, calc(100vw - 32px));
+  padding: 0;
+  border: 1px solid var(--tv-border-strong, #434343);
+  border-radius: 6px;
+  background: var(--tv-popover, #1e1e1e);
+  color: var(--tv-text, #dbdbdb);
+  font-family: var(--tv-font, sans-serif);
+  box-shadow: 0 2px 4px #0006, 0 12px 40px #000c;
+}
+
+.indicator-modal.tv-dialog::backdrop {
+  background: #00000080;
+  backdrop-filter: none;
+}
+
+.tv-dialog form {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 40px);
+  margin: 0;
+}
+
+.tv-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px 12px;
+}
+
+.tv-dialog-header h3 {
+  margin: 0;
+  color: var(--tv-text, #dbdbdb);
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.tv-dialog-close {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--tv-text, #dbdbdb);
+  cursor: pointer;
+}
+
+.tv-dialog-close:hover {
+  background: var(--tv-hover, #303030);
+}
+
+.tv-dialog-close svg,
+.tv-defaults svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+.tv-dialog-tabs {
+  display: flex;
+  gap: 20px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--tv-border, #2a2a2a);
+}
+
+.tv-dialog-tabs button {
+  position: relative;
+  height: 38px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--tv-muted, #9c9c9c);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.tv-dialog-tabs button:hover {
+  color: var(--tv-text, #dbdbdb);
+}
+
+.tv-dialog-tabs button[aria-selected=true] {
+  color: var(--tv-text, #dbdbdb);
+}
+
+.tv-dialog-tabs button[aria-selected=true]::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 3px;
+  border-radius: 2px 2px 0 0;
+  background: var(--tv-text, #dbdbdb);
+}
+
+.tv-dialog-body {
+  display: grid;
+  gap: 12px;
+  min-height: 160px;
+  padding: 18px 20px;
+  overflow-y: auto;
+}
+
+.tv-dialog-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 170px;
+  align-items: center;
+  gap: 16px;
+  margin: 0;
+  color: var(--tv-text, #dbdbdb);
+  font-size: 14px;
+}
+
+.tv-dialog-control {
+  display: flex;
+  min-width: 0;
+}
+
+.tv-dialog-control input[type=number],
+.tv-dialog-control select {
+  width: 100%;
+  height: 34px;
+  margin: 0;
+  padding: 0 10px;
+  border: 1px solid var(--tv-border-strong, #434343);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--tv-text, #dbdbdb);
+  font-size: 14px;
+}
+
+.tv-dialog-control select option {
+  background: var(--tv-popover, #1e1e1e);
+}
+
+.tv-dialog-control input:focus,
+.tv-dialog-control select:focus {
+  border-color: var(--tv-blue, #2962ff);
+  outline: none;
+}
+
+.tv-dialog-control input[aria-invalid=true] {
+  border-color: var(--tv-red, #f23645);
+}
+
+.tv-dialog-control select:disabled {
+  opacity: .5;
+}
+
+.tv-dialog-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 0;
+  color: var(--tv-text, #dbdbdb);
+  font-size: 14px;
+}
+
+.tv-dialog-check input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--tv-blue, #2962ff);
+}
+
+.tv-color input[type=color] {
+  width: 34px;
+  height: 34px;
+  padding: 3px;
+  border: 1px solid var(--tv-border-strong, #434343);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.tv-color input[type=color]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.tv-color input[type=color]::-webkit-color-swatch {
+  border: 0;
+  border-radius: 3px;
+}
+
+.tv-widths {
+  display: flex;
+  gap: 4px;
+}
+
+.tv-widths button {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid var(--tv-border-strong, #434343);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.tv-widths button i {
+  width: 100%;
+  background: var(--tv-text, #dbdbdb);
+}
+
+.tv-widths button[aria-checked=true] {
+  border-color: var(--tv-blue, #2962ff);
+  background: #2962ff1f;
+}
+
+.tv-dialog-note {
+  margin: 0;
+  color: var(--tv-muted, #9c9c9c);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.tv-dialog-error {
+  margin: 0;
+  padding: 0 20px 8px;
+  color: var(--tv-red, #f23645);
+  font-size: 13px;
+}
+
+.tv-dialog-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px 18px;
+  border-top: 1px solid var(--tv-border, #2a2a2a);
+}
+
+.tv-defaults {
+  position: relative;
+  margin-right: auto;
+}
+
+.tv-defaults > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--tv-border-strong, #434343);
+  border-radius: 6px;
+  color: var(--tv-text, #dbdbdb);
+  font-size: 14px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.tv-defaults > summary::-webkit-details-marker {
+  display: none;
+}
+
+.tv-defaults > summary:hover,
+.tv-defaults[open] > summary {
+  background: var(--tv-hover, #303030);
+}
+
+.tv-defaults > div {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 2;
+  min-width: 170px;
+  padding: 6px 0;
+  border: 1px solid var(--tv-border-strong, #434343);
+  border-radius: 6px;
+  background: var(--tv-popover, #1e1e1e);
+  box-shadow: 0 8px 24px #000c;
+}
+
+.tv-defaults > div button {
+  width: 100%;
+  padding: 8px 14px;
+  border: 0;
+  background: transparent;
+  color: var(--tv-text, #dbdbdb);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tv-defaults > div button:hover {
+  background: var(--tv-hover, #303030);
+}
+
+.tv-dialog-cancel,
+.tv-dialog-ok {
+  min-width: 72px;
+  height: 34px;
+  padding: 0 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tv-dialog-cancel {
+  border: 1px solid var(--tv-border-strong, #434343);
+  background: transparent !important;
+  color: var(--tv-text, #dbdbdb) !important;
+}
+
+.tv-dialog-cancel:hover {
+  background: var(--tv-hover, #303030) !important;
+}
+
+.tv-dialog-ok {
+  border: 1px solid #ffffff;
+  background: #ffffff !important;
+  color: #000000 !important;
+}
+
+.tv-dialog-ok:hover:not(:disabled) {
+  background: #e0e0e0 !important;
+}
+
+.tv-dialog-ok:disabled {
+  opacity: .4;
+  cursor: default;
+}
+
+@media (max-width: 480px) {
+  .tv-dialog-row {
+    grid-template-columns: minmax(0, 1fr) 140px;
+  }
+}

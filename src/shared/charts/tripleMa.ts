@@ -2,13 +2,12 @@
 export type MaType = "SMA" | "EMA";
 export type TripleMaPoint = { time: number; values: (number | null)[] };
 
-/** Line colors of TradingView's "Triple MA" (fast green, mid red, slow yellow). */
-export const TRIPLE_MA_COLORS = [
-  "rgba(0,255,0,0.65)",
-  "rgba(255,0,0,0.65)",
-  "rgba(255,255,0,0.65)",
-];
-export const TRIPLE_MA_LABEL_COLORS = ["#00ff00", "#ff0000", "#ffff00"];
+/** Triple MA plot colors from the indicator settings (fast, middle, slow). */
+export function tripleMaColors(config: { maFastColor: string; maMidColor: string; maSlowColor: string }) {
+  return [config.maFastColor, config.maMidColor, config.maSlowColor];
+}
+/** TradingView draws the Triple MA lines at about 65% opacity. */
+export const TRIPLE_MA_OPACITY = 0.65;
 
 function movingAverage(closes: number[], length: number, type: MaType): (number | null)[] {
   const out: (number | null)[] = new Array(closes.length).fill(null);
