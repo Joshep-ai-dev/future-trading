@@ -39,8 +39,8 @@
 }
 
 .ui-button--danger {
-  background: #f254711c;
-  border-color: #f2547140;
+  background: #f236451c;
+  border-color: #f2364540;
   color: var(--red);
 }
 
@@ -259,7 +259,7 @@
   width: 38px;
   height: 38px;
   margin-bottom: 4px;
-  color: #586373;
+  color: #666666;
 }
 
 .ui-empty h3 {

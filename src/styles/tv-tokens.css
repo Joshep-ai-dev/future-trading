@@ -1,0 +1,60 @@
+/* TradingView black theme: the single, reusable palette for the whole app.
+   Loaded last so it overrides the older tokens in tokens.css / terminal.css.
+   Chart canvases read the same values from src/shared/charts/tvTheme.ts. */
+:root {
+  /* TradingView palette */
+  --tv-bg: #000000;
+  --tv-panel: #0f0f0f;
+  --tv-raised: #1e1e1e;
+  --tv-field: #141414;
+  --tv-border: #2a2a2a;
+  --tv-border-strong: #434343;
+  --tv-hover: #303030;
+  --tv-grid: #303030;
+  --tv-text: #dbdbdb;
+  --tv-muted: #9c9c9c;
+  --tv-faded: #5c5c5c;
+  --tv-blue: #2962ff;
+  --tv-blue-light: #5b9cf6;
+  --tv-green: #089981;
+  --tv-green-light: #22ab94;
+  --tv-red: #f23645;
+  --tv-red-light: #f7525f;
+  --tv-orange: #ff9800;
+  --tv-popover: #1e1e1e;
+  --tv-font: -apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, Ubuntu, sans-serif;
+
+  /* App tokens mapped onto the TradingView palette */
+  --background: var(--tv-bg);
+  --panel: var(--tv-panel);
+  --surface-raised: var(--tv-raised);
+  --field: var(--tv-field);
+  --border: var(--tv-border);
+  --border-strong: var(--tv-border-strong);
+  --text: var(--tv-text);
+  --muted: var(--tv-muted);
+  --faint: var(--tv-faded);
+  --blue: var(--tv-blue);
+  --accent: var(--tv-blue);
+  --accent-soft: #2962ff26;
+  --green: var(--tv-green);
+  --red: var(--tv-red);
+  --warning: var(--tv-orange);
+  font-family: var(--tv-font);
+}
+
+body {
+  background: var(--tv-bg);
+  color: var(--tv-text);
+  font-family: var(--tv-font);
+}
+
+input,
+select,
+textarea {
+  font-family: var(--tv-font);
+}
+
+::selection {
+  background: #2962ff55;
+}

@@ -63,9 +63,9 @@
   font-weight: 600;
 }
 
-.tag-good { background: #0ecb811f; color: var(--green); }
-.tag-warn { background: #f0b90b1f; color: var(--warning); }
-.tag-bad { background: #f6465d1f; color: var(--red); }
+.tag-good { background: #0899811f; color: var(--green); }
+.tag-warn { background: #ff98001f; color: var(--warning); }
+.tag-bad { background: #f236451f; color: var(--red); }
 
 .result-answer > strong {
   display: flex;
@@ -127,7 +127,7 @@
   height: 6px;
   overflow: hidden;
   border-radius: 6px;
-  background: #f6465d80;
+  background: #f2364580;
 }
 
 .answer-bar i {
@@ -413,7 +413,7 @@
 }
 
 .saved-run-actions .tv-icon:hover {
-  background: #f6465d1a;
+  background: #f236451a;
   color: var(--red);
 }
 
@@ -447,7 +447,7 @@
   padding: 0 12px;
   border-radius: 6px;
   background: var(--accent-soft);
-  color: #8fb3ff;
+  color: #5b9cf6;
   font-size: 12px;
   font-weight: 600;
 }
@@ -570,7 +570,7 @@
   left: 50%;
   padding: 2px 6px;
   border-radius: 4px;
-  background: #12161ce6;
+  background: #171717e6;
   color: currentColor;
   font-size: 10.5px;
   font-weight: 600;
@@ -695,7 +695,7 @@
 }
 
 .strategy-tag.is-bb { background: var(--surface-raised); color: var(--muted); }
-.strategy-tag.is-ml { background: var(--accent-soft); color: #8fb3ff; }
+.strategy-tag.is-ml { background: var(--accent-soft); color: #5b9cf6; }
 
 .model-report {
   display: grid;
@@ -801,8 +801,8 @@
   border-radius: 3px 3px 0 0;
 }
 
-.fold-bars .is-good { background: #0ecb81b3; }
-.fold-bars .is-bad { background: #f6465db3; }
+.fold-bars .is-good { background: #089981b3; }
+.fold-bars .is-bad { background: #f23645b3; }
 
 .fold-baseline {
   position: absolute;

@@ -1,6 +1,6 @@
 import type {SeriesMarker,UTCTimestamp,IPrimitivePaneRenderer,ISeriesPrimitive,SeriesAttachedParameter,Time} from 'lightweight-charts';
 
-export const FILL_COLORS={buy:'#38d9ff',sell:'#ffb347'};
+export const FILL_COLORS={buy:'#2962ff',sell:'#f7525f'};
 
 /** Preserve execution details for the chart readout and marker selection. */
 export function fillMarker(time:number,price:number,_label:string,kind:'entry'|'close',direction:number,id:string,quantity:number,pnl?:number):SeriesMarker<UTCTimestamp> {
@@ -37,7 +37,7 @@ export class FillLabels implements ISeriesPrimitive<Time> {
         const x=attached.chart.timeScale().timeToCoordinate(marker.time),y=attached.series.priceToCoordinate(marker.price);
         if(x===null||y===null||x<0||x>mediaSize.width||y<0||y>mediaSize.height)continue;
         // The small point is the fill; the arrow and label sit clear of nearby wicks.
-        ctx.fillStyle=marker.color;ctx.strokeStyle='#080c13';ctx.lineWidth=2;
+        ctx.fillStyle=marker.color;ctx.strokeStyle='#131722';ctx.lineWidth=2;
         ctx.beginPath();ctx.arc(x,y,3.5,0,Math.PI*2);ctx.fill();ctx.stroke();
         const below=marker.shape==='arrowUp',lines=(marker.text??'').split('\n').slice(0,2);
         const width=Math.max(...lines.map(line=>ctx.measureText(line).width))+12;
@@ -61,9 +61,9 @@ export class FillLabels implements ISeriesPrimitive<Time> {
         ctx.beginPath();ctx.moveTo(labelX,tip);ctx.lineTo(labelX-4,tip+(below?6:-6));ctx.lineTo(labelX+4,tip+(below?6:-6));ctx.closePath();ctx.fill();
         const start=below?tip+27:tip-39;
         // A small opaque backing keeps indicator lines from cutting through the text.
-        ctx.fillStyle='#080c13';ctx.fillRect(left,start-7,width,28);
+        ctx.fillStyle='#131722';ctx.fillRect(left,start-7,width,28);
         ctx.strokeStyle=marker.color;ctx.lineWidth=1;ctx.strokeRect(left,start-7,width,28);
-        lines.forEach((line,index)=>{ctx.fillStyle=index===1?(line.startsWith('Profit')?'#43d9a5':line.startsWith('Loss')?'#ff8191':marker.color):'#ffffff';ctx.fillText(line,labelX,start+index*14);});
+        lines.forEach((line,index)=>{ctx.fillStyle=index===1?(line.startsWith('Profit')?'#22ab94':line.startsWith('Loss')?'#f7525f':marker.color):'#ffffff';ctx.fillText(line,labelX,start+index*14);});
       }
       ctx.restore();
     });

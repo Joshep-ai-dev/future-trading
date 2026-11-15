@@ -8,12 +8,35 @@ import IndicatorSettings, {
   useIndicatorSettings,
   type IndicatorConfig,
   type IndicatorKind,
+  type OverlayKind,
 } from "./IndicatorSettings";
-import { AdxDecoration, displayAdx } from "./adxDisplay";
+import { AdxDecoration, ADX_COLORS, displayAdx } from "./adxDisplay";
+import { PaneBand } from "./PaneBand";
+import ChartLegend, {
+  legendData,
+  overlayLegends,
+  type LegendData,
+  type StudyValue,
+} from "./ChartLegend";
+import DrawingToolbar from "./DrawingToolbar";
+import { useChartDrawings } from "./drawings";
+import { trackPriceAxis } from "./priceAxisCountdown";
+import {
+  chartTripleMa,
+  TRIPLE_MA_COLORS,
+  TRIPLE_MA_LABEL_COLORS,
+} from "./tripleMa";
+import type { ChartIndicatorSelection } from "./chartIndicatorSelection";
+import {
+  TV,
+  TV_STUDY_COLORS,
+  tvCandleOptions,
+  tvChartOptions,
+  tvTimeScaleOptions,
+} from "./tvTheme";
 import { chartOscillators } from "./chartOscillators";
 import {
   chartTimeOptions,
-  formatChartTime,
   useChartTimeZone,
 } from "./chartTimeZone";
 import { TIMEFRAMES } from "./chartTimeframe";
@@ -28,7 +51,6 @@ import {
 import { useEffect, useRef, useState } from "react";
 import {
   CandlestickSeries,
-  ColorType,
   createChart,
   createSeriesMarkers,
   HistogramSeries,
@@ -41,12 +63,16 @@ import {
   type SeriesMarker,
 } from "lightweight-charts";
 import { fillMarker, FillLabels } from "./fillMarkers";
-import ChartTools, { chartInteraction, resizeChart } from "./ChartTools";
+import ChartTools, {
+  chartInteraction,
+  resizeChart,
+  ScrollToLatest,
+} from "./ChartTools";
 import {
   useChartIndicatorSelection,
   toggleChartIndicator,
 } from "./chartIndicatorSelection";
-import { fmt, type Analysis } from "../types/types";
+import type { Analysis } from "../types/types";
 import type { PaperTrade, Position } from "../../features/trading/PaperTrading";
 import { chartVolume } from "./chartVolume";
 
@@ -78,6 +104,7 @@ type Props = Data & {
   allowLocalHistory?: boolean;
   loadHistory?: (before: number) => Promise<HistoryPage>;
   historyLabel?: string;
+  symbol?: string;
 };
 
 export default function PaperPriceChart(props: Props) {
@@ -87,8 +114,14 @@ export default function PaperPriceChart(props: Props) {
   const selectedIndicators = useChartIndicatorSelection();
   const [indicatorConfig, setIndicatorConfig] = useIndicatorSettings();
   const [settingsOpen, setSettingsOpen] = useState<
-    IndicatorKind | "supertrend" | "bollinger" | null
+    IndicatorKind | OverlayKind | null
   >(null);
+  const drawing = useChartDrawings(props.symbol ?? "XAGUSDT");
+  const [hiddenOverlays, setHiddenOverlays] = useState<
+    Record<OverlayKind, boolean>
+  >({ bollinger: false, supertrend: false, triplema: false });
+  const hiddenOverlaysRef = useRef(hiddenOverlays);
+  hiddenOverlaysRef.current = hiddenOverlays;
   const timeZone = useChartTimeZone();
   const timeZoneRef = useRef(timeZone);
   timeZoneRef.current = timeZone;
@@ -99,17 +132,13 @@ export default function PaperPriceChart(props: Props) {
   }
   const changePanels = useRef<
     (
-      selection: {
-        atr: boolean;
-        adx: boolean;
-        rsi: boolean;
-        supertrend: boolean;
-        bollinger: boolean;
-      },
+      selection: ChartIndicatorSelection,
       config: IndicatorConfig,
     ) => void
   >(() => {});
-  function toggleIndicator(key: IndicatorKind | "supertrend" | "bollinger") {
+  function toggleIndicator(key: keyof ChartIndicatorSelection) {
+    if (key in hiddenOverlaysRef.current)
+      setHiddenOverlays((old) => ({ ...old, [key]: false }));
     toggleChartIndicator(key);
   }
   const [paneHeaders, setPaneHeaders] = useState<
@@ -139,7 +168,7 @@ export default function PaperPriceChart(props: Props) {
   const following = useRef(true),
     lastTime = useRef<number | undefined>(undefined);
   const [follow, setFollow] = useState(true),
-    [readout, setReadout] = useState("Hover for candle time and prices.");
+    [legend, setLegend] = useState<LegendData | null>(null);
   function holdView() {
     following.current = false;
     setFollow(false);
@@ -165,11 +194,9 @@ export default function PaperPriceChart(props: Props) {
       autoSize: false,
       ...chartInteraction,
       localization: chartTimeOptions(timeZone).localization,
-      layout: {
-        background: { type: ColorType.Solid, color: "#12161c" },
-        textColor: "#7d8da5",
-      },
+      ...tvChartOptions,
       timeScale: {
+        ...tvTimeScaleOptions,
         timeVisible: true,
         minBarSpacing: 0.2,
         rightOffset: 6,
@@ -179,20 +206,10 @@ export default function PaperPriceChart(props: Props) {
         allowShiftVisibleRangeOnWhitespaceReplacement: false,
         ...chartTimeOptions(timeZone).timeScale,
       },
-      grid: {
-        vertLines: { visible: true, color: "#29313d", style: LineStyle.Dotted },
-        horzLines: { color: "#1b2028" },
-      },
     });
     chartRef.current = chart;
     const price = chart.addSeries(CandlestickSeries, {
-      borderVisible: true,
-      upColor: "#00c896",
-      downColor: "#ff4d5e",
-      borderUpColor: "#28e0b0",
-      borderDownColor: "#ff6b78",
-      wickUpColor: "#28e0b0",
-      wickDownColor: "#ff6b78",
+      ...tvCandleOptions,
       priceFormat: { type: "price", precision: 3, minMove: 0.001 },
     });
     price
@@ -204,7 +221,21 @@ export default function PaperPriceChart(props: Props) {
       lastValueVisible: false,
       priceLineVisible: false,
     });
-    volume.priceScale().applyOptions({ scaleMargins: { top: 0.9, bottom: 0 } });
+    volume.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+    const detachDrawings = drawing.attach(chart, price, container.current);
+    const tripleSeries = TRIPLE_MA_COLORS.map((color) =>
+      chart.addSeries(LineSeries, {
+        color,
+        lineWidth: 2,
+        priceLineVisible: false,
+        lastValueVisible: true,
+        crosshairMarkerVisible: false,
+        visible: false,
+        priceFormat: { type: "price", precision: 3, minMove: 0.001 },
+      }),
+    );
+    let tripleSelected = false;
+    let studyValues = new Map<number, Record<string, StudyValue[]>>();
     const supertrendOverlay = new SupertrendOverlay();
     price.attachPrimitive(supertrendOverlay);
     let supertrendVisible = false,
@@ -219,7 +250,7 @@ export default function PaperPriceChart(props: Props) {
           {
             key: "trendSma" as const,
             series: chart.addSeries(LineSeries, {
-              color: "#d7ad69",
+              color: TV.orange,
               lineWidth: 1,
               title: "Trend SMA",
               priceLineVisible: false,
@@ -237,7 +268,7 @@ export default function PaperPriceChart(props: Props) {
     let liveEntryLines: ReturnType<typeof price.createPriceLine>[] = [];
     let liveEntryKey = "";
     const entry = chart.addSeries(LineSeries, {
-      color: "#88bfff",
+      color: TV.blue,
       lineWidth: 2,
       title: "Open entry",
       priceLineVisible: false,
@@ -247,6 +278,7 @@ export default function PaperPriceChart(props: Props) {
       panelConfig = configRef.current;
     const oscillatorSeries = new Map<IndicatorKind, ISeriesApi<"Line">>();
     let adxDecoration: AdxDecoration | null = null;
+    let rsiBand: PaneBand | null = null;
     let paneFrame = 0,
       paneResize: ResizeObserver | null = null;
     setPaneHeaders([]);
@@ -281,6 +313,16 @@ export default function PaperPriceChart(props: Props) {
       for (const [kind, series] of oscillatorSeries)
         series.applyOptions({ visible: !hiddenRef.current[kind] });
       adxDecoration?.setVisible(!hiddenRef.current.adx);
+      rsiBand?.setVisible(!hiddenRef.current.rsi);
+      const hiddenOverlay = hiddenOverlaysRef.current;
+      bollingerOverlay.setVisible(bollingerVisible && !hiddenOverlay.bollinger);
+      supertrendOverlay.setVisible(
+        supertrendVisible && !hiddenOverlay.supertrend,
+      );
+      for (const series of tripleSeries)
+        series.applyOptions({
+          visible: tripleSelected && !hiddenOverlay.triplema,
+        });
     };
     function paintOscillators() {
       const last = oscillatorData.at(-1);
@@ -330,10 +372,10 @@ export default function PaperPriceChart(props: Props) {
       panelConfig = config;
       oscillatorKey = "";
       bollingerVisible = selection.bollinger;
-      bollingerOverlay.setVisible(bollingerVisible);
       supertrendVisible = selection.supertrend;
-      supertrendOverlay.setVisible(supertrendVisible);
+      tripleSelected = selection.triplema;
       adxDecoration = null;
+      rsiBand = null;
       for (const series of oscillatorSeries.values())
         chart.removeSeries(series);
       oscillatorSeries.clear();
@@ -343,19 +385,9 @@ export default function PaperPriceChart(props: Props) {
           const series = chart.addSeries(
             LineSeries,
             {
-              color:
-                key === "atr"
-                  ? "#38d9ff"
-                  : key === "rsi"
-                    ? "#bd93f9"
-                    : "#90a4ae",
+              color: key === "adx" ? TV.muted : TV_STUDY_COLORS[key],
               lineWidth: 1,
-              title:
-                key === "atr"
-                  ? `ATR (${config.atrLength}, ${config.atrSmoothing})`
-                  : key === "adx"
-                    ? `ADX (${config.adxLength})`
-                    : `RSI (${config.rsiLength})`,
+              title: "",
               priceLineVisible: false,
               priceFormat: {
                 type: "price",
@@ -367,21 +399,26 @@ export default function PaperPriceChart(props: Props) {
           );
           series
             .priceScale()
-            .applyOptions({ scaleMargins: { top: 0.23, bottom: 0.12 } });
+            .applyOptions({
+              scaleMargins:
+                key === "rsi"
+                  ? { top: 0.04, bottom: 0.04 }
+                  : { top: 0.12, bottom: 0.08 },
+            });
           oscillatorSeries.set(key, series);
           if (key === "adx") {
             for (const [value, color, title, style] of [
-              [20, "#90a4aea6", "20 Weak", LineStyle.Dotted],
-              [25, "#26a69acc", "25 Trend", LineStyle.Dashed],
-              [config.adxThreshold, "#ff40ff", "Entry", LineStyle.Dashed],
+              [20, ADX_COLORS.range, "20 Weak", LineStyle.Dotted],
+              [25, ADX_COLORS.trend, "25 Trend", LineStyle.Dashed],
+              [config.adxThreshold, TV.blue, "Entry", LineStyle.Dashed],
             ] as const)
               series.createPriceLine({
                 price: value,
                 color,
-                title,
+                title: value === config.adxThreshold ? title : "",
                 lineStyle: style,
                 lineWidth: 1,
-                axisLabelVisible: true,
+                axisLabelVisible: false,
               });
             adxDecoration = new AdxDecoration(
               config.showStatus,
@@ -392,11 +429,11 @@ export default function PaperPriceChart(props: Props) {
           if (key === "atr") {
             series.createPriceLine({
               price: config.atrThreshold,
-              color: "#ffb74d",
-              title: "TH",
+              color: TV.orange,
+              title: "",
               lineStyle: LineStyle.Dashed,
               lineWidth: 1,
-              axisLabelVisible: true,
+              axisLabelVisible: false,
             });
             series.applyOptions({
               autoscaleInfoProvider: (original: () => AutoscaleInfo | null) => {
@@ -423,20 +460,27 @@ export default function PaperPriceChart(props: Props) {
             series.applyOptions({
               autoscaleInfoProvider: () => ({
                 priceRange: { minValue: 0, maxValue: 100 },
+                margins: { above: 2, below: 2 },
               }),
             });
-            for (const [value, color, title] of [
-              [config.rsiUpper, "#ff8191", "Upper"],
-              [50, "#61718b", "Mid"],
-              [config.rsiLower, "#43d9a5", "Lower"],
+            rsiBand = new PaneBand(
+              config.rsiLower,
+              config.rsiUpper,
+              "rgba(126,87,194,0.1)",
+            );
+            series.attachPrimitive(rsiBand);
+            for (const [value, color, style] of [
+              [config.rsiUpper, TV.muted, LineStyle.Dashed],
+              [50, "rgba(156,156,156,0.5)", LineStyle.Dotted],
+              [config.rsiLower, TV.muted, LineStyle.Dashed],
             ] as const)
               series.createPriceLine({
                 price: value,
                 color,
-                title,
-                lineStyle: LineStyle.Dashed,
+                title: "",
+                lineStyle: style,
                 lineWidth: 1,
-                axisLabelVisible: true,
+                axisLabelVisible: false,
               });
           }
         }
@@ -449,6 +493,8 @@ export default function PaperPriceChart(props: Props) {
       watchPaneLayout();
       restoreViewport(chart, viewport, lastTime.current, false);
     };
+    let hoverTime: number | null = null,
+      indexByTime = new Map<number, number>();
     let byTime = new Map<number, Analysis["candles"][number]>(),
       previousTime: number | undefined,
       previous: Data | null = null;
@@ -526,6 +572,7 @@ export default function PaperPriceChart(props: Props) {
       indicators = mergeHistory(indicators, data.indicators);
       data = { ...data, candles: cached, indicators };
       byTime = new Map(data.candles.map((c) => [c.time, c]));
+      indexByTime = new Map(data.candles.map((c, index) => [c.time, index]));
       const stamp = data.candles.at(-1)?.time;
       // Append live candles without rebuilding the time scale. History prepends
       // still need setData, followed by restoration against a visible candle.
@@ -574,27 +621,75 @@ export default function PaperPriceChart(props: Props) {
       }
       // Both Pine overlays use the same corrected OHLCV, including the live bar.
       const current = data.candles.filter((c) => c.time <= data.indicatorClock);
-      if (bollingerVisible)
-        bollingerOverlay.setData(
-          chartBollingerBands(current, {
-            length: panelConfig.bbLength,
-            maType: panelConfig.bbMaType,
-            source: panelConfig.bbSource,
-            multiplier: panelConfig.bbMultiplier,
-            offset: panelConfig.bbOffset,
-          }),
-          panelConfig.bbOffset,
-        );
+      drawing.setCandles(data.candles, duration);
+      studyValues = new Map();
+      const addStudy = (time: number, key: string, values: StudyValue[]) => {
+        const row = studyValues.get(time) ?? {};
+        row[key] = values;
+        studyValues.set(time, row);
+      };
+      if (bollingerVisible) {
+        const bands = chartBollingerBands(current, {
+          length: panelConfig.bbLength,
+          maType: panelConfig.bbMaType,
+          source: panelConfig.bbSource,
+          multiplier: panelConfig.bbMultiplier,
+          offset: panelConfig.bbOffset,
+        });
+        bollingerOverlay.setData(bands, panelConfig.bbOffset);
+        for (const point of bands)
+          if (point.basis !== null)
+            addStudy(point.time, "bollinger", [
+              { text: point.basis.toFixed(3), color: TV.blue },
+              { text: point.upper!.toFixed(3), color: TV.down },
+              { text: point.lower!.toFixed(3), color: TV.up },
+            ]);
+      }
       if (supertrendVisible) {
-        supertrendOverlay.setData(
-          chartSupertrend(
-            current,
-            duration,
-            panelConfig.supertrendLength,
-            panelConfig.supertrendMultiplier,
+        const trend = chartSupertrend(
+          current,
+          duration,
+          panelConfig.supertrendLength,
+          panelConfig.supertrendMultiplier,
+        );
+        supertrendOverlay.setData(trend);
+        for (const point of trend)
+          if (point.value !== null)
+            addStudy(point.time, "supertrend", [
+              {
+                text: point.value.toFixed(3),
+                color: point.direction === "down" ? TV.down : TV.green,
+              },
+            ]);
+      }
+      if (tripleSelected) {
+        const averages = chartTripleMa(
+          current,
+          [panelConfig.maFast, panelConfig.maMid, panelConfig.maSlow],
+          panelConfig.maType,
+        );
+        tripleSeries.forEach((series, index) =>
+          series.setData(
+            averages.map((point) =>
+              point.values[index] === null
+                ? { time: point.time as UTCTimestamp }
+                : {
+                    time: point.time as UTCTimestamp,
+                    value: point.values[index]!,
+                  },
+            ),
           ),
         );
-      }
+        for (const point of averages)
+          addStudy(
+            point.time,
+            "triplema",
+            point.values.map((value, index) => ({
+              text: value === null ? "∅" : value.toFixed(3),
+              color: TRIPLE_MA_LABEL_COLORS[index],
+            })),
+          );
+      } else for (const series of tripleSeries) series.setData([]);
       const nextLiveEntryKey = JSON.stringify(data.livePositions ?? []);
       if (nextLiveEntryKey !== liveEntryKey) {
         liveEntryKey = nextLiveEntryKey;
@@ -609,7 +704,7 @@ export default function PaperPriceChart(props: Props) {
           .map((position) =>
             price.createPriceLine({
               price: position.entryPrice!,
-              color: position.side === "long" ? "#26a69a" : "#ef5350",
+              color: position.side === "long" ? TV.up : TV.down,
               lineWidth: 2,
               lineStyle: LineStyle.Dashed,
               axisLabelVisible: true,
@@ -706,6 +801,17 @@ export default function PaperPriceChart(props: Props) {
           .map((m) => ({ ...m, text: undefined, size: 0 })),
       );
       lastTime.current = stamp;
+      if (hoverTime === null) {
+        const lastCandle = cached.at(-1);
+        setLegend(
+          legendData(
+            cached,
+            cached.length - 1,
+            undefined,
+            lastCandle && studyValues.get(lastCandle.time),
+          ),
+        );
+      }
       if (previousTime === undefined && stamp !== undefined) {
         const index = candleLogical(chart, stamp);
         if (index !== null)
@@ -731,23 +837,46 @@ export default function PaperPriceChart(props: Props) {
         adx: value?.adx ?? null,
         rsi: value?.rsi ?? null,
       });
-      const indicatorReadout = oscillator
-        ? [...oscillatorSeries.keys()]
-            .map(
-              (key) =>
-                ` | ${key.toUpperCase()} ${fmt(oscillator[key], key === "atr" ? 3 : 2)}`,
+      hoverTime = c ? c.time : null;
+      setLegend(
+        c
+          ? legendData(
+              cached,
+              indexByTime.get(c.time) ?? -1,
+              fillReadouts.get(c.time),
+              studyValues.get(c.time),
             )
-            .join("")
-        : "";
-      if (c)
-        setReadout(
-          `${formatChartTime(c.time, timeZoneRef.current)} · O ${fmt(c.open, 3)} H ${fmt(c.high, 3)} L ${fmt(c.low, 3)} C ${fmt(c.close, 3)}${indicatorReadout}${fillReadouts.has(c.time) ? ` | ${fillReadouts.get(c.time)!.join(" | ")}` : ""}`,
-        );
+          : legendData(
+              cached,
+              cached.length - 1,
+              undefined,
+              studyValues.get(cached.at(-1)?.time ?? -1),
+            ),
+      );
     });
     const stopResize = resizeChart(chart, container.current, () => {
       if (following.current) latest();
     });
+    const stopAxis = trackPriceAxis(
+      chart,
+      price,
+      container.current.parentElement ?? container.current,
+      () => {
+        const last = cached.at(-1);
+        const seconds =
+          TIMEFRAMES[props.timeframe as keyof typeof TIMEFRAMES] ?? 60;
+        return last
+          ? {
+              price: last.close,
+              closeTime: last.time + seconds,
+              up: last.close >= last.open,
+            }
+          : null;
+      },
+    );
     return () => {
+      stopAxis();
+      detachDrawings();
       paneResize?.disconnect();
       cancelAnimationFrame(paneFrame);
       updateVisibility.current = () => {};
@@ -781,7 +910,7 @@ export default function PaperPriceChart(props: Props) {
   }, [props]);
   useEffect(() => {
     updateVisibility.current();
-  }, [hiddenIndicators]);
+  }, [hiddenIndicators, hiddenOverlays]);
   useEffect(() => {
     updateStrategyVisibility.current();
   }, [strategyVisible]);
@@ -845,8 +974,36 @@ export default function PaperPriceChart(props: Props) {
           Pan right for newer candles · Latest returns to the current price
         </span>
       </div>
-      <div className='chart-resize'>
-        <p className='readout tv-legend'>{readout}</p>
+      <div className='chart-resize with-tools'>
+        <DrawingToolbar {...drawing.toolbar} />
+        <ChartLegend
+          title={`${props.symbol ?? "XAGUSDT"} · ${props.timeframe}`}
+          data={legend}
+          overlays={[
+            ...(props.showSma
+              ? [
+                  {
+                    key: "trend-sma",
+                    name: "Trend SMA",
+                    params: "",
+                    color: TV.orange,
+                    hidden: !strategyVisible,
+                    onToggleVisible: () => setStrategyVisible((v) => !v),
+                  },
+                ]
+              : []),
+            ...overlayLegends(
+              selectedIndicators,
+              indicatorConfig,
+              hiddenOverlays,
+              (kind) => setSettingsOpen(kind),
+              toggleIndicator,
+              (kind) =>
+                setHiddenOverlays((old) => ({ ...old, [kind]: !old[kind] })),
+            ),
+          ]}
+        />
+        {!follow && <ScrollToLatest onClick={latest} />}
         {paneHeaders.map(({ kind, top }) => (
           <IndicatorHeader
             key={kind}

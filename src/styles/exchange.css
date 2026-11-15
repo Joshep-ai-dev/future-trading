@@ -34,7 +34,7 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  color: #eef4fc;
+  color: #5b9cf6;
   cursor: pointer;
   list-style: none;
   white-space: nowrap;
@@ -53,8 +53,8 @@
   width: 6px;
   height: 6px;
   margin: -3px 2px 0 1px;
-  border-right: 1.5px solid #718096;
-  border-bottom: 1.5px solid #718096;
+  border-right: 1.5px solid #848484;
+  border-bottom: 1.5px solid #848484;
   transform: rotate(45deg);
 }
 
@@ -70,9 +70,9 @@
   left: -8px;
   width: 220px;
   padding: 6px;
-  border: 1px solid #2d3949;
+  border: 1px solid #3b3b3b;
   border-radius: 8px;
-  background: #111821;
+  background: #191919;
   box-shadow: 0 14px 36px #0009;
 }
 
@@ -84,13 +84,13 @@
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: #dce6f4;
+  color: #e8e8e8;
   text-align: left;
 }
 
 .market-picker button:hover:not(:disabled),
 .market-picker button[aria-selected=true] {
-  background: #1b2634;
+  background: #282828;
 }
 
 .market-picker button span {
@@ -101,7 +101,7 @@
 .market-picker button small {
   grid-column: 1;
   margin-top: 3px;
-  color: #718096;
+  color: #848484;
   font-size: 10px;
 }
 
@@ -109,7 +109,7 @@
   grid-column: 2;
   grid-row: 1 / span 2;
   align-self: center;
-  color: #4d8dff;
+  color: #2962ff;
 }
 
 .market-picker button:disabled {
@@ -120,22 +120,22 @@
 .exchange-instrument h1>span {
   font-size: 9px;
   padding: 3px 5px;
-  border: 1px solid #334154;
+  border: 1px solid #444444;
   border-radius: 3px;
-  color: #a2b3cb;
+  color: #b6b6b6;
   vertical-align: middle;
 }
 
 .exchange-instrument small,.exchange-last small {
   display: block;
-  color: #8090a8;
+  color: #949494;
   font-size: 11px;
 }
 
 .exchange-last strong {
   font-size: 28px;
   letter-spacing: -1px;
-  color: #eef4fc;
+  color: #5b9cf6;
 }
 
 .exchange-last small {
@@ -143,7 +143,7 @@
 }
 
 .exchange-activity {
-  background: #10151e;
+  background: #171717;
   border: 1px solid var(--border);
   border-radius: 6px;
   min-width: 0;
@@ -165,7 +165,7 @@
 
 .exchange-account-strip small {
   font-size: 10px;
-  color: #8293ab;
+  color: #969696;
 }
 
 .exchange-account-strip strong {
@@ -176,7 +176,7 @@
 .exchange-account-strip strong span {
   font-size: 10px;
   font-weight: 400;
-  color: #7d8fa7;
+  color: #929292;
 }
 
 .exchange-activity table {
@@ -189,14 +189,14 @@
 
 .exchange-activity th {
   padding: 18px 14px 12px;
-  color: #72849e;
+  color: #888888;
   font-size: 10px;
   font-weight: 400;
 }
 
 .exchange-activity td {
   padding: 12px 14px 20px;
-  border-bottom: 1px solid #1d2736;
+  border-bottom: 1px solid #2a2a2a;
 }
 
 .exchange-activity th:first-child,.exchange-activity td:first-child {
@@ -210,7 +210,7 @@
 
 .exchange-activity td small {
   font-size: 9px;
-  color: #8495ac;
+  color: #989898;
 }
 
 .exchange-position-tags {
@@ -222,20 +222,20 @@
 .exchange-position-tags span {
   padding: 3px 5px;
   border-radius: 2px;
-  background: #1c2635;
-  color: #b8c8de;
+  background: #282828;
+  color: #cbcbcb;
   font-size: 9px;
   text-transform: capitalize;
 }
 
 .exchange-position-tags span.long {
-  background: #087f66;
-  color: #eafff7;
+  background: #089981;
+  color: #22ab94;
 }
 
 .exchange-position-tags span.short {
-  background: #a12e48;
-  color: #fff1f4;
+  background: #f23645;
+  color: #f7525f;
 }
 
 .exchange-activity-footer {
@@ -244,7 +244,7 @@
   gap: 12px;
   padding: 10px 20px;
   border-top: 1px solid var(--border);
-  color: #657891;
+  color: #7b7b7b;
   font-size: 9px;
 }
 
@@ -253,7 +253,7 @@
   line-height: 1.6;
   padding: 10px 16px;
   margin: 0;
-  border-bottom: 1px solid #2c2a25;
+  border-bottom: 1px solid #ff9800;
 }
 
 .live-terminal-grid .terminal-main {

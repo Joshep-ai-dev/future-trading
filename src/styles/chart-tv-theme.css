@@ -1,0 +1,595 @@
+/* ===== TradingView dark theme for every chart surface ===================
+   Palette mirrors src/shared/charts/tvTheme.ts. Loaded after chart-toolbar.css. */
+/* Palette variables come from tv-tokens.css (:root). */
+
+.price-panel {
+  background: var(--tv-bg) !important;
+  border-color: var(--tv-border) !important;
+  font-family: var(--tv-font);
+}
+
+.price-panel > .tv-header,
+.balance-chart-shell > .tv-toolbar {
+  background: var(--tv-bg);
+  border-color: var(--tv-border);
+}
+
+/* The header owns the separator line under the top toolbar row. */
+.price-panel > .tv-header {
+  border-bottom: 1px solid var(--tv-border) !important;
+}
+
+.price-panel > .tv-toolbar {
+  background: transparent !important;
+  border-color: var(--tv-border);
+}
+
+@media (min-width: 1200px) {
+  .price-panel > .tv-toolbar {
+    height: 43px !important;
+  }
+}
+
+.tv-header .chart-title > strong {
+  color: var(--tv-text, #d1d4dc);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.tv-timeframes {
+  border-color: var(--tv-border, #2a2e39);
+}
+
+.tv-timeframes button {
+  border-radius: 4px;
+  color: var(--tv-text, #d1d4dc);
+  font-family: var(--tv-font, inherit);
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.tv-timeframes button:hover:not(:disabled) {
+  background: var(--tv-hover, #2a2e39);
+  color: var(--tv-text, #d1d4dc);
+}
+
+.tv-timeframes button[aria-checked=true] {
+  background: transparent;
+  color: var(--tv-blue, #2962ff);
+}
+
+.tv-header .chart-mode {
+  border-color: var(--tv-border, #2a2e39);
+  color: var(--tv-muted, #787b86);
+}
+
+.tv-header .chart-caption {
+  color: var(--tv-muted, #787b86);
+}
+
+.tv-toolbar .tv-icon,
+.tv-toolbar .tv-text,
+.tv-menu > summary {
+  height: 30px;
+  border-radius: 4px;
+  color: var(--tv-text, #d1d4dc) !important;
+  font-family: var(--tv-font, inherit);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.tv-toolbar .tv-icon {
+  width: 30px;
+}
+
+.tv-toolbar svg {
+  width: 24px;
+  height: 24px;
+}
+
+.tv-toolbar .tv-icon:hover:not(:disabled),
+.tv-toolbar .tv-text:hover:not(:disabled),
+.tv-menu > summary:hover,
+.tv-menu[open] > summary {
+  background: var(--tv-hover, #2a2e39) !important;
+  color: var(--tv-text, #d1d4dc) !important;
+}
+
+.tv-toolbar .tv-icon[aria-pressed=true] {
+  color: var(--tv-blue, #2962ff) !important;
+}
+
+.tv-divider {
+  height: 20px;
+  background: var(--tv-border, #2a2e39);
+}
+
+.tv-count {
+  background: var(--tv-blue, #2962ff);
+}
+
+.tv-follow {
+  color: var(--tv-text, #d1d4dc);
+  font-size: 13px;
+}
+
+.tv-follow input:checked + i {
+  background: var(--tv-blue, #2962ff);
+}
+
+/* Indicators menu: TradingView search dialog look */
+.tv-menu-popover {
+  width: 320px;
+  padding: 0 0 6px;
+  border: 1px solid #303030;
+  border-radius: 6px;
+  background: var(--tv-popover, #1e222d);
+  box-shadow: 0 2px 4px #0003, 0 8px 24px #00000080;
+  font-family: var(--tv-font, inherit);
+}
+
+.tv-menu-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--tv-border, #2a2e39);
+  color: var(--tv-muted, #787b86);
+}
+
+.tv-menu-search svg {
+  flex: none;
+  width: 18px !important;
+  height: 18px !important;
+}
+
+.tv-menu-search input {
+  flex: 1;
+  width: auto !important;
+  height: 32px !important;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--tv-text, #d1d4dc);
+  font-size: 14px;
+  outline: none;
+}
+
+.tv-menu-section {
+  margin: 0;
+  padding: 10px 14px 4px;
+  color: var(--tv-muted, #787b86);
+  font-size: 11px;
+  letter-spacing: .4px;
+  text-transform: uppercase;
+}
+
+.tv-menu-popover label {
+  margin: 0 6px;
+  padding: 7px 8px;
+  border-radius: 4px;
+  color: var(--tv-text, #d1d4dc);
+  font-size: 14px;
+}
+
+.tv-menu-popover label:hover {
+  background: var(--tv-hover, #2a2e39);
+}
+
+.tv-menu-popover input[type=checkbox] {
+  accent-color: var(--tv-blue, #2962ff);
+}
+
+.tv-menu-popover small {
+  color: var(--tv-muted, #787b86);
+  font-size: 12px;
+}
+
+.tv-menu-link {
+  margin: 4px 6px 0;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--tv-blue, #2962ff);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tv-menu-link:hover {
+  background: var(--tv-hover, #2a2e39);
+}
+
+/* Chart canvas area */
+.price-panel .chart-resize,
+.result-chart .chart-resize,
+.balance-chart-shell .chart-resize {
+  background: var(--tv-bg);
+  border-color: var(--tv-border);
+}
+
+/* Legend overlay (symbol + OHLC, Vol, overlay studies) */
+.chart-resize > .tv-legend {
+  position: absolute;
+  top: 6px;
+  left: 10px;
+  z-index: 3;
+  display: grid;
+  gap: 2px;
+  max-width: calc(100% - 90px);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--tv-text, #d1d4dc);
+  font-family: var(--tv-font, sans-serif);
+  font-size: 13px;
+  line-height: 20px;
+  pointer-events: none;
+}
+
+.tv-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tv-legend-title {
+  color: var(--tv-text, #d1d4dc);
+  font-size: 14px;
+}
+
+.tv-legend-values {
+  display: inline-flex;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tv-legend-values i {
+  margin-right: 2px;
+  color: var(--tv-text, #d1d4dc);
+  font-style: normal;
+}
+
+.tv-legend-name {
+  color: var(--tv-text, #d1d4dc);
+}
+
+.tv-legend-params {
+  color: var(--tv-muted, #787b86);
+}
+
+.tv-legend-swatch {
+  width: 10px;
+  height: 2px;
+  border-radius: 1px;
+}
+
+.tv-legend-study {
+  width: max-content;
+  max-width: 100%;
+  padding: 0 2px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  pointer-events: auto;
+}
+
+.tv-legend-actions {
+  display: none;
+  gap: 1px;
+}
+
+.tv-legend-study:hover {
+  border-color: var(--tv-border, #2a2e39);
+  background: #000000e6;
+}
+
+.tv-legend-study:hover .tv-legend-actions {
+  display: inline-flex;
+}
+
+.tv-legend-extra {
+  color: var(--tv-muted, #787b86);
+  font-size: 12px;
+}
+
+.tv-legend-actions button,
+.chart-resize .indicator-pane-actions button {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--tv-text, #d1d4dc);
+  cursor: pointer;
+}
+
+.tv-legend-actions button:hover,
+.chart-resize .indicator-pane-actions button:hover {
+  background: var(--tv-hover, #2a2e39);
+  color: #fff;
+}
+
+.tv-legend-actions svg,
+.chart-resize .indicator-pane-actions svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+@media (hover: none) {
+  .tv-legend-actions {
+    display: inline-flex;
+  }
+}
+
+/* Indicator pane legends */
+.chart-resize .indicator-pane-header {
+  left: 8px;
+  gap: 6px;
+  min-height: 24px;
+  padding: 0 2px 0 4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--tv-text, #d1d4dc);
+  font-family: var(--tv-font, sans-serif);
+  font-size: 13px;
+}
+
+.chart-resize .indicator-pane-header:hover,
+.chart-resize .indicator-pane-header:focus-within {
+  border-color: var(--tv-border, #2a2e39);
+  background: #000000e6;
+}
+
+.chart-resize .indicator-pane-header .indicator-pane-name {
+  display: inline-flex;
+  gap: 6px;
+  padding: 0;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.chart-resize .indicator-pane-name b {
+  color: var(--tv-text, #d1d4dc);
+  font-weight: 400;
+}
+
+.chart-resize .indicator-pane-name span {
+  color: var(--tv-muted, #787b86);
+}
+
+.chart-resize .indicator-pane-name:hover b {
+  color: #fff;
+}
+
+.chart-resize .indicator-pane-value {
+  font-size: 13px;
+}
+
+.chart-resize .indicator-pane-actions {
+  gap: 1px;
+}
+
+/* Scroll-to-realtime button, bottom right above the time axis */
+.tv-scroll-latest {
+  position: absolute;
+  right: calc(var(--tv-scale-width, 60px) + 14px);
+  bottom: 40px;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid #303030;
+  border-radius: 50%;
+  background: var(--tv-popover, #1e222d);
+  color: var(--tv-text, #d1d4dc);
+  box-shadow: 0 2px 6px #0006;
+  cursor: pointer;
+}
+
+.tv-scroll-latest:hover {
+  background: var(--tv-hover, #2a2e39);
+  color: #fff;
+}
+
+.tv-scroll-latest svg {
+  width: 16px;
+  height: 16px;
+}
+
+@media (max-width: 600px) {
+  .tv-legend-values span:nth-child(-n+3) {
+    display: none;
+  }
+
+}
+
+/* ===== Left drawing toolbar ============================================ */
+.chart-resize.with-tools {
+  padding-left: 46px;
+  box-sizing: border-box;
+}
+
+.chart-resize.with-tools > .tv-legend {
+  left: 56px;
+}
+
+.chart-resize.with-tools .indicator-pane-header {
+  left: 54px;
+}
+
+.tv-drawing-toolbar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 46px;
+  padding: 4px 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+  border-right: 4px solid var(--tv-border, #222222);
+  background: var(--tv-bg, #000000);
+  box-sizing: border-box;
+}
+
+.tv-draw-slot {
+  display: contents;
+}
+
+.tv-draw-button {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--tv-text, #dbdbdb);
+  cursor: pointer;
+}
+
+.tv-draw-button svg {
+  width: 28px;
+  height: 28px;
+}
+
+.tv-draw-button:hover:not(:disabled) {
+  background: var(--tv-hover, #303030);
+}
+
+.tv-draw-button[aria-pressed=true] {
+  background: var(--tv-hover, #303030);
+  color: var(--tv-blue, #2962ff);
+}
+
+.tv-draw-button:disabled {
+  opacity: .35;
+  cursor: default;
+}
+
+.tv-draw-sep {
+  flex: none;
+  width: 28px;
+  height: 1px;
+  margin: 3px 0;
+  background: var(--tv-hover, #303030);
+}
+
+/* ===== Legend: hidden studies, values, collapse ======================== */
+.tv-legend-value {
+  font-variant-numeric: tabular-nums;
+}
+
+.tv-legend-study.is-hidden .tv-legend-name,
+.tv-legend-study.is-hidden .tv-legend-params {
+  color: var(--tv-faded, #5c5c5c);
+}
+
+.tv-legend-study.is-hidden .tv-legend-actions {
+  display: inline-flex;
+}
+
+.tv-legend-study.is-hidden .tv-legend-actions button:not(.tv-legend-eye) {
+  display: none;
+}
+
+.tv-legend-study.is-hidden:hover .tv-legend-actions button {
+  display: grid;
+}
+
+.tv-legend-study.is-hidden .tv-legend-eye {
+  color: var(--tv-faded, #5c5c5c);
+}
+
+.tv-legend-collapse {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 2px;
+  height: 22px;
+  min-width: 22px;
+  padding: 0 4px;
+  border: 1px solid var(--tv-hover, #303030);
+  border-radius: 4px;
+  background: #000000cc;
+  color: var(--tv-text, #dbdbdb);
+  font-size: 12px;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.tv-legend-collapse:hover {
+  background: var(--tv-hover, #303030);
+}
+
+.tv-legend-collapse svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ===== Bar-close countdown under the last price label ================= */
+.tv-countdown {
+  position: absolute;
+  right: 0;
+  z-index: 3;
+  height: 17px;
+  padding-left: 6px;
+  box-sizing: border-box;
+  color: #fff;
+  font-family: var(--tv-font, sans-serif);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 17px;
+  pointer-events: none;
+}
+
+@media (max-width: 600px) {
+  .chart-resize.with-tools {
+    padding-left: 0;
+  }
+
+  .tv-drawing-toolbar {
+    display: none;
+  }
+
+  .chart-resize.with-tools > .tv-legend {
+    left: 10px;
+  }
+
+  .chart-resize.with-tools .indicator-pane-header {
+    left: 8px;
+  }
+}

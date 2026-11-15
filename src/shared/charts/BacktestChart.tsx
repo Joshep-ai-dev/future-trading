@@ -6,7 +6,6 @@ import { StopOverlay } from "./StopOverlay";
 import { useEffect, useRef, useState } from "react";
 import {
   CandlestickSeries,
-  ColorType,
   createChart,
   createSeriesMarkers,
   HistogramSeries,
@@ -20,11 +19,14 @@ import {
   type SeriesMarker,
 } from "lightweight-charts";
 import { fillMarker, FillLabels } from "./fillMarkers";
-import ChartTools, { chartInteraction, resizeChart } from "./ChartTools";
+import ChartTools, {
+  chartInteraction,
+  resizeChart,
+  ScrollToLatest,
+} from "./ChartTools";
 import { captureViewport, restoreViewport } from "./chartViewport";
 import {
   chartTimeOptions,
-  formatChartTime,
   readChartTimeZone,
   useChartTimeZone,
 } from "./chartTimeZone";
@@ -32,6 +34,7 @@ import { chartOscillators } from "./chartOscillators";
 import IndicatorSettings, {
   useIndicatorSettings,
   type IndicatorKind,
+  type OverlayKind,
 } from "./IndicatorSettings";
 import {
   useChartIndicatorSelection,
@@ -47,7 +50,31 @@ import {
 } from "../types/types";
 import { chartVolume } from "./chartVolume";
 import { indicatorColor } from "./indicatorColors";
-import { displayAdx } from "./adxDisplay";
+import { ADX_COLORS, displayAdx } from "./adxDisplay";
+import { PaneBand } from "./PaneBand";
+import ChartLegend, {
+  legendData,
+  overlayLegends,
+  type LegendData,
+  type LegendOverlay,
+  type StudyValue,
+} from "./ChartLegend";
+import DrawingToolbar from "./DrawingToolbar";
+import { useChartDrawings } from "./drawings";
+import { trackPriceAxis } from "./priceAxisCountdown";
+import {
+  chartTripleMa,
+  TRIPLE_MA_COLORS,
+  TRIPLE_MA_LABEL_COLORS,
+} from "./tripleMa";
+import type { ChartIndicatorSelection } from "./chartIndicatorSelection";
+import {
+  TV,
+  TV_STUDY_COLORS,
+  tvCandleOptions,
+  tvChartOptions,
+  tvTimeScaleOptions,
+} from "./tvTheme";
 import IndicatorHeader from "./IndicatorHeader";
 
 export function EquityChart({
@@ -102,15 +129,13 @@ export function EquityChart({
       autoSize: false,
       ...chartInteraction,
       localization: { timeFormatter: tradeLabel },
-      layout: {
-        background: { type: ColorType.Solid, color: "#12161c" },
-        textColor: "#7d8da5",
-      },
+      ...tvChartOptions,
       rightPriceScale: {
         scaleMargins: { top: 0.16, bottom: 0.16 },
-        borderColor: "#263246",
+        borderColor: TV.border,
       },
       timeScale: {
+        ...tvTimeScaleOptions,
         timeVisible: false,
         minBarSpacing: 0.2,
         lockVisibleTimeRangeOnResize: true,
@@ -120,14 +145,10 @@ export function EquityChart({
             ? "Start"
             : `#${Math.round(Number(time) / 86400) - 1}`,
       },
-      grid: {
-        vertLines: { visible: true, color: "#29313d", style: LineStyle.Dotted },
-        horzLines: { color: "#1b2028" },
-      },
     });
     chartRef.current = chart;
     lineRef.current = chart.addSeries(LineSeries, {
-      color: "#6ce4bc",
+      color: TV.blue,
       lineWidth: 2,
       priceLineVisible: false,
       lastValueVisible: false,
@@ -217,14 +238,18 @@ export default function BacktestChart({
   } | null>(null);
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
-  const [readout, setReadout] = useState("Hover for candle time and prices.");
+  const [legend, setLegend] = useState<LegendData | null>(null);
   const selectedIndicators = useChartIndicatorSelection();
   const [follow, setFollow] = useState(true);
   const [strategyVisible, setStrategyVisible] = useState(true);
   const [indicatorConfig, setIndicatorConfig] = useIndicatorSettings();
   const [settingsOpen, setSettingsOpen] = useState<
-    IndicatorKind | "supertrend" | "bollinger" | null
+    IndicatorKind | OverlayKind | null
   >(null);
+  const drawing = useChartDrawings("XAGUSDT");
+  const [hiddenOverlays, setHiddenOverlays] = useState<
+    Record<OverlayKind, boolean>
+  >({ bollinger: false, supertrend: false, triplema: false });
   const [paneHeaders, setPaneHeaders] = useState<
     { kind: IndicatorKind; top: number }[]
   >([]);
@@ -235,9 +260,9 @@ export default function BacktestChart({
     Record<IndicatorKind, boolean>
   >({ atr: false, adx: false, rsi: false });
   const indicatorSeries = useRef(new Map<IndicatorKind, ISeriesApi<"Line">>());
-  function toggleIndicator(
-    key: "atr" | "adx" | "rsi" | "supertrend" | "bollinger",
-  ) {
+  function toggleIndicator(key: keyof ChartIndicatorSelection) {
+    if (key === "bollinger" || key === "supertrend" || key === "triplema")
+      setHiddenOverlays((old) => ({ ...old, [key]: false }));
     toggleChartIndicator(key);
   }
   function latest() {
@@ -270,30 +295,18 @@ export default function BacktestChart({
       autoSize: false,
       ...chartInteraction,
       localization: chartTimeOptions(readChartTimeZone()).localization,
-      layout: {
-        background: { type: ColorType.Solid, color: "#12161c" },
-        textColor: "#7d8da5",
-      },
+      ...tvChartOptions,
       timeScale: {
+        ...tvTimeScaleOptions,
         timeVisible: true,
         minBarSpacing: 0.2,
         lockVisibleTimeRangeOnResize: true,
         ...chartTimeOptions(readChartTimeZone()).timeScale,
       },
-      grid: {
-        vertLines: { visible: true, color: "#29313d", style: LineStyle.Dotted },
-        horzLines: { color: "#1b2028" },
-      },
     });
     chartRef.current = chart;
     const price = chart.addSeries(CandlestickSeries, {
-      borderVisible: true,
-      upColor: "#00c896",
-      downColor: "#ff4d5e",
-      borderUpColor: "#28e0b0",
-      borderDownColor: "#ff6b78",
-      wickUpColor: "#28e0b0",
-      wickDownColor: "#ff6b78",
+      ...tvCandleOptions,
       priceFormat: { type: "price", precision: 3, minMove: 0.001 },
     });
     price
@@ -306,35 +319,93 @@ export default function BacktestChart({
       lastValueVisible: false,
       priceLineVisible: false,
     });
-    volume.priceScale().applyOptions({ scaleMargins: { top: 0.9, bottom: 0 } });
+    volume.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
     volume.setData(chartVolume(view));
+    const detachDrawings = drawing.attach(chart, price, ref.current);
+    drawing.setCandles(view, barSeconds);
+    const studyValues = new Map<number, Record<string, StudyValue[]>>();
+    const addStudy = (time: number, key: string, values: StudyValue[]) => {
+      const row = studyValues.get(time) ?? {};
+      row[key] = values;
+      studyValues.set(time, row);
+    };
     if (selectedIndicators.bollinger) {
       const bollingerOverlay = new BollingerOverlay();
       price.attachPrimitive(bollingerOverlay);
-      bollingerOverlay.setData(
-        chartBollingerBands(view, {
-          length: indicatorConfig.bbLength,
-          maType: indicatorConfig.bbMaType,
-          source: indicatorConfig.bbSource,
-          multiplier: indicatorConfig.bbMultiplier,
-          offset: indicatorConfig.bbOffset,
-        }),
-        indicatorConfig.bbOffset,
-      );
-      bollingerOverlay.setVisible(true);
+      const bands = chartBollingerBands(view, {
+        length: indicatorConfig.bbLength,
+        maType: indicatorConfig.bbMaType,
+        source: indicatorConfig.bbSource,
+        multiplier: indicatorConfig.bbMultiplier,
+        offset: indicatorConfig.bbOffset,
+      });
+      bollingerOverlay.setData(bands, indicatorConfig.bbOffset);
+      bollingerOverlay.setVisible(!hiddenOverlays.bollinger);
+      for (const point of bands)
+        if (point.basis !== null)
+          addStudy(point.time, "bollinger", [
+            { text: point.basis.toFixed(3), color: TV.blue },
+            { text: point.upper!.toFixed(3), color: TV.down },
+            { text: point.lower!.toFixed(3), color: TV.up },
+          ]);
     }
     if (selectedIndicators.supertrend) {
       const supertrendOverlay = new SupertrendOverlay();
       price.attachPrimitive(supertrendOverlay);
-      supertrendOverlay.setData(
-        chartSupertrend(
-          view,
-          barSeconds,
-          indicatorConfig.supertrendLength,
-          indicatorConfig.supertrendMultiplier,
-        ),
+      const trend = chartSupertrend(
+        view,
+        barSeconds,
+        indicatorConfig.supertrendLength,
+        indicatorConfig.supertrendMultiplier,
       );
-      supertrendOverlay.setVisible(true);
+      supertrendOverlay.setData(trend);
+      supertrendOverlay.setVisible(!hiddenOverlays.supertrend);
+      for (const point of trend)
+        if (point.value !== null)
+          addStudy(point.time, "supertrend", [
+            {
+              text: point.value.toFixed(3),
+              color: point.direction === "down" ? TV.down : TV.green,
+            },
+          ]);
+    }
+    if (selectedIndicators.triplema) {
+      const averages = chartTripleMa(
+        view,
+        [indicatorConfig.maFast, indicatorConfig.maMid, indicatorConfig.maSlow],
+        indicatorConfig.maType,
+      );
+      TRIPLE_MA_COLORS.forEach((color, index) =>
+        chart
+          .addSeries(LineSeries, {
+            color,
+            lineWidth: 2,
+            priceLineVisible: false,
+            lastValueVisible: true,
+            crosshairMarkerVisible: false,
+            visible: !hiddenOverlays.triplema,
+            priceFormat: { type: "price", precision: 3, minMove: 0.001 },
+          })
+          .setData(
+            averages.map((point) =>
+              point.values[index] === null
+                ? { time: point.time as UTCTimestamp }
+                : {
+                    time: point.time as UTCTimestamp,
+                    value: point.values[index]!,
+                  },
+            ),
+          ),
+      );
+      for (const point of averages)
+        addStudy(
+          point.time,
+          "triplema",
+          point.values.map((value, index) => ({
+            text: value === null ? "∅" : value.toFixed(3),
+            color: TRIPLE_MA_LABEL_COLORS[index],
+          })),
+        );
     }
     const oscillatorData = chartOscillators(
       view,
@@ -355,18 +426,13 @@ export default function BacktestChart({
     );
     indicatorSeries.current.clear();
     for (const [index, key] of oscillatorKinds.entries()) {
-      const colors = { atr: "#38d9ff", adx: "#90a4ae", rsi: "#bd93f9" };
+      const colors = { ...TV_STUDY_COLORS, adx: TV.muted };
       const series = chart.addSeries(
         LineSeries,
         {
           color: colors[key],
           lineWidth: 1,
-          title:
-            key === "atr"
-              ? `ATR (${indicatorConfig.atrLength})`
-              : key === "adx"
-                ? `ADX (${indicatorConfig.adxLength})`
-                : `RSI (${indicatorConfig.rsiLength})`,
+          title: "",
           priceLineVisible: false,
           priceFormat: {
             type: "price",
@@ -377,12 +443,21 @@ export default function BacktestChart({
             ? {
                 autoscaleInfoProvider: () => ({
                   priceRange: { minValue: 0, maxValue: 100 },
+                  margins: { above: 2, below: 2 },
                 }),
               }
             : {}),
         },
         index + 1,
       );
+      series
+        .priceScale()
+        .applyOptions({
+              scaleMargins:
+                key === "rsi"
+                  ? { top: 0.04, bottom: 0.04 }
+                  : { top: 0.12, bottom: 0.08 },
+            });
       series.applyOptions({ visible: !hiddenIndicators[key] });
       indicatorSeries.current.set(key, series);
       if (key === "adx")
@@ -410,42 +485,51 @@ export default function BacktestChart({
                 },
           ),
         );
-      if (key === "rsi")
-        for (const [value, color, title] of [
-          [indicatorConfig.rsiUpper, "#ff8191", "Upper"],
-          [50, "#61718b", "Mid"],
-          [indicatorConfig.rsiLower, "#43d9a5", "Lower"],
+      if (key === "rsi") {
+        if (!hiddenIndicators.rsi)
+          series.attachPrimitive(
+            new PaneBand(
+              indicatorConfig.rsiLower,
+              indicatorConfig.rsiUpper,
+              "rgba(126,87,194,0.1)",
+            ),
+          );
+        for (const [value, color, style] of [
+          [indicatorConfig.rsiUpper, TV.muted, LineStyle.Dashed],
+          [50, "rgba(156,156,156,0.5)", LineStyle.Dotted],
+          [indicatorConfig.rsiLower, TV.muted, LineStyle.Dashed],
         ] as const)
           series.createPriceLine({
             price: value,
             color,
-            title,
-            lineStyle: LineStyle.Dashed,
+            title: "",
+            lineStyle: style,
             lineWidth: 1,
-            axisLabelVisible: true,
+            axisLabelVisible: false,
           });
+      }
       if (key === "atr")
         series.createPriceLine({
           price: indicatorConfig.atrThreshold,
-          color: "#ffb74d",
-          title: "Threshold",
+          color: TV.orange,
+          title: "",
           lineStyle: LineStyle.Dashed,
           lineWidth: 1,
-          axisLabelVisible: true,
+          axisLabelVisible: false,
         });
       if (key === "adx")
-        for (const [value, color, title] of [
-          [20, "#90a4aea6", "20 Weak"],
-          [25, "#26a69acc", "25 Trend"],
-          [indicatorConfig.adxThreshold, "#ff40ff", "Entry"],
+        for (const [value, color, title, style] of [
+          [20, ADX_COLORS.range, "20 Weak", LineStyle.Dotted],
+          [25, ADX_COLORS.trend, "25 Trend", LineStyle.Dashed],
+          [indicatorConfig.adxThreshold, TV.blue, "Entry", LineStyle.Dashed],
         ] as const)
           series.createPriceLine({
             price: value,
             color,
-            title,
-            lineStyle: LineStyle.Dashed,
+            title: title === "Entry" ? title : "",
+            lineStyle: style,
             lineWidth: 1,
-            axisLabelVisible: true,
+            axisLabelVisible: false,
           });
     }
     if (oscillatorKinds.length)
@@ -516,7 +600,7 @@ export default function BacktestChart({
       ) {
         chart
           .addSeries(LineSeries, {
-            color: "#d7ad69",
+            color: TV.orange,
             lineWidth: 2,
             title:
               indicatorSettings.strategy === "ml_ensemble"
@@ -545,7 +629,7 @@ export default function BacktestChart({
         const rsi = chart.addSeries(
           LineSeries,
           {
-            color: "#be9bf3",
+            color: TV.purple,
             lineWidth: 1,
             title: `RSI ${indicatorSettings.rsi_period}`,
             priceLineVisible: false,
@@ -564,7 +648,7 @@ export default function BacktestChart({
         );
         rsi.createPriceLine({
           price: indicatorSettings.rsi_threshold,
-          color: "#71818e",
+          color: TV.muted,
           lineWidth: 1,
           lineStyle: LineStyle.Dashed,
           axisLabelVisible: true,
@@ -648,8 +732,8 @@ export default function BacktestChart({
         selected.entryTime + barSeconds,
       ) as UTCTimestamp;
       for (const [label, value, color] of [
-        ["Entry", selected.entry, "#88bfff"],
-        ["Target 2R", selected.target, "#6ce4bc"],
+        ["Entry", selected.entry, TV.blue],
+        ["Target 2R", selected.target, TV.up],
       ] as const) {
         const line = chart.addSeries(LineSeries, {
           color,
@@ -682,7 +766,7 @@ export default function BacktestChart({
       stopPoints.set(Number(to), selected.finalStop ?? selected.stop);
       chart
         .addSeries(LineSeries, {
-          color: "#ff8291",
+          color: TV.down,
           lineWidth: 2,
           lineType: LineType.WithSteps,
           title: "Active stop",
@@ -695,8 +779,8 @@ export default function BacktestChart({
             .map(([time, value]) => ({ time: time as UTCTimestamp, value })),
         );
       for (const [value, color] of [
-        [selected.target, "rgba(108,228,188,0.14)"],
-        [selected.stop, "rgba(255,130,145,0.14)"],
+        [selected.target, "rgba(8,153,129,0.16)"],
+        [selected.stop, "rgba(242,54,69,0.16)"],
       ] as const) {
         chart
           .addSeries(BaselineSeries, {
@@ -741,7 +825,7 @@ export default function BacktestChart({
     ) {
       chart
         .addSeries(LineSeries, {
-          color: "#88bfff",
+          color: TV.blue,
           lineWidth: 2,
           lineStyle: LineStyle.Dashed,
           title: "Entry",
@@ -783,26 +867,42 @@ export default function BacktestChart({
     }
     const byTime = new Map(view.map((c) => [c.time, c]));
     const indicatorByTime = new Map(indicators.map((p) => [p.time, p]));
+    const indexByTime = new Map(view.map((c, index) => [c.time, index]));
+    const extrasFor = (time: number) => {
+      const indicator = indicatorByTime.get(time);
+      return [
+        ...(indicatorSettings.strategy === "bb_outer_reversal" && indicator
+          ? [
+              `ADX ${fmt(indicator.adx ?? null)} · ATR ${fmt(indicator.atr ?? null, 3)} · BB width ${fmt(indicator.bbWidthPct ?? null)}%`,
+            ]
+          : []),
+        ...(fillReadouts.get(time) ?? []),
+      ];
+    };
+    const lastTime = view.at(-1)!.time;
+    setLegend(
+      legendData(view, view.length - 1, extrasFor(lastTime), studyValues.get(lastTime)),
+    );
     chart.subscribeCrosshairMove((p) => {
       const c = typeof p.time === "number" ? byTime.get(p.time) : undefined;
-      if (c) {
-        const indicator = indicatorByTime.get(c.time);
-        const oscillator =
-          oscillatorData.find((point) => point.time === c.time) ??
-          lastOscillator;
-        setPaneValues({
-          atr: oscillator?.atr ?? null,
-          adx: oscillator?.adx ?? null,
-          rsi: oscillator?.rsi ?? null,
-        });
-        const extra =
-          indicatorSettings.strategy === "bb_outer_reversal" && indicator
-            ? ` Â· ADX ${fmt(indicator.adx ?? null)} Â· ATR ${fmt(indicator.atr ?? null, 3)} Â· BB width ${fmt(indicator.bbWidthPct ?? null)}%`
-            : "";
-        setReadout(
-          `${formatChartTime(c.time, readChartTimeZone())} Â· O ${fmt(c.open, 3)} H ${fmt(c.high, 3)} L ${fmt(c.low, 3)} C ${fmt(c.close, 3)}${extra}${fillReadouts.has(c.time) ? ` | ${fillReadouts.get(c.time)!.join(" | ")}` : ""}`,
-        );
-      }
+      const oscillator = c
+        ? (oscillatorData.find((point) => point.time === c.time) ??
+          lastOscillator)
+        : lastOscillator;
+      setPaneValues({
+        atr: oscillator?.atr ?? null,
+        adx: oscillator?.adx ?? null,
+        rsi: oscillator?.rsi ?? null,
+      });
+      const time = c ? c.time : view.at(-1)!.time;
+      setLegend(
+        legendData(
+          view,
+          indexByTime.get(time) ?? -1,
+          extrasFor(time),
+          studyValues.get(time),
+        ),
+      );
     });
     chart.subscribeClick((p) => {
       const trade =
@@ -834,6 +934,11 @@ export default function BacktestChart({
             to: view.length + 5,
           });
     });
+    const stopAxis = trackPriceAxis(
+      chart,
+      price,
+      ref.current.parentElement ?? ref.current,
+    );
     return () => {
       viewportRef.current = {
         dataKey,
@@ -845,6 +950,8 @@ export default function BacktestChart({
       indicatorSeries.current.clear();
       setPaneHeaders([]);
       stopResize();
+      stopAxis();
+      detachDrawings();
       chartRef.current = null;
       chart.remove();
     };
@@ -858,6 +965,7 @@ export default function BacktestChart({
     selectedIndicators,
     indicatorConfig,
     hiddenIndicators,
+    hiddenOverlays,
     strategyVisible,
   ]);
   useEffect(() => {
@@ -867,6 +975,15 @@ export default function BacktestChart({
       timeScale: options.timeScale,
     });
   }, [timeZone]);
+  const trendOverlayName =
+    indicatorSettings.strategy === "ml_directional"
+      ? "EMA 200"
+      : indicatorSettings.strategy === "ml_ensemble"
+        ? "EMA 50"
+        : indicatorSettings.strategy === "bb_outer_reversal" &&
+            indicatorSettings.bb_reversal.use_sma_trend_adjustment !== false
+          ? "Trend SMA"
+          : "";
   return (
     <>
       <ChartTools
@@ -896,8 +1013,36 @@ export default function BacktestChart({
         All candles in this backtest are loaded
         <span>Latest returns to the end of the test period</span>
       </div>
-      <div className='chart-resize'>
-        <p className='readout tv-legend'>{readout}</p>
+      <div className='chart-resize with-tools'>
+        <DrawingToolbar {...drawing.toolbar} />
+        <ChartLegend
+          title={`XAGUSDT · ${timeframe}`}
+          data={legend}
+          overlays={[
+            ...(trendOverlayName
+              ? [
+                  {
+                    key: "trend",
+                    name: trendOverlayName,
+                    params: "",
+                    color: TV.orange,
+                    hidden: !strategyVisible,
+                    onToggleVisible: () => setStrategyVisible((v) => !v),
+                  } satisfies LegendOverlay,
+                ]
+              : []),
+            ...overlayLegends(
+              selectedIndicators,
+              indicatorConfig,
+              hiddenOverlays,
+              (kind) => setSettingsOpen(kind),
+              toggleIndicator,
+              (kind) =>
+                setHiddenOverlays((old) => ({ ...old, [kind]: !old[kind] })),
+            ),
+          ]}
+        />
+        {!follow && <ScrollToLatest onClick={latest} />}
         {paneHeaders.map(({ kind, top }) => (
           <IndicatorHeader
             key={kind}

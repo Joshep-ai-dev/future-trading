@@ -3,21 +3,21 @@
    visual system over the older page stylesheets. */
 
 :root {
-  --background: #0b0e11;
-  --panel: #12161c;
-  --surface-raised: #181d24;
-  --field: #0f1318;
-  --border: #20262e;
-  --border-strong: #2b323c;
-  --text: #eaecef;
-  --muted: #848e9c;
-  --faint: #5e6673;
-  --blue: #3d7bfd;
-  --accent: #3d7bfd;
-  --accent-soft: #3d7bfd1f;
-  --green: #0ecb81;
-  --red: #f6465d;
-  --warning: #f0b90b;
+  --background: #0e0e0e;
+  --panel: #171717;
+  --surface-raised: #1e1e1e;
+  --field: #141414;
+  --border: #272727;
+  --border-strong: #343434;
+  --text: #ececec;
+  --muted: #909090;
+  --faint: #686868;
+  --blue: #2962ff;
+  --accent: #2962ff;
+  --accent-soft: #2962ff1f;
+  --green: #089981;
+  --red: #f23645;
+  --warning: #ff9800;
   --radius: 8px;
   --header-height: 48px;
   --terminal-bottom: 240px;
@@ -51,7 +51,7 @@ select {
 
 input:hover,
 select:hover {
-  border-color: #3a424e;
+  border-color: #444444;
 }
 
 input:focus,
@@ -92,8 +92,8 @@ button.secondary,
 
 button.secondary:hover:not(:disabled),
 .ui-button--secondary:hover:not(:disabled) {
-  background: #202630;
-  border-color: #3a424e;
+  background: #282828;
+  border-color: #444444;
 }
 
 .ui-button--ghost {
@@ -107,8 +107,8 @@ button.secondary:hover:not(:disabled),
 }
 
 .ui-button--danger {
-  background: #f6465d1a;
-  border-color: #f6465d55;
+  background: #f236451a;
+  border-color: #f2364555;
   color: var(--red);
 }
 
@@ -182,13 +182,13 @@ table tbody tr:hover td {
 
 .side-badge.long,
 .ui-tone--positive.ui-status {
-  background: #0ecb811a;
+  background: #0899811a;
   color: var(--green);
 }
 
 .side-badge.short,
 .ui-tone--negative.ui-status {
-  background: #f6465d1a;
+  background: #f236451a;
   color: var(--red);
 }
 
@@ -208,7 +208,7 @@ table tbody tr:hover td {
   padding: 0 16px;
   gap: 24px;
   border-bottom: 1px solid var(--border);
-  background: #0b0e11e6;
+  background: #0e0e0ee6;
   backdrop-filter: blur(12px);
 }
 
@@ -226,8 +226,8 @@ table tbody tr:hover td {
   height: 28px;
   border: 0;
   border-radius: 7px;
-  background: linear-gradient(140deg, #d9dee6, #8b95a3);
-  color: #0b0e11;
+  background: linear-gradient(140deg, #e0e0e0, #979797);
+  color: #0e0e0e;
 }
 
 .brand-mark svg {
@@ -360,7 +360,7 @@ table tbody tr:hover td {
 }
 
 .header-mode-toggle button[aria-pressed=true].mode-live {
-  background: #f0b90b1f !important;
+  background: #ff98001f !important;
   color: var(--warning) !important;
 }
 
@@ -386,7 +386,7 @@ table tbody tr:hover td {
   width: 34px;
   height: 34px;
   border: 1px solid var(--border-strong);
-  background: linear-gradient(140deg, #2a3442, #1a2029);
+  background: linear-gradient(140deg, #363636, #222222);
   color: var(--text);
   font-size: 13px;
 }
@@ -468,8 +468,8 @@ table tbody tr:hover td {
   width: 34px;
   height: 34px;
   border: 0;
-  background: radial-gradient(circle at 35% 30%, #f2f4f7, #9aa3af 60%, #5d6570);
-  color: #12161c;
+  background: radial-gradient(circle at 35% 30%, #f4f4f4, #a4a4a4 60%, #666666);
+  color: #171717;
   font-size: 12px;
   font-weight: 800;
 }
@@ -548,9 +548,9 @@ table tbody tr:hover td {
 
 .chart-toolbar button[aria-pressed=true],
 .indicator-switch button[aria-pressed=true] {
-  border-color: #3d7bfd55;
+  border-color: #2962ff55;
   background: var(--accent-soft) !important;
-  color: #8fb3ff !important;
+  color: #5b9cf6 !important;
 }
 
 .chart-timeframe-select {
@@ -794,14 +794,14 @@ table tbody tr:hover td {
   bottom: 0;
   border-color: var(--border-strong);
   border-radius: 10px 10px 0 0;
-  background: #12161cf0;
+  background: #171717f0;
   backdrop-filter: blur(10px);
 }
 
 .strategy-navigation button[aria-current],
 .strategy-navigation .active {
   background: var(--accent-soft);
-  color: #8fb3ff;
+  color: #5b9cf6;
 }
 
 /* Sidebar cards keep their natural height; the column scrolls instead. */
@@ -852,8 +852,8 @@ button.secondary,
 .bot-start:hover:not(:disabled),
 .bot-start-action:hover:not(:disabled),
 .setup-run:hover:not(:disabled) {
-  border-color: #2f6ef5 !important;
-  background: #2f6ef5 !important;
+  border-color: #2962ff !important;
+  background: #2962ff !important;
 }
 
 button.secondary,
@@ -869,8 +869,8 @@ button.secondary:hover:not(:disabled),
 .ui-button--secondary:hover:not(:disabled),
 .bot-pause:hover:not(:disabled),
 .resume-button:hover:not(:disabled) {
-  border-color: #3a424e !important;
-  background: #202630 !important;
+  border-color: #444444 !important;
+  background: #282828 !important;
 }
 
 .bot-start,
@@ -885,7 +885,7 @@ button.secondary:hover:not(:disabled),
 .ticket-buy {
   border-color: var(--green) !important;
   background: var(--green) !important;
-  color: #0b0e11 !important;
+  color: #0e0e0e !important;
 }
 
 .ticket-sell {

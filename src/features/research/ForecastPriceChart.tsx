@@ -1,7 +1,6 @@
+import { TV, tvChartOptions, tvTimeScaleOptions } from "../../shared/charts/tvTheme";
 import { useEffect, useRef, useState } from "react";
 import {
-  ColorType,
-  CrosshairMode,
   LineSeries,
   LineStyle,
   createChart,
@@ -89,27 +88,13 @@ export default function ForecastPriceChart({
     if (!host.current) return;
     const instance = createChart(host.current, {
       autoSize: true,
-      layout: {
-        background: { type: ColorType.Solid, color: "#0b111b" },
-        textColor: "#94a3b8",
-        fontFamily: "Inter, system-ui, sans-serif",
-        fontSize: 11,
-      },
-      grid: {
-        vertLines: { color: "#182331" },
-        horzLines: { color: "#182331" },
-      },
-      crosshair: {
-        mode: CrosshairMode.Normal,
-        vertLine: { color: "#728198", labelBackgroundColor: "#34455d" },
-        horzLine: { color: "#728198", labelBackgroundColor: "#34455d" },
-      },
+      ...tvChartOptions,
       rightPriceScale: {
-        borderColor: "#263344",
+        borderColor: TV.border,
         scaleMargins: { top: 0.12, bottom: 0.12 },
       },
       timeScale: {
-        borderColor: "#263344",
+        ...tvTimeScaleOptions,
         timeVisible: true,
         secondsVisible: false,
         rightOffset: 5,
@@ -141,12 +126,12 @@ export default function ForecastPriceChart({
     };
     const real = instance.addSeries(LineSeries, {
         ...options,
-        color: "#42d5ac",
+        color: TV.up,
         title: "Actual",
       }),
       predicted = instance.addSeries(LineSeries, {
         ...options,
-        color: "#82aaff",
+        color: TV.blue,
         title: "Forecast",
       });
     realSeries.current = real;
@@ -222,7 +207,7 @@ export default function ForecastPriceChart({
           predicted.createPriceLine({
             price,
             title,
-            color: "#647baf",
+            color: TV.muted,
             lineWidth: 1,
             lineStyle: LineStyle.Dashed,
             axisLabelVisible: true,

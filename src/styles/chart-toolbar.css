@@ -45,7 +45,7 @@
 
 .tv-timeframes button[aria-checked=true] {
   background: var(--accent-soft);
-  color: #8fb3ff;
+  color: #5b9cf6;
   opacity: 1;
 }
 
@@ -264,7 +264,7 @@
   overflow: hidden;
   border: 0;
   background: transparent;
-  color: #aab3c0;
+  color: #b5b5b5;
   font-family: "JetBrains Mono", ui-monospace, monospace;
   font-size: 11px;
   text-overflow: ellipsis;
@@ -404,7 +404,7 @@
 .indicator-pane-header:hover,
 .indicator-pane-header:focus-within {
   border-color: var(--border-strong);
-  background: #12161ce6;
+  background: #171717e6;
 }
 
 .indicator-pane-header:hover .indicator-pane-actions,
