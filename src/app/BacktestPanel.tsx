@@ -1,4 +1,4 @@
-import {lazy,Suspense,useState} from 'react';
+import {lazy,Suspense,useEffect,useState,type ReactNode} from 'react';
 import {PageHeader} from '../shared/ui/ui';
 import {htxCostDefaults} from '../features/strategy/executionCostDefaults';
 import {bbDefaults,mlDefaults,mlDirectionalDefaults,rlDefaults} from '../features/strategy/strategyDefaults';
@@ -68,13 +68,19 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
       setMessage(reply.message??'Paper session paused.');
     }catch(error){setMessage(String(error));}finally{setStopping(false);}
   }
+  // Keep every visited page mounted and only hide the inactive ones, so
+  // switching tabs preserves chart viewports, forms and in-progress work.
+  const current=view==='paper'?`paper-${accountMode}`:view;
+  const [visited,setVisited]=useState<string[]>([current]);
+  useEffect(()=>{setVisited(old=>old.includes(current)?old:[...old,current]);},[current]);
+  const seen=visited.includes(current)?visited:[...visited,current];
+  const keep=(key:string,node:ReactNode)=>seen.includes(key)&&<div key={key} className="kept-page" style={key===current?undefined:{display:'none'}} aria-hidden={key===current?undefined:true}>{node}</div>;
   return <section className="backtest"><Suspense fallback={<div className="workspace-loading" role="status">Loading workspace...</div>}>
-    {view==='account'?<AccountPage settings={settings} onBack={()=>onViewChange('paper')} accountMode={accountMode} onAccountModeChange={onAccountModeChange}/>
-      :view==='forecast'?<ForecastPage range={range}/>
-      :view==='paper'?(accountMode==='live'
-        ?<LiveTrading settings={settings} controls={<LiveExecution view="terminal" settings={settings} onSettingsChange={setSettings} onConfigure={()=>onViewChange('strategy')} onManageAccount={()=>onViewChange('account')}/>}/>
-        :<PaperTrading settings={settings} onChange={setSettings} onConfigure={()=>onViewChange('strategy')} visible={true} profiles={[]} onApplySetup={()=>{}}/>)
-      :<div id={`page-${view}`} role="tabpanel" aria-labelledby={`tab-${view}`} className="setup-page">
+    {keep('account',<AccountPage settings={settings} onBack={()=>onViewChange('paper')} accountMode={accountMode} onAccountModeChange={onAccountModeChange}/>)}
+    {keep('forecast',<ForecastPage range={range}/>)}
+    {keep('paper-live',<LiveTrading settings={settings} controls={<LiveExecution view="terminal" settings={settings} onSettingsChange={setSettings} onConfigure={()=>onViewChange('strategy')} onManageAccount={()=>onViewChange('account')}/>}/>)}
+    {keep('paper-paper',<PaperTrading settings={settings} onChange={setSettings} onConfigure={()=>onViewChange('strategy')} visible={current==='paper-paper'} profiles={[]} onApplySetup={()=>{}}/>)}
+    {view!=='account'&&view!=='forecast'&&view!=='paper'&&<div id={`page-${view}`} role="tabpanel" aria-labelledby={`tab-${view}`} className="setup-page">
         <PageHeader eyebrow="STRATEGY WORKSPACE" title="No strategy configured" description="All trading strategies have been removed. This workspace is ready for a new implementation."/>
         <p>Strategy settings, backtests and automated trading are unavailable until a new strategy is added.</p>
         <p>Market history, account connections and saved research remain available.</p>

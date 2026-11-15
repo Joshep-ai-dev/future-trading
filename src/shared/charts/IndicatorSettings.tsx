@@ -13,7 +13,7 @@ export type IndicatorStyle={
   atrColor:string;atrWidth:number;
   adxWidth:number;
 };
-export type IndicatorConfig=IndicatorStyle&{bbLength:number;bbMaType:BollingerConfig['maType'];bbSource:BollingerConfig['source'];bbMultiplier:number;bbOffset:number;supertrendLength:number;supertrendMultiplier:number;atrLength:number;atrThreshold:number;atrSmoothing:'RMA'|'SMA'|'EMA'|'WMA';adxLength:number;diLength:number;showDi:boolean;showStatus:boolean;rsiLength:number;rsiUpper:number;rsiLower:number;maFast:number;maMid:number;maSlow:number;maType:'SMA'|'EMA'};
+export type IndicatorConfig=IndicatorStyle&{bbLength:number;bbMaType:BollingerConfig['maType'];bbSource:BollingerConfig['source'];bbMultiplier:number;bbOffset:number;supertrendLength:number;supertrendMultiplier:number;atrLength:number;atrThreshold:number;atrSmoothing:'RMA'|'SMA'|'EMA'|'WMA';adxLength:number;diLength:number;showDi:boolean;showStatus:boolean;adxLevels:number[];showAdxLevels:boolean;rsiLength:number;rsiUpper:number;rsiLower:number;maFast:number;maMid:number;maSlow:number;maType:'SMA'|'EMA'};
 
 /** TradingView built-in defaults (inputs and plot colors). */
 const defaultStyle:IndicatorStyle={
@@ -24,7 +24,7 @@ const defaultStyle:IndicatorStyle={
   atrColor:'#b71c1c',atrWidth:1,
   adxWidth:2,
 };
-export const defaultIndicators:IndicatorConfig={...defaultStyle,bbLength:defaultBollinger.length,bbMaType:defaultBollinger.maType,bbSource:defaultBollinger.source,bbMultiplier:defaultBollinger.multiplier,bbOffset:defaultBollinger.offset,supertrendLength:10,supertrendMultiplier:3,atrLength:14,atrThreshold:0.03,atrSmoothing:'RMA',adxLength:14,diLength:14,showDi:false,showStatus:true,rsiLength:14,rsiUpper:70,rsiLower:30,maFast:20,maMid:50,maSlow:100,maType:'SMA'};
+export const defaultIndicators:IndicatorConfig={...defaultStyle,bbLength:defaultBollinger.length,bbMaType:defaultBollinger.maType,bbSource:defaultBollinger.source,bbMultiplier:defaultBollinger.multiplier,bbOffset:defaultBollinger.offset,supertrendLength:10,supertrendMultiplier:3,atrLength:14,atrThreshold:0.03,atrSmoothing:'RMA',adxLength:14,diLength:14,showDi:false,showStatus:true,adxLevels:[20,25,50,75],showAdxLevels:true,rsiLength:14,rsiUpper:70,rsiLower:30,maFast:20,maMid:50,maSlow:100,maType:'SMA'};
 
 const COLOR_KEYS=Object.keys(defaultStyle).filter(key=>key.endsWith('Color')) as (keyof IndicatorStyle)[];
 const WIDTH_KEYS=Object.keys(defaultStyle).filter(key=>key.endsWith('Width')) as (keyof IndicatorStyle)[];
@@ -36,7 +36,8 @@ function validInputs(c:IndicatorConfig){
     &&Number.isFinite(c.supertrendMultiplier)&&c.supertrendMultiplier>=.01&&c.supertrendMultiplier<=100
     &&Number.isFinite(c.atrThreshold)&&c.atrThreshold>=0
     &&[c.atrLength,c.adxLength,c.diLength,c.rsiLength,c.supertrendLength,c.maFast,c.maMid,c.maSlow].every(v=>Number.isInteger(v)&&v>=1&&v<=1000)
-    &&typeof c.showDi==='boolean'
+    &&typeof c.showDi==='boolean'&&typeof c.showAdxLevels==='boolean'
+    &&Array.isArray(c.adxLevels)&&c.adxLevels.length<=8&&c.adxLevels.every(v=>typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=100)
     &&['RMA','SMA','EMA','WMA'].includes(c.atrSmoothing)&&typeof c.showStatus==='boolean'
     &&[c.rsiUpper,c.rsiLower].every(v=>Number.isFinite(v)&&v>=0&&v<=100)&&c.rsiLower<c.rsiUpper
     &&['SMA','EMA'].includes(c.maType);
@@ -79,9 +80,18 @@ const FIELDS:Record<IndicatorKind|OverlayKind,(keyof IndicatorConfig)[]>={
   supertrend:['supertrendLength','supertrendMultiplier','stUpColor','stDownColor','stWidth'],
   triplema:['maType','maFast','maMid','maSlow','maFastColor','maMidColor','maSlowColor','maWidth'],
   rsi:['rsiLength','rsiUpper','rsiLower','rsiColor','rsiWidth'],
-  adx:['diLength','adxLength','showDi','showStatus','adxWidth'],
+  adx:['diLength','adxLength','showDi','showStatus','adxLevels','showAdxLevels','adxWidth'],
   atr:['atrLength','atrSmoothing','atrThreshold','atrColor','atrWidth'],
 };
+
+/** Comma-separated levels such as "20, 25, 50, 75"; applies only when every value is 0-100. */
+function LevelsInput({value,onChange}:{value:number[];onChange:(levels:number[])=>void}){
+  const [text,setText]=useState(value.join(', '));
+  useEffect(()=>{setText(old=>old.split(',').map(Number).join()===value.join()?old:value.join(', '));},[value]);
+  const parse=(raw:string)=>{const parts=raw.split(',').map(part=>part.trim()).filter(Boolean);const levels=parts.map(Number);return parts.length<=8&&levels.every(v=>Number.isFinite(v)&&v>=0&&v<=100)?[...new Set(levels)].sort((a,b)=>a-b):null;};
+  const parsed=parse(text);
+  return <input type="text" inputMode="decimal" value={text} aria-invalid={!parsed} placeholder="20, 25, 50, 75" onChange={e=>{setText(e.target.value);const levels=parse(e.target.value);if(levels)onChange(levels);}}/>;
+}
 
 function Row({label,children}:{label:string;children:ReactNode}){
   return <label className="tv-dialog-row"><span>{label}</span><span className="tv-dialog-control">{children}</span></label>;
@@ -137,6 +147,8 @@ export default function IndicatorSettings({kind,value,onApply,onClose}:{kind:Ind
       <Row label="ADX smoothing">{num('adxLength',{min:1,max:1000,step:1})}</Row>
       <label className="tv-dialog-check"><input type="checkbox" checked={draft.showDi} onChange={e=>set('showDi',e.target.checked)}/>Display DI lines</label>
       <label className="tv-dialog-check"><input type="checkbox" checked={draft.showStatus} onChange={e=>set('showStatus',e.target.checked)}/>Show trend label</label>
+      <label className="tv-dialog-check"><input type="checkbox" checked={draft.showAdxLevels} onChange={e=>set('showAdxLevels',e.target.checked)}/>Show threshold lines</label>
+      <Row label="Threshold levels"><LevelsInput value={draft.adxLevels} onChange={levels=>set('adxLevels',levels)}/></Row>
     </>,
     atr:<>
       <Row label="Length">{num('atrLength',{min:1,max:1000,step:1})}</Row>

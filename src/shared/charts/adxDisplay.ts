@@ -15,6 +15,8 @@ export const ADX_LEVELS=[
 ] as const;
 export const DI_COLORS={plus:'#00e676',minus:'#f23645'};
 const level=(adx:number)=>ADX_LEVELS.find(item=>adx<item.below)!;
+/** Threshold line color: the strength color that starts at this level (20 green, 25 yellow, ...). */
+export const levelColor=(value:number)=>level(value).color;
 export const adxColor=(adx:number|null)=>adx===null||!Number.isFinite(adx)?TV.muted:level(adx).color;
 export const adxLabel=(adx:number)=>level(adx).label;
 

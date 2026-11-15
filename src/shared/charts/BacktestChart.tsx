@@ -51,7 +51,7 @@ import {
 } from "../types/types";
 import { chartVolume } from "./chartVolume";
 import { indicatorColor } from "./indicatorColors";
-import { AdxVisualizer, adxColor, DI_COLORS } from "./adxDisplay";
+import { AdxVisualizer, adxColor, DI_COLORS, levelColor } from "./adxDisplay";
 import { PaneBand } from "./PaneBand";
 import ChartLegend, {
   legendData,
@@ -493,6 +493,17 @@ export default function BacktestChart({
       series.applyOptions({ visible: !hiddenIndicators[key] });
       indicatorSeries.current.set(key, series);
       if (key === "adx") {
+        // Threshold values (default 20 / 25 / 50 / 75) with their price-scale labels.
+        if (indicatorConfig.showAdxLevels)
+          for (const value of indicatorConfig.adxLevels)
+            series.createPriceLine({
+              price: value,
+              color: levelColor(value),
+              lineWidth: 1,
+              lineStyle: LineStyle.Dotted,
+              axisLabelVisible: true,
+              title: "",
+            });
         series.setData(
           oscillatorData.map((point) =>
             point.adx === null

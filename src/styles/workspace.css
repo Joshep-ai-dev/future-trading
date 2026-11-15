@@ -615,3 +615,8 @@
   width: 210px;
   max-width: 100%;
 }
+
+/* Tab pages stay mounted; the wrapper must not change layout. */
+.kept-page {
+  display: contents;
+}

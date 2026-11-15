@@ -11,7 +11,7 @@ import IndicatorSettings, {
   type IndicatorKind,
   type OverlayKind,
 } from "./IndicatorSettings";
-import { AdxVisualizer, adxColor, DI_COLORS } from "./adxDisplay";
+import { AdxVisualizer, adxColor, DI_COLORS, levelColor } from "./adxDisplay";
 import { PaneBand } from "./PaneBand";
 import ChartLegend, {
   legendData,
@@ -446,6 +446,17 @@ export default function PaperPriceChart(props: Props) {
             });
           oscillatorSeries.set(key, series);
           if (key === "adx") {
+            // Threshold values (default 20 / 25 / 50 / 75) with their price-scale labels.
+            if (config.showAdxLevels)
+              for (const value of config.adxLevels)
+                series.createPriceLine({
+                  price: value,
+                  color: levelColor(value),
+                  lineWidth: 1,
+                  lineStyle: LineStyle.Dotted,
+                  axisLabelVisible: true,
+                  title: "",
+                });
             diSeries = [DI_COLORS.plus, DI_COLORS.minus].map((color) =>
               chart.addSeries(
                 LineSeries,
