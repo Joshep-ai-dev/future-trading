@@ -10,7 +10,7 @@ from server.strategies.strategy import BacktestRequest
 
 class RemovedStrategyTests(unittest.TestCase):
     def test_removed_strategies_are_not_registered(self):
-        self.assertEqual(STRATEGIES, {})
+        self.assertEqual(set(STRATEGIES), {'adx_supertrend'})
         for key in ('bb_outer_reversal', 'ml_directional', 'ml_ensemble', 'rl_ppo'):
             with self.subTest(key=key), self.assertRaises(ValueError):
                 get_strategy(key)
@@ -46,9 +46,10 @@ class RemovedStrategyTests(unittest.TestCase):
         service.execution_client.assert_not_called()
 
     def test_api_gate_explains_empty_workspace(self):
+        from unittest.mock import patch
         from fastapi import HTTPException
         from server.app import require_trading_strategy
-        with self.assertRaises(HTTPException) as caught:
+        with patch.dict('server.app.STRATEGIES', {}, clear=True), self.assertRaises(HTTPException) as caught:
             require_trading_strategy()
         self.assertEqual(caught.exception.status_code, 409)
         self.assertIn('No trading strategies', caught.exception.detail)

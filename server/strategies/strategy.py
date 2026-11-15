@@ -14,10 +14,11 @@ class BacktestRequest(BaseModel):
     start_date: date
     end_date: date
     validation_date: date | None = None  # Accepted only for older saved settings.
-    strategy: Literal['none'] = 'none'
+    strategy: Literal['none', 'adx_supertrend'] = 'none'
     market: Literal['xag', 'stable'] = 'xag'
     bb_reversal: dict = Field(default_factory=dict)
     ml_directional: dict = Field(default_factory=dict)
+    adx_supertrend: dict = Field(default_factory=dict)
     ml: dict = Field(default_factory=dict)
     rl: dict = Field(default_factory=dict)
     direction_active: bool = True
@@ -53,6 +54,9 @@ class BacktestRequest(BaseModel):
     def check_ranges(self):
         if self.end_date < self.start_date:
             raise ValueError('End date must be on or after the start date.')
+        if self.strategy == 'adx_supertrend':
+            from server.strategies.adx_supertrend import Settings
+            Settings.from_dict(self.adx_supertrend)  # raises a clear validation error
         self.exit_condition = 'none'
         self.stop_mode = 'none'
         return self

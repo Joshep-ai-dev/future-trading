@@ -36,6 +36,13 @@ from server.storage.auth_store import SESSION_DAYS, auth_store
 workspaces = WorkspaceRegistry(user_data_store)
 
 
+def bind_forecast_owner(parameters, request: Request):
+    """The forecast filter may only read the signed-in user's own saved models."""
+    if getattr(parameters, 'adx_supertrend', None) is not None:
+        parameters.adx_supertrend = {**parameters.adx_supertrend, 'forecast_owner': int(request.state.user['id'])}
+    return parameters
+
+
 def require_trading_strategy():
     if not STRATEGIES:
         raise HTTPException(status_code=409, detail='No trading strategies are configured. Add a new strategy before starting a backtest or automated trading.')
@@ -553,6 +560,7 @@ class PaperStartRequest(BBBacktestRequest):
 @app.post('/api/paper/start')
 def paper_start(parameters: PaperStartRequest, request: Request):
     require_trading_strategy()
+    bind_forecast_owner(parameters, request)
     ws = workspace(request)
     try:
         return ws.paper.begin(parameters)
@@ -786,6 +794,7 @@ def forecast_test(parameters: ForecastRequest):
 @app.post('/api/backtest')
 def backtest(parameters: BBBacktestRequest, request: Request):
     require_trading_strategy()
+    bind_forecast_owner(parameters, request)
     try:
         result = _run_backtest(parameters)
     except (ValueError, OSError) as error:

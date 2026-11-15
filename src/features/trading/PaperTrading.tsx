@@ -1,4 +1,5 @@
 import {useLiveMarketMinutes} from '../../shared/charts/useLiveMarketMinutes';
+import {adxSupertrendDefaults} from '../strategy/strategyDefaults';
 import {mergeHistory} from '../../shared/charts/candleHistory';
 import {useMarketDataRevision} from '../../shared/charts/marketDataRevision';
 import {Metric,StatusBadge,TabBar,TableFrame} from '../../shared/ui/ui';
@@ -29,6 +30,12 @@ export type PaperTrade=Position&{id:number;exit_time:number;exit_price:number;ex
 type Session={animationMinutes?:Candle[];formingCandle?:Candle|null;displayPrice?:number|null;displayEquity?:number;quoteError?:string|null;quoteTime?:number|null;chartCandles?:Candle[];chartIndicators?:{time:number;bbBasis:number|null;bbUpper:number|null;bbLower:number|null;trendSma:number|null}[];chartStops?:{time:number;price:number|null}[];mode?:'live'|'replay';speed?:number;virtualTime?:number;replayEnd?:number|null;completed?:boolean;running:boolean;startedAt:number;tradingFrom:number;lastProcessed:number|null;lastCheck:number|null;balance:number;equity:number;openPosition:Position|null;trades:PaperTrade[];equityHistory:{time:number;value:number}[];halted:boolean;latestPrice:number|null;signals:number;settings:BacktestSettings;strategyState?:StrategyState|null};
 type Response={session:Session|null;error:string|null};
 const date=(t:number|null,timeZone:TradingTimeZone)=>t===null?'Waiting':formatTradingTime(t,timeZone);
+
+function adxSupertrendSummary(settings:BacktestSettings){
+  const c={...adxSupertrendDefaults,...settings.adx_supertrend};
+  const filters=[c.htf_filter&&c.htf_timeframe+' trend',c.atr_filter&&'ATR',c.rsi_filter&&'RSI',c.forecast_filter&&'forecast'].filter(Boolean).join(', ');
+  return 'ADX ≥ '+c.adx_threshold+' rising · Supertrend '+c.st_length+'/'+c.st_multiplier+' trailing stop'+(filters?' · filters: '+filters:'');
+}
 
 export default function PaperTrading({settings,onChange,onConfigure,visible,profiles,onApplySetup}:{settings:BacktestSettings;onChange:(s:BacktestSettings)=>void;onConfigure:()=>void;visible:boolean;profiles:SavedSetup[];onApplySetup:(setup:SavedSetup)=>void}) {
   const tradingTimeZone=useTradingTimeZone();
@@ -81,8 +88,11 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
   const balance=replay?.balance??s?.balance??settings.capital;
   const equity=replay?.equity??(s?(s.displayEquity??s.equity):settings.capital);
   const pnl=s?equity-s.settings.capital:0;
-  const sizing=config.bb_reversal;
-  const setSizing=(patch:Partial<BacktestSettings['bb_reversal']>)=>onChange({...settings,bb_reversal:{...settings.bb_reversal,...patch}});
+  const adxSt=config.strategy==='adx_supertrend';
+  const sizing=adxSt?(config.adx_supertrend??adxSupertrendDefaults):config.bb_reversal;
+  const setSizing=(patch:{amount_per_trade?:number;amount_unit?:'price'|'percent'})=>adxSt
+    ?onChange({...settings,adx_supertrend:{...adxSupertrendDefaults,...settings.adx_supertrend,...patch}})
+    :onChange({...settings,bb_reversal:{...settings.bb_reversal,...patch}});
   const directional=config.strategy==='ml_directional';
   const active=s?.settings??settings,activeDirectional=active.strategy==='ml_directional',ml=active.ml_directional;
   const leverage=(s?.settings??settings).max_leverage,unrealized=equity-balance,margin=p?p.entry_price*p.quantity/Math.max(1,leverage):0;
@@ -143,7 +153,7 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
       {s?.running?<button className="bot-pause" type="button" disabled={busy} onClick={()=>void action('pause')}>Ⅱ Pause bot</button>:<><button className="bot-start" type="submit" disabled={busy}>{busy?'Starting…':s?'＋ Start new session':'▶ Start virtual bot'}</button>{s&&!s.halted&&!s.completed&&<button type="button" className="secondary resume-button" disabled={busy} onClick={()=>void action('resume')}>Resume saved session</button>}</>}
       </form>}
       {(error||data.error||s?.quoteError)&&<p className="error" role="alert">{error||data.error||s?.quoteError}</p>}
-      <div className="strategy-card"><div><span className="strategy-icon">⌁</span><div><strong>{settings.strategy==='none'?'No strategy configured':activeDirectional?'ML Directional':'BB Outer Band Reversal'}</strong><small>{settings.strategy==='none'?'Market viewing only':activeDirectional&&ml?`TP ${ml.take_profit_atr} / SL ${ml.stop_atr} × ATR · ${ml.max_hold_bars}-bar hold · ${ml.trade_mode}`:'Trailing SL / Both directions'}</small></div></div><button type="button" className="text-button" onClick={onConfigure}>Strategy settings ↗</button></div>
+      <div className="strategy-card"><div><span className="strategy-icon">⌁</span><div><strong>{settings.strategy==='none'?'No strategy configured':active.strategy==='adx_supertrend'?'ADX + Supertrend':activeDirectional?'ML Directional':'BB Outer Band Reversal'}</strong><small>{settings.strategy==='none'?'Market viewing only':active.strategy==='adx_supertrend'?adxSupertrendSummary(active):activeDirectional&&ml?`TP ${ml.take_profit_atr} / SL ${ml.stop_atr} × ATR · ${ml.max_hold_bars}-bar hold · ${ml.trade_mode}`:'Trailing SL / Both directions'}</small></div></div><button type="button" className="text-button" onClick={onConfigure}>Strategy settings ↗</button></div>
     </section>
     <BotStatusPanel state={s?.strategyState} running={!!s?.running} timeLabel={s?.strategyState?.timestamp?date(s.strategyState.timestamp+duration,tradingTimeZone):undefined} emptyHint={settings.strategy==='none'?'No automated strategy is configured. The market chart and past sessions remain available.':s?'Readiness appears after the bot processes its first completed candle.':'Start a virtual session to see buy and sell readiness.'}/>
     <details className="terminal-help"><summary>How this simulation works</summary><p>Live quotes refresh approximately every second. Trading decisions use completed execution candles.</p><p>Keep the backend running. Live catches up missed candles. A balance at or below zero halts trading.</p><p>Fees, slippage, funding and liquidation are not modeled. Current equity follows the displayed price; the equity curve uses completed closes.</p>{s&&<p>Last execution check: {date(s.lastCheck,tradingTimeZone)}<br/>Last completed candle: {date(s.lastProcessed,tradingTimeZone)}</p>}</details>

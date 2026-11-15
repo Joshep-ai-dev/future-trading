@@ -52,11 +52,20 @@ export type ModelReport = {
   labelBalance: {long:number;none:number;short:number}; blockedByCost: number;
   medianTarget: number|null; medianRoundTripCost: number|null;
 };
+export type AdxSupertrendConfig = {
+  adx_length: number; di_length: number; adx_threshold: number; adx_rising_bars: number; require_di_agreement: boolean;
+  st_length: number; st_multiplier: number; trade_mode: 'Both'|'Long Only'|'Short Only';
+  amount_per_trade: number; amount_unit: 'price'|'percent';
+  htf_filter: boolean; htf_timeframe: '15m'|'30m'|'1h'|'4h'|'1d';
+  atr_filter: boolean; atr_length: number; atr_window: number; atr_min_pct: number; atr_max_pct: number;
+  rsi_filter: boolean; rsi_length: number; rsi_overbought: number; rsi_oversold: number;
+  forecast_filter: boolean; forecast_model_id: string; forecast_min_probability: number;
+};
 export type BacktestSettings = {
   market: 'xag'|'stable';
   atr_active: boolean; atr_period: number; atr_multiplier: number;
   ema_fast: number; ema_slow: number; rsi_period: number; rsi_threshold: number; rsi_active: boolean;
-  strategy: 'none'|'sweep'|'mtf'|'chartart_v12'|'bb_outer_reversal'|'ml_directional'|'ml_ensemble'|'rl_ppo'; rl:RLConfig; ml: MLConfig; ml_directional: MLDirectionalConfig; bb_period: number; chartart_stop_pct: number;
+  strategy: 'none'|'adx_supertrend'|'sweep'|'mtf'|'chartart_v12'|'bb_outer_reversal'|'ml_directional'|'ml_ensemble'|'rl_ppo'; adx_supertrend: AdxSupertrendConfig; rl:RLConfig; ml: MLConfig; ml_directional: MLDirectionalConfig; bb_period: number; chartart_stop_pct: number;
   bb_reversal: {rsi_exit_enabled:boolean; rsi_exit_length:number; rsi_exit_move:number; rsi_exit_short:number; rsi_exit_long:number; amount_per_trade:number; amount_unit:'price'|'percent'; use_sma_trend_adjustment:boolean; trade_mode: 'Both'|'Long Only'|'Short Only'; bb_length:number; bb_mult:number; min_bb_width_pct:number; atr_length:number; min_atr:number; adx_length:number; adx_threshold:number; pullback_bars:number; initial_sl:number; trail_trigger:number; trail_distance:number; trail_multiplier:number; sma_length:number; sma_slope_bars:number; counter_profit_pct:number; counter_sl_pct:number; quantity:number};
   exit_condition: 'none'|'ema'|'rsi'|'either';
   stop_mode: 'none'|'fixed'|'breakeven'|'trailing'|'breakeven_trailing';

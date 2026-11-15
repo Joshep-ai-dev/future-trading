@@ -9,6 +9,7 @@ and register it in ``STRATEGIES``. ``run`` must return the engine contract
 from __future__ import annotations
 
 
+import numpy as np
 import pandas as pd
 
 
@@ -42,7 +43,47 @@ class StrategyRunner:
 
 
 
-STRATEGIES: dict[str, StrategyRunner] = {}
+class AdxSupertrend(StrategyRunner):
+    key, label, signal_label, live_supported = 'adx_supertrend', 'ADX + Supertrend', 'ADX-confirmed Supertrend trend', False
+
+    @staticmethod
+    def settings(request):
+        from server.strategies.adx_supertrend import Settings
+        return Settings.from_dict(dict(getattr(request, 'adx_supertrend', None) or {}),
+                                  initial_capital=float(request.capital), leverage=float(request.max_leverage),
+                                  min_tick=float(request.tick_size))
+
+    def run(self, frame, request, *, start=None, close_at_end=False, bar_seconds=None):
+        from server.strategies.adx_supertrend import run_backtest
+        return run_backtest(frame, self.settings(request), start=start, close_at_end=close_at_end,
+                            bar_seconds=bar_seconds, **self.costs(request))
+
+    def warmup_bars(self, request):
+        from server.market.data import TIMEFRAMES
+        from server.strategies.adx_supertrend import HTF_SECONDS
+        s = self.settings(request)
+        ratio = max(1, HTF_SECONDS[s.htf_timeframe]//TIMEFRAMES[request.entry_timeframe]) if s.htf_filter else 1
+        base = max(s.adx_length, s.di_length, s.st_length, s.atr_length, s.rsi_length)*20
+        forecast = 3000 if s.forecast_filter else 0  # forecast features use long windows
+        return int(max(1500, base, ratio*s.st_length*12, s.atr_window*2, forecast))
+
+    def chart_columns(self, frame, request, bar_seconds):
+        from server.strategies.adx_supertrend import calculate
+        bars = calculate(frame, replace_forecast(self.settings(request)), bar_seconds=bar_seconds)
+        return bars.assign(bb_basis=np.nan, bb_upper=np.nan, bb_lower=np.nan, trend_sma=np.nan, bb_width_pct=np.nan)
+
+    def readiness(self, bar, request, frame=None):
+        from server.strategies.adx_supertrend import readiness
+        return readiness(bar, self.settings(request))
+
+
+def replace_forecast(settings):
+    """Chart overlays never need the (slow) forecast filter."""
+    from dataclasses import replace
+    return replace(settings, forecast_filter=False, forecast_model_id='') if settings.forecast_filter else settings
+
+
+STRATEGIES: dict[str, StrategyRunner] = {runner.key: runner for runner in (AdxSupertrend(),)}
 
 
 def get_strategy(key: str) -> StrategyRunner:

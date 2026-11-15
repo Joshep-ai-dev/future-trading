@@ -1,8 +1,8 @@
 import {lazy,Suspense,useEffect,useState,type ReactNode} from 'react';
 import {PageHeader} from '../shared/ui/ui';
 import {htxCostDefaults} from '../features/strategy/executionCostDefaults';
-import {bbDefaults,mlDefaults,mlDirectionalDefaults,rlDefaults} from '../features/strategy/strategyDefaults';
-import type {BacktestSettings} from '../shared/types/types';
+import {adxSupertrendDefaults,bbDefaults,mlDefaults,mlDirectionalDefaults,rlDefaults,STRATEGY_LABELS} from '../features/strategy/strategyDefaults';
+import {fmt,type BacktestResult,type BacktestSettings} from '../shared/types/types';
 import type {Page} from './Tabs';
 import {api} from '../shared/api/api';
 
@@ -11,6 +11,8 @@ const AccountPage=lazy(()=>import('../features/account/AccountPage'));
 const PaperTrading=lazy(()=>import('../features/trading/PaperTrading'));
 const LiveTrading=lazy(()=>import('../features/trading/LiveTrading'));
 const LiveExecution=lazy(()=>import('../features/trading/LiveExecution'));
+const AdxSupertrendSettings=lazy(()=>import('../features/strategy/AdxSupertrendSettings'));
+const ResultsWorkspace=lazy(()=>import('../features/research/ResultsWorkspace'));
 
 function initial(range: {
   startDate: string;
@@ -20,6 +22,7 @@ function initial(range: {
     market: "xag",
     rl: { ...rlDefaults },
     bb_reversal: { ...bbDefaults },
+    adx_supertrend: { ...adxSupertrendDefaults },
     ml_directional: { ...mlDirectionalDefaults },
     ml: {
       ...mlDefaults,
@@ -38,7 +41,7 @@ function initial(range: {
     chartart_stop_pct: 1,
     exit_condition: "none",
     stop_mode: "trailing",
-    strategy: "none",
+    strategy: "adx_supertrend",
     direction_active: true,
     direction_timeframe: "1h",
     setup_active: true,
@@ -61,6 +64,28 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
   const [settings,setSettings]=useState(()=>initial(range));
   const [message,setMessage]=useState('');
   const [stopping,setStopping]=useState(false);
+  const [result,setResult]=useState<BacktestResult|null>(null);
+  const [busy,setBusy]=useState(false);
+  const [runError,setRunError]=useState('');
+  const [runId,setRunId]=useState(0);
+  async function runBacktest(override?:BacktestSettings){
+    const request=override??settings;
+    setBusy(true);setRunError('');onViewChange('results');
+    try{setResult(await api<BacktestResult>('/api/backtest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(request)}));setRunId(value=>value+1);}
+    catch(error){setRunError(String(error));}finally{setBusy(false);}
+  }
+  async function openRun(id:number){
+    setBusy(true);setRunError('');onViewChange('results');
+    try{setResult(await api<BacktestResult>('/api/backtests/'+id));setRunId(value=>value+1);}
+    catch(error){setRunError(String(error));}finally{setBusy(false);}
+  }
+  function exportResult(){
+    if(!result)return;
+    const url=URL.createObjectURL(new Blob([JSON.stringify(result,null,2)],{type:'application/json'}));
+    const link=document.createElement('a');link.href=url;link.download='adx-supertrend-backtest.json';link.click();URL.revokeObjectURL(url);
+  }
+  const comparable=(value:BacktestSettings)=>JSON.stringify({...value,adx_supertrend:{...value.adx_supertrend,forecast_owner:undefined}});
+  const stale=!!result&&comparable(settings)!==comparable(result.settings);
   async function stopAutomation(){
     setStopping(true);setMessage('');
     try{
@@ -80,7 +105,29 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
     {keep('forecast',<ForecastPage range={range}/>)}
     {keep('paper-live',<LiveTrading settings={settings} controls={<LiveExecution view="terminal" settings={settings} onSettingsChange={setSettings} onConfigure={()=>onViewChange('strategy')} onManageAccount={()=>onViewChange('account')}/>}/>)}
     {keep('paper-paper',<PaperTrading settings={settings} onChange={setSettings} onConfigure={()=>onViewChange('strategy')} visible={current==='paper-paper'} profiles={[]} onApplySetup={()=>{}}/>)}
-    {view!=='account'&&view!=='forecast'&&view!=='paper'&&<div id={`page-${view}`} role="tabpanel" aria-labelledby={`tab-${view}`} className="setup-page">
+    {keep('strategy',<div id="page-strategy" role="tabpanel" aria-labelledby="tab-strategy" className="setup-page">
+      {settings.strategy==='adx_supertrend'
+        ?<AdxSupertrendSettings settings={settings} onChange={setSettings} onRun={()=>void runBacktest()} busy={busy} range={range}/>
+        :<button type="button" onClick={()=>setSettings({...settings,strategy:'adx_supertrend'})}>Use ADX + Supertrend</button>}
+    </div>)}
+    {keep('results',<div id="page-results" role="tabpanel" aria-labelledby="tab-results">
+      {runError&&<p className="error" role="alert">{runError}</p>}
+      <ResultsWorkspace key={runId} result={result} busy={busy} stale={stale} profiles={[]} strategy={settings.strategy}
+        onStrategyChange={strategy=>{if(strategy==='adx_supertrend')setSettings({...settings,strategy});}}
+        onRunSetup={()=>void runBacktest()} onRun={()=>void runBacktest()} onConfigure={()=>onViewChange('strategy')}
+        onExport={exportResult} onOpenRun={id=>void openRun(id)}
+        onApplySettings={()=>{if(result)setSettings({...settings,...result.settings,adx_supertrend:{...adxSupertrendDefaults,...result.settings.adx_supertrend}});}}
+        summary={[
+          ['Market','XAG / USDT · OKX'],
+          ['Period (UTC)',settings.start_date+' → '+settings.end_date],
+          ['Timeframe',settings.entry_timeframe],
+          ['Starting balance','$'+fmt(settings.capital)],
+          ['Leverage',settings.max_leverage+'×'],
+          ['Strategy',STRATEGY_LABELS[settings.strategy]??settings.strategy],
+          ['Per trade',settings.adx_supertrend.amount_unit==='percent'?settings.adx_supertrend.amount_per_trade+'% of balance':'$'+fmt(settings.adx_supertrend.amount_per_trade)],
+        ]}/>
+    </div>)}
+    {view!=='account'&&view!=='forecast'&&view!=='paper'&&view!=='strategy'&&view!=='results'&&<div id={`page-${view}`} role="tabpanel" aria-labelledby={`tab-${view}`} className="setup-page">
         <PageHeader eyebrow="STRATEGY WORKSPACE" title="No strategy configured" description="All trading strategies have been removed. This workspace is ready for a new implementation."/>
         <p>Strategy settings, backtests and automated trading are unavailable until a new strategy is added.</p>
         <p>Market history, account connections and saved research remain available.</p>

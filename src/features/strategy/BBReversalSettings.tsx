@@ -20,7 +20,7 @@ export function Field({label,hint,unit,children}:{label:string;hint?:string;unit
   return <label className="setup-field"><span className="setup-label">{label}</span><span className={unit?'setup-input has-unit':'setup-input'}>{children}{unit&&<em>{unit}</em>}</span>{hint&&<small>{hint}</small>}</label>;
 }
 
-function Toggle({checked,onChange,label}:{checked:boolean;onChange:(value:boolean)=>void;label:string}){
+export function Toggle({checked,onChange,label}:{checked:boolean;onChange:(value:boolean)=>void;label:string}){
   return <label className="setup-toggle"><input type="checkbox" role="switch" aria-label={label} checked={checked} onChange={event=>onChange(event.target.checked)}/><i aria-hidden="true"/><span>{checked?'On':'Off'}</span></label>;
 }
 
