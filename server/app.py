@@ -944,7 +944,6 @@ class CandleRequest(Parameters):
 
 def candle_page(frame, before=None, limit=5000):
     complete = frame.dropna(subset=['open', 'high', 'low', 'close'])
-    complete = complete.loc[complete.index.dayofweek < 5]
     if before is not None:
         complete = complete.loc[complete.index < pd.Timestamp(before, unit='s', tz='UTC')]
     selected = complete.tail(limit)

@@ -50,10 +50,21 @@ class HistoryTests(unittest.TestCase):
             with self.assertRaises(ValidationError):
                 CandleRequest(**values)
 
-    def test_weekend_prices_are_not_returned(self):
-        index = pd.date_range('2026-04-03 23:55', periods=3, freq='5min', tz='UTC')
-        frame = pd.DataFrame({k: [70., 70., 70.] for k in ['open','high','low','close']}, index=index)
-        self.assertEqual([c['time'] for c in candle_page(frame)['candles']], [int(index[0].timestamp())])
+    def test_weekend_prices_are_preserved_in_preview_and_paginated_history(self):
+        index = pd.date_range('2026-11-13 23:55', '2026-11-16 00:05', freq='5min', tz='UTC')
+        frame = pd.DataFrame({k: np.full(len(index), 70.) for k in ['open','high','low','close']}, index=index)
+        expected = [int(stamp.timestamp()) for stamp in index]
+        with patch('server.app.load_bars', return_value=(frame, {})):
+            preview = run(Parameters(timeframe='5m'))
+            self.assertEqual([row['time'] for row in preview['candles']], expected)
+            page = history(CandleRequest(timeframe='5m', limit=200))
+            pages = [page]
+            while page['hasMore']:
+                page = history(CandleRequest(timeframe='5m', before=page['nextBefore'], limit=200))
+                pages.append(page)
+        candles = [row for page in reversed(pages) for row in page['candles']]
+        self.assertEqual([row['time'] for row in candles], expected)
+        self.assertTrue(all(right['time']-left['time'] == 300 for left, right in zip(candles, candles[1:])))
 
 
 if __name__ == '__main__':
