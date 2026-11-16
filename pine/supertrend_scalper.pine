@@ -1,0 +1,137 @@
+//@version=6
+// SuperTrend Scalper (XAG/USD, 5-minute) — mirrors server/strategies/st_scalper.py.
+// No repainting: signals use confirmed bars only; the 15m trend uses the last COMPLETED 15m candle
+// (close[1] / ema[1] with lookahead_on is the standard non-repainting idiom).
+// Orders fill at the next bar open (process_orders_on_close = false).
+// Not modelled here (Python engine only): the economic-news filter, which needs the release calendar.
+strategy("SuperTrend Scalper", overlay = true, initial_capital = 2000, process_orders_on_close = false,
+     commission_type = strategy.commission.percent, commission_value = 0.06, slippage = 2,
+     pyramiding = 0, calc_on_every_tick = false)
+
+// ── Inputs ─────────────────────────────────────────────────────────────
+stLen      = input.int(10, "SuperTrend ATR length", minval = 2)
+stMult     = input.float(3.0, "SuperTrend multiplier", minval = 0.1, step = 0.25)
+htfTf      = input.timeframe("15", "Higher timeframe")
+htfEmaLen  = input.int(200, "Higher-TF EMA")
+emaLen     = input.int(50, "Short EMA")
+adxLen     = input.int(14, "ADX length")
+adxMin     = input.float(25, "ADX threshold")
+rsiLen     = input.int(14, "RSI length")
+rsiLongMin = input.float(50, "RSI long min")
+rsiLongMax = input.float(70, "RSI long max")
+rsiShortMin = input.float(30, "RSI short min")
+rsiShortMax = input.float(50, "RSI short max")
+atrLen     = input.int(14, "ATR length")
+atrWindow  = input.int(2000, "ATR percentile window")
+atrPctMin  = input.float(10, "ATR percentile min")
+atrPctMax  = input.float(95, "ATR percentile max")
+useTrend   = input.bool(true, "Trend filter", group = "Filters")
+useAdx     = input.bool(true, "ADX filter", group = "Filters")
+useRsi     = input.bool(true, "RSI filter", group = "Filters")
+useVol     = input.bool(true, "Volatility filter", group = "Filters")
+useRegime  = input.bool(true, "Regime filter", group = "Filters")
+useSession = input.bool(true, "Session filter", group = "Filters")
+sessLondon = input.session("0700-1200", "London (UTC)", group = "Filters")
+sessOverlap = input.session("1200-1600", "London–NY overlap (UTC)", group = "Filters")
+sessNy     = input.session("1600-2100", "New York (UTC)", group = "Filters")
+useAtrExits = input.bool(true, "ATR exits", group = "Exits")
+slAtr      = input.float(1.5, "Stop-loss × ATR", group = "Exits")
+tpAtr      = input.float(2.0, "Take-profit × ATR", group = "Exits")
+beAtr      = input.float(1.0, "Break-even at × ATR (0 = off)", group = "Exits")
+trailAtr   = input.float(1.5, "Trail from × ATR (0 = off)", group = "Exits")
+trailDist  = input.float(1.0, "Trail distance × ATR", group = "Exits")
+maxHold    = input.int(12, "Max hold (bars)", group = "Exits")
+exitOnFlip = input.bool(true, "Exit on opposite flip", group = "Exits")
+riskPct    = input.float(0.5, "Risk per trade %", group = "Risk")
+
+// ── Indicators (confirmed bars) ────────────────────────────────────────
+[stLine, stDir] = ta.supertrend(stMult, stLen)        // stDir < 0 = bullish in Pine
+bull = stDir < 0
+flipUp = bull and not bull[1]
+flipDown = not bull and bull[1]
+emaFast = ta.ema(close, emaLen)
+htfClose = request.security(syminfo.tickerid, htfTf, close[1], lookahead = barmerge.lookahead_on)
+htfEma = request.security(syminfo.tickerid, htfTf, ta.ema(close, htfEmaLen)[1], lookahead = barmerge.lookahead_on)
+[diPlus, diMinus, adx] = ta.dmi(adxLen, adxLen)
+rsi = ta.rsi(close, rsiLen)
+atr = ta.rma(ta.tr(true), atrLen)
+atrPct = ta.percentrank(atr / close, atrWindow)
+slope = (emaFast - emaFast[10]) / (10 * atr)
+
+strongBull = adx >= adxMin and diPlus > diMinus and slope > 0.05 and htfClose > htfEma
+strongBear = adx >= adxMin and diMinus > diPlus and slope < -0.05 and htfClose < htfEma
+lowVol = atrPct < atrPctMin
+extremeVol = atrPct > atrPctMax
+inSession = not na(time(timeframe.period, sessLondon, "UTC")) or not na(time(timeframe.period, sessOverlap, "UTC")) or not na(time(timeframe.period, sessNy, "UTC"))
+
+longOk = flipUp and (not useTrend or (htfClose > htfEma and close > emaFast)) and (not useAdx or adx > adxMin) and
+     (not useRsi or (rsi >= rsiLongMin and rsi <= rsiLongMax)) and (not useVol or (not lowVol and not extremeVol)) and
+     (not useRegime or (strongBull and not lowVol and not extremeVol)) and (not useSession or inSession)
+shortOk = flipDown and (not useTrend or (htfClose < htfEma and close < emaFast)) and (not useAdx or adx > adxMin) and
+     (not useRsi or (rsi >= rsiShortMin and rsi <= rsiShortMax)) and (not useVol or (not lowVol and not extremeVol)) and
+     (not useRegime or (strongBear and not lowVol and not extremeVol)) and (not useSession or inSession)
+
+// ── Position state ─────────────────────────────────────────────────────
+var float entryAtr = na
+var float stopPrice = na
+var float targetPrice = na
+var float bestPrice = na
+var bool beDone = false
+var int entryBar = na
+
+if barstate.isconfirmed
+    // Signals at the close; orders fill at the next open.
+    if longOk and strategy.position_size <= 0
+        qty = strategy.equity * riskPct / 100 / (slAtr * atr)
+        strategy.entry("Long", strategy.long, qty = qty)
+        entryAtr := atr
+        beDone := false
+        entryBar := bar_index + 1
+    else if shortOk and strategy.position_size >= 0
+        qty = strategy.equity * riskPct / 100 / (slAtr * atr)
+        strategy.entry("Short", strategy.short, qty = qty)
+        entryAtr := atr
+        beDone := false
+        entryBar := bar_index + 1
+
+    // Opposite flip exits at the next open.
+    if exitOnFlip or not useAtrExits
+        if strategy.position_size > 0 and flipDown and not shortOk
+            strategy.close("Long", comment = "flip")
+        if strategy.position_size < 0 and flipUp and not longOk
+            strategy.close("Short", comment = "flip")
+
+// ATR stop / target from the entry fill; break-even and trailing move the stop at confirmed closes only.
+if strategy.position_size != 0 and useAtrExits
+    entry = strategy.position_avg_price
+    dir = math.sign(strategy.position_size)
+    if na(stopPrice) or bar_index == entryBar
+        stopPrice := entry - dir * slAtr * entryAtr
+        targetPrice := entry + dir * tpAtr * entryAtr
+        bestPrice := entry
+    if barstate.isconfirmed
+        bestPrice := dir > 0 ? math.max(bestPrice, high) : math.min(bestPrice, low)
+        favour = dir * (bestPrice - entry)
+        newStop = stopPrice
+        if beAtr > 0 and not beDone and favour >= beAtr * entryAtr and dir * (close - entry) > 0
+            beDone := true
+            newStop := dir > 0 ? math.max(newStop, entry) : math.min(newStop, entry)
+        if trailAtr > 0 and favour >= trailAtr * entryAtr
+            candidate = bestPrice - dir * trailDist * entryAtr
+            if dir * (close - candidate) > 0
+                newStop := dir > 0 ? math.max(newStop, candidate) : math.min(newStop, candidate)
+        stopPrice := newStop
+        if bar_index - entryBar + 1 >= maxHold
+            strategy.close_all(comment = "time")
+    strategy.exit("Exit", stop = stopPrice, limit = targetPrice)
+if strategy.position_size == 0
+    stopPrice := na
+    targetPrice := na
+
+// ── Plots ──────────────────────────────────────────────────────────────
+plot(stLine, "SuperTrend", color = bull ? color.new(#089981, 0) : color.new(#f23645, 0), linewidth = 2)
+plot(emaFast, "EMA short", color = color.new(#2962ff, 0))
+plot(htfEma, "Higher-TF EMA", color = color.new(#ff9800, 0), linewidth = 2)
+plot(strategy.position_size != 0 ? stopPrice : na, "Stop", color = color.new(#f23645, 30), style = plot.style_linebr)
+plot(strategy.position_size != 0 ? targetPrice : na, "Target", color = color.new(#089981, 30), style = plot.style_linebr)
+bgcolor(useRegime and strongBull ? color.new(#089981, 92) : useRegime and strongBear ? color.new(#f23645, 92) : na, title = "Regime")

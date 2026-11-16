@@ -1091,3 +1091,29 @@
   padding: 0 12px;
   line-height: 28px;
 }
+
+/* Red "new" dots: main News tab, new headlines and new releases */
+.ui-tab-dot,
+.news-new-dot {
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--red);
+  box-shadow: 0 0 0 3px #f2364533;
+}
+
+.ui-tab-dot {
+  margin-left: 6px;
+  vertical-align: 2px;
+}
+
+.news-new-dot {
+  margin-right: 6px;
+  vertical-align: 1px;
+}
+
+.news-day li.is-new {
+  background: #f236450a;
+}

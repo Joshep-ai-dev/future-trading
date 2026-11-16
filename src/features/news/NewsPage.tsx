@@ -9,6 +9,7 @@ import PatternPanel from "../trading/PatternPanel";
 import EconomicCalendar, { shortName } from "./EconomicCalendar";
 import JustReleased, { COMING_SECONDS, JUST_RELEASED_SECONDS, type LiveRelease } from "./JustReleased";
 import ReleaseChart, { type ChartRelease } from "./ReleaseChart";
+import { markNewsSeen, readNewsSeen } from "./newsBadge";
 
 type Article = {
   id: string;
@@ -142,6 +143,13 @@ export default function NewsPage({ visible, onOpenChart }: { visible: boolean; o
   const [range, setRange] = useState<(typeof RANGES)[number]>(RANGES[1]),
     [buckets, setBuckets] = useState<Bucket[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  // Items newer than the last visit get a red dot; opening the page marks everything as seen.
+  const [seenBefore, setSeenBefore] = useState(readNewsSeen);
+  useEffect(() => {
+    if (!visible) return;
+    setSeenBefore(readNewsSeen());
+    markNewsSeen();
+  }, [visible]);
   const [tab, setTab] = useState<NewsTab>(() => {
     try {
       const saved = localStorage.getItem("silver.news.tab");
@@ -193,6 +201,7 @@ export default function NewsPage({ visible, onOpenChart }: { visible: boolean; o
     try {
       setFeed(await api<Feed>(`/api/news?${params}`));
       setError("");
+      if (document.visibilityState === "visible") markNewsSeen();
     } catch (reason) {
       setError(String(reason));
     }
@@ -410,12 +419,13 @@ export default function NewsPage({ visible, onOpenChart }: { visible: boolean; o
                     {articles.map((article) => {
                       const kind = mood(article.sentiment);
                       return (
-                        <li key={article.id} className={`is-${kind}`}>
+                        <li key={article.id} className={`is-${kind}${article.published > seenBefore ? " is-new" : ""}`}>
                           <time dateTime={new Date(article.published * 1000).toISOString()} title={formatTradingTime(article.published, zone)}>
                             {formatTradingTime(article.published, zone).slice(11, 16)}
                           </time>
                           <div className='news-item'>
                             <div className='news-item-meta'>
+                              {article.published > seenBefore && <i className='news-new-dot' title='New since your last visit' />}
                               <span className='news-source'>{article.source}</span>
                               {article.topics.slice(0, 3).map((name) => (
                                 <button key={name} type='button' className='news-tag' onClick={() => setTopic(name)}>
@@ -523,7 +533,7 @@ export default function NewsPage({ visible, onOpenChart }: { visible: boolean; o
         </aside>
       </div>
 
-      <div hidden={tab !== "calendar"}>{opened.includes("calendar") && <EconomicCalendar visible={visible && tab === "calendar"} onOpenChart={onOpenChart} />}</div>
+      <div hidden={tab !== "calendar"}>{opened.includes("calendar") && <EconomicCalendar visible={visible && tab === "calendar"} onOpenChart={onOpenChart} newSince={seenBefore} />}</div>
 
       <section className='news-panel news-similar' aria-label='Similar history' hidden={tab !== "similar"}>
         <header>

@@ -32,6 +32,7 @@ from server.core.serialization import optional_volume
 from server.strategies.fine_tuning import fine_tune
 from server.market.orderflow_recorder import orderflow_service
 from server.news.routes import router as news_router
+from server.strategies.lab_routes import router as lab_router
 from server.news.service import news_service
 from server.storage.auth_store import SESSION_DAYS, auth_store
 
@@ -78,6 +79,7 @@ async def lifespan(app):
 
 app = FastAPI(title='Silver Price Research', lifespan=lifespan)
 app.include_router(news_router)
+app.include_router(lab_router)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 logger = logging.getLogger(__name__)
 AUTH_COOKIE = 'silver_session'

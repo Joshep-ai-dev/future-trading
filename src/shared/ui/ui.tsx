@@ -39,7 +39,7 @@ export function SelectMenu<Key extends string>({value,options,onChange,label,cap
   </details>;
 }
 
-export type TabItem<Key extends string>={value:Key;label:string;count?:number|null;controls?:string};
+export type TabItem<Key extends string>={value:Key;label:string;count?:number|null;controls?:string;dot?:boolean};
 export function TabBar<Key extends string>({items,value,onChange,label,idPrefix,className='',trailing}:{items:readonly TabItem<Key>[];value:Key;onChange:(value:Key)=>void;label:string;idPrefix:string;className?:string;trailing?:ReactNode}){
   return <div className={`ui-tabs ${className}`} role="tablist" aria-label={label}>
     {items.map((item,index)=><button key={item.value} type="button" id={`${idPrefix}-${item.value}`} role="tab" aria-selected={item.value===value} aria-controls={item.controls} tabIndex={item.value===value?0:-1} onClick={()=>onChange(item.value)} onKeyDown={event=>{
@@ -50,7 +50,7 @@ export function TabBar<Key extends string>({items,value,onChange,label,idPrefix,
       else if(event.key==='End')next=items.length-1;
       else return;
       event.preventDefault();onChange(items[next].value);document.getElementById(`${idPrefix}-${items[next].value}`)?.focus();
-    }}>{item.label}{item.count!=null&&<span>{item.count}</span>}</button>)}{trailing&&<div className="ui-tabs-trailing">{trailing}</div>}
+    }}>{item.label}{item.count!=null&&<span>{item.count}</span>}{item.dot&&<i className="ui-tab-dot" aria-label="new"/>}</button>)}{trailing&&<div className="ui-tabs-trailing">{trailing}</div>}
   </div>;
 }
 

@@ -77,7 +77,7 @@ function BiasPill({ bias }: { bias: number | null }) {
 }
 
 /** US releases that move silver: forecast vs actual, the surprise, and how silver really reacted. */
-export default function EconomicCalendar({ visible, onOpenChart }: { visible: boolean; onOpenChart?: (time: number, label: string) => void }) {
+export default function EconomicCalendar({ visible, onOpenChart, newSince = Infinity }: { visible: boolean; onOpenChart?: (time: number, label: string) => void; newSince?: number }) {
   const zone = useChartTimeZone();
   const [data, setData] = useState<Calendar | null>(null),
     [error, setError] = useState("");
@@ -241,6 +241,7 @@ export default function EconomicCalendar({ visible, onOpenChart }: { visible: bo
                   }}
                 >
                   <td>
+                    {view === "past" && row.actual != null && row.released > newSince && <i className='news-new-dot' title='Released since your last visit' />}
                     {formatTradingTime(row.released, zone).slice(0, 16)}
                     {view === "upcoming" && <small> {until(row.released)}</small>}
                   </td>

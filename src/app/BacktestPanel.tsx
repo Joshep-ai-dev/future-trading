@@ -1,7 +1,8 @@
 import {lazy,Suspense,useEffect,useState,type ReactNode} from 'react';
 import {PageHeader} from '../shared/ui/ui';
 import {htxCostDefaults} from '../features/strategy/executionCostDefaults';
-import {adxSupertrendDefaults,bbDefaults,mlDefaults,mlDirectionalDefaults,rlDefaults,STRATEGY_LABELS} from '../features/strategy/strategyDefaults';
+import {adxSupertrendDefaults,bbDefaults,mlDefaults,mlDirectionalDefaults,rlDefaults,stScalperDefaults,STRATEGY_LABELS} from '../features/strategy/strategyDefaults';
+import BotSelector from '../features/strategy/BotSelector';
 import {fmt,type BacktestResult,type BacktestSettings} from '../shared/types/types';
 import type {Page} from './Tabs';
 import {api} from '../shared/api/api';
@@ -14,6 +15,7 @@ const PaperTrading=lazy(()=>import('../features/trading/PaperTrading'));
 const LiveTrading=lazy(()=>import('../features/trading/LiveTrading'));
 const LiveExecution=lazy(()=>import('../features/trading/LiveExecution'));
 const AdxSupertrendSettings=lazy(()=>import('../features/strategy/AdxSupertrendSettings'));
+const ScalperSettings=lazy(()=>import('../features/strategy/ScalperSettings'));
 const ResultsWorkspace=lazy(()=>import('../features/research/ResultsWorkspace'));
 
 /** JSON with sorted keys, so key order never matters. */
@@ -26,7 +28,8 @@ function canonical(value:unknown):string{
 function runKey(value:BacktestSettings){
   const strategy={...adxSupertrendDefaults,...value.adx_supertrend,forecast_owner:undefined};
   return canonical({strategy:value.strategy,timeframe:value.entry_timeframe,start:value.start_date,end:value.end_date,capital:value.capital,
-    leverage:value.max_leverage,tick:value.tick_size,fee:value.fee_bps,slippage:value.slippage,spread:value.spread,funding:value.funding_bps,adx_supertrend:strategy});
+    leverage:value.max_leverage,tick:value.tick_size,fee:value.fee_bps,slippage:value.slippage,spread:value.spread,funding:value.funding_bps,
+    ...(value.strategy==='st_scalper'?{st_scalper:{...stScalperDefaults,...value.st_scalper}}:{adx_supertrend:strategy})});
 }
 
 /** A tab opened with ?focus=<time>&label=<text> starts on the trading chart at that moment (read once, then removed from the address). */
@@ -46,6 +49,7 @@ function initial(range: {
     rl: { ...rlDefaults },
     bb_reversal: { ...bbDefaults },
     adx_supertrend: { ...adxSupertrendDefaults },
+    st_scalper: { ...stScalperDefaults },
     ml_directional: { ...mlDirectionalDefaults },
     ml: {
       ...mlDefaults,
@@ -134,14 +138,17 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
     {keep('paper-live',<LiveTrading settings={settings} controls={<LiveExecution view="terminal" settings={settings} onSettingsChange={setSettings} onConfigure={()=>onViewChange('strategy')} onManageAccount={()=>onViewChange('account')}/>}/>)}
     {keep('paper-paper',<PaperTrading settings={settings} onChange={setSettings} onConfigure={()=>onViewChange('strategy')} visible={current==='paper-paper'} profiles={[]} onApplySetup={()=>{}} focus={chartFocus}/>)}
     {keep('strategy',<div id="page-strategy" role="tabpanel" aria-labelledby="tab-strategy" className="setup-page">
-      {settings.strategy==='adx_supertrend'
+      <div className="strategy-switch"><BotSelector strategy={settings.strategy} onStrategyChange={strategy=>{if(strategy==='adx_supertrend'||strategy==='st_scalper')setSettings({...settings,strategy,st_scalper:{...stScalperDefaults,...settings.st_scalper}});}} profiles={[]} onApplySetup={()=>{}}/></div>
+      {settings.strategy==='st_scalper'
+        ?<ScalperSettings settings={settings} onChange={setSettings} onRun={()=>void runBacktest()} busy={busy} range={range}/>
+        :settings.strategy==='adx_supertrend'
         ?<AdxSupertrendSettings settings={settings} onChange={setSettings} onRun={()=>void runBacktest()} busy={busy} range={range}/>
         :<button type="button" onClick={()=>setSettings({...settings,strategy:'adx_supertrend'})}>Use ADX + Supertrend</button>}
     </div>)}
     {keep('results',<div id="page-results" role="tabpanel" aria-labelledby="tab-results">
       {runError&&<p className="error" role="alert">{runError}</p>}
       <ResultsWorkspace key={runId} result={result} busy={busy} stale={stale} profiles={[]} strategy={settings.strategy}
-        onStrategyChange={strategy=>{if(strategy==='adx_supertrend')setSettings({...settings,strategy});}}
+        onStrategyChange={strategy=>{if(strategy==='adx_supertrend'||strategy==='st_scalper')setSettings({...settings,strategy});}}
         onRunSetup={()=>void runBacktest()} onRun={()=>void runBacktest()} onConfigure={()=>onViewChange('strategy')}
         onExport={exportResult} onOpenRun={id=>void openRun(id)}
         onApplySettings={()=>{if(result)setSettings({...settings,...result.settings,adx_supertrend:{...adxSupertrendDefaults,...result.settings.adx_supertrend}});}}
@@ -152,7 +159,7 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
           ['Starting balance','$'+fmt(settings.capital)],
           ['Leverage',settings.max_leverage+'×'],
           ['Strategy',STRATEGY_LABELS[settings.strategy]??settings.strategy],
-          ['Per trade',settings.adx_supertrend.amount_unit==='percent'?settings.adx_supertrend.amount_per_trade+'% of balance':'$'+fmt(settings.adx_supertrend.amount_per_trade)],
+          settings.strategy==='st_scalper'?['Risk per trade',(settings.st_scalper??stScalperDefaults).risk_pct+'% of equity']:['Per trade',settings.adx_supertrend.amount_unit==='percent'?settings.adx_supertrend.amount_per_trade+'% of balance':'$'+fmt(settings.adx_supertrend.amount_per_trade)],
         ]}/>
     </div>)}
     {view!=='account'&&view!=='forecast'&&view!=='news'&&view!=='paper'&&view!=='strategy'&&view!=='results'&&<div id={`page-${view}`} role="tabpanel" aria-labelledby={`tab-${view}`} className="setup-page">

@@ -14,11 +14,12 @@ class BacktestRequest(BaseModel):
     start_date: date
     end_date: date
     validation_date: date | None = None  # Accepted only for older saved settings.
-    strategy: Literal['none', 'adx_supertrend'] = 'none'
+    strategy: Literal['none', 'adx_supertrend', 'st_scalper'] = 'none'
     market: Literal['xag', 'stable'] = 'xag'
     bb_reversal: dict = Field(default_factory=dict)
     ml_directional: dict = Field(default_factory=dict)
     adx_supertrend: dict = Field(default_factory=dict)
+    st_scalper: dict = Field(default_factory=dict)
     ml: dict = Field(default_factory=dict)
     rl: dict = Field(default_factory=dict)
     direction_active: bool = True
@@ -57,6 +58,9 @@ class BacktestRequest(BaseModel):
         if self.strategy == 'adx_supertrend':
             from server.strategies.adx_supertrend import Settings
             Settings.from_dict(self.adx_supertrend)  # raises a clear validation error
+        if self.strategy == 'st_scalper':
+            from server.strategies.st_scalper import Settings as ScalperSettings
+            ScalperSettings.from_dict(self.st_scalper)
         self.exit_condition = 'none'
         self.stop_mode = 'none'
         return self

@@ -77,13 +77,47 @@ class AdxSupertrend(StrategyRunner):
         return readiness(bar, self.settings(request))
 
 
+class StScalper(StrategyRunner):
+    """SuperTrend Scalper: next-open entries, ATR exits, regime / session / news filters (backtest and paper)."""
+    key, label, signal_label, live_supported = 'st_scalper', 'SuperTrend Scalper', 'Filtered SuperTrend flip', False
+
+    @staticmethod
+    def settings(request):
+        from server.strategies.st_scalper import Settings
+        return Settings.from_dict(dict(getattr(request, 'st_scalper', None) or {}),
+                                  initial_capital=float(request.capital), leverage=float(request.max_leverage),
+                                  min_tick=float(request.tick_size))
+
+    def run(self, frame, request, *, start=None, close_at_end=False, bar_seconds=None):
+        from server.strategies.st_scalper import run_backtest
+        return run_backtest(frame, self.settings(request), start=start, close_at_end=close_at_end,
+                            bar_seconds=bar_seconds, **self.costs(request))
+
+    def warmup_bars(self, request):
+        from server.market.data import TIMEFRAMES
+        from server.strategies.st_scalper import HTF_SECONDS
+        s = self.settings(request)
+        ratio = max(1, HTF_SECONDS[s.htf_timeframe]//TIMEFRAMES[request.entry_timeframe])
+        return int(max(1500, s.htf_ema_length*ratio*3, s.atr_window+200, s.ema_fast_length*5))
+
+    def chart_columns(self, frame, request, bar_seconds):
+        from server.strategies.st_scalper import indicators
+        bars = indicators(frame, self.settings(request), bar_seconds)
+        # The 5m EMA is drawn where the chart shows the strategy trend line.
+        return bars.assign(bb_basis=np.nan, bb_upper=np.nan, bb_lower=np.nan, trend_sma=bars.ema_fast, bb_width_pct=np.nan)
+
+    def readiness(self, bar, request, frame=None):
+        from server.strategies.st_scalper import readiness
+        return readiness(bar, bar, self.settings(request))
+
+
 def replace_forecast(settings):
     """Chart overlays never need the (slow) forecast filter."""
     from dataclasses import replace
     return replace(settings, forecast_filter=False, forecast_model_id='') if settings.forecast_filter else settings
 
 
-STRATEGIES: dict[str, StrategyRunner] = {runner.key: runner for runner in (AdxSupertrend(),)}
+STRATEGIES: dict[str, StrategyRunner] = {runner.key: runner for runner in (AdxSupertrend(), StScalper())}
 
 
 def get_strategy(key: str) -> StrategyRunner:

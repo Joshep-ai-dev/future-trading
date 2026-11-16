@@ -13,13 +13,15 @@ const pages: readonly TabItem<Page>[] = [
 export default function Tabs({
   value,
   onChange,
+  newsDot = false,
 }: {
   value: Page;
   onChange: (page: Page) => void;
+  newsDot?: boolean;
 }) {
   return (
     <TabBar
-      items={pages}
+      items={pages.map((page) => (page.value === "news" ? { ...page, dot: newsDot } : page))}
       value={value}
       onChange={onChange}
       label='Main workspace'

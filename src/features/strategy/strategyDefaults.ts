@@ -21,7 +21,19 @@ export const mlDefaults: BacktestSettings['ml'] = {
 
 export const REGIME_NAMES=['Trend up','Trend down','Range','Volatile'] as const;
 
-export const STRATEGY_LABELS:Record<string,string>={none:'No strategy configured',adx_supertrend:'ADX + Supertrend'};
+export const STRATEGY_LABELS:Record<string,string>={none:'No strategy configured',adx_supertrend:'ADX + Supertrend',st_scalper:'SuperTrend Scalper'};
+/** Mirrors server/strategies/st_scalper.py Settings defaults. */
+export const stScalperDefaults: BacktestSettings['st_scalper'] = {
+  st_length: 10, st_multiplier: 3, htf_timeframe: '15m', htf_ema_length: 200, ema_fast_length: 50,
+  adx_length: 14, adx_threshold: 25, rsi_length: 14, rsi_long_min: 50, rsi_long_max: 70, rsi_short_min: 30, rsi_short_max: 50,
+  atr_length: 14, atr_window: 2000, atr_pct_min: 10, atr_pct_max: 95, volume_sma: 20, volume_mult: 1,
+  sessions: ['london', 'overlap', 'newyork'],
+  news_high_before: 15, news_high_after: 30, news_medium_before: 10, news_medium_after: 15,
+  use_trend_filter: true, use_adx_filter: true, use_rsi_filter: true, use_volatility_filter: true, use_session_filter: true,
+  use_news_filter: true, use_regime_filter: true, use_volume_filter: false,
+  use_atr_exits: true, stop_atr: 1.5, target_atr: 2, breakeven_atr: 1, trail_atr: 1.5, trail_distance_atr: 1,
+  max_hold_bars: 12, exit_on_flip: true, risk_pct: 0.5, trade_mode: 'Both',
+};
 /** Mirrors server/strategies/adx_supertrend.py Settings defaults. */
 export const adxSupertrendDefaults: BacktestSettings['adx_supertrend'] = {
   adx_length: 14, di_length: 14, adx_threshold: 25, adx_rising_bars: 1, require_di_agreement: false,

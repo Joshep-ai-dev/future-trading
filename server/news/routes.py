@@ -140,6 +140,15 @@ def economic_calendar(days_back: int = Query(60, ge=1, le=1200), days_ahead: int
                 upcoming=[row for row in shown if row['released'] > now])
 
 
+@router.get('/latest')
+def news_latest():
+    """Time of the newest headline or released US figure (UTC seconds), for the unread-news dot."""
+    now = int(time.time())
+    rows, _ = news_service.store.articles(limit=1)
+    released = [row['released'] for row in news_service.store.events(since=now-7*86400, until=now+1) if row['actual'] is not None]
+    return dict(latest=max([rows[0]['published'] if rows else 0, *released]))
+
+
 @router.get('/status')
 def news_status():
     return news_service.status()

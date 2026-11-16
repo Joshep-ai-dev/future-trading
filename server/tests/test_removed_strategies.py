@@ -10,7 +10,7 @@ from server.strategies.strategy import BacktestRequest
 
 class RemovedStrategyTests(unittest.TestCase):
     def test_removed_strategies_are_not_registered(self):
-        self.assertEqual(set(STRATEGIES), {'adx_supertrend'})
+        self.assertEqual(set(STRATEGIES), {'adx_supertrend', 'st_scalper'})
         for key in ('bb_outer_reversal', 'ml_directional', 'ml_ensemble', 'rl_ppo'):
             with self.subTest(key=key), self.assertRaises(ValueError):
                 get_strategy(key)

@@ -61,11 +61,23 @@ export type AdxSupertrendConfig = {
   rsi_filter: boolean; rsi_length: number; rsi_overbought: number; rsi_oversold: number;
   forecast_filter: boolean; forecast_model_id: string; forecast_min_probability: number;
 };
+/** Mirrors server/strategies/st_scalper.py Settings. */
+export type StScalperConfig = {
+  st_length: number; st_multiplier: number; htf_timeframe: '15m'|'30m'|'1h'; htf_ema_length: number; ema_fast_length: number;
+  adx_length: number; adx_threshold: number; rsi_length: number; rsi_long_min: number; rsi_long_max: number; rsi_short_min: number; rsi_short_max: number;
+  atr_length: number; atr_window: number; atr_pct_min: number; atr_pct_max: number; volume_sma: number; volume_mult: number;
+  sessions: ('asia'|'london'|'overlap'|'newyork'|'late')[];
+  news_high_before: number; news_high_after: number; news_medium_before: number; news_medium_after: number;
+  use_trend_filter: boolean; use_adx_filter: boolean; use_rsi_filter: boolean; use_volatility_filter: boolean; use_session_filter: boolean;
+  use_news_filter: boolean; use_regime_filter: boolean; use_volume_filter: boolean;
+  use_atr_exits: boolean; stop_atr: number; target_atr: number; breakeven_atr: number; trail_atr: number; trail_distance_atr: number;
+  max_hold_bars: number; exit_on_flip: boolean; risk_pct: number; trade_mode: 'Both'|'Long Only'|'Short Only';
+};
 export type BacktestSettings = {
   market: 'xag'|'stable';
   atr_active: boolean; atr_period: number; atr_multiplier: number;
   ema_fast: number; ema_slow: number; rsi_period: number; rsi_threshold: number; rsi_active: boolean;
-  strategy: 'none'|'adx_supertrend'|'sweep'|'mtf'|'chartart_v12'|'bb_outer_reversal'|'ml_directional'|'ml_ensemble'|'rl_ppo'; adx_supertrend: AdxSupertrendConfig; rl:RLConfig; ml: MLConfig; ml_directional: MLDirectionalConfig; bb_period: number; chartart_stop_pct: number;
+  strategy: 'none'|'adx_supertrend'|'st_scalper'|'sweep'|'mtf'|'chartart_v12'|'bb_outer_reversal'|'ml_directional'|'ml_ensemble'|'rl_ppo'; adx_supertrend: AdxSupertrendConfig; st_scalper: StScalperConfig; rl:RLConfig; ml: MLConfig; ml_directional: MLDirectionalConfig; bb_period: number; chartart_stop_pct: number;
   bb_reversal: {rsi_exit_enabled:boolean; rsi_exit_length:number; rsi_exit_move:number; rsi_exit_short:number; rsi_exit_long:number; amount_per_trade:number; amount_unit:'price'|'percent'; use_sma_trend_adjustment:boolean; trade_mode: 'Both'|'Long Only'|'Short Only'; bb_length:number; bb_mult:number; min_bb_width_pct:number; atr_length:number; min_atr:number; adx_length:number; adx_threshold:number; pullback_bars:number; initial_sl:number; trail_trigger:number; trail_distance:number; trail_multiplier:number; sma_length:number; sma_slope_bars:number; counter_profit_pct:number; counter_sl_pct:number; quantity:number};
   exit_condition: 'none'|'ema'|'rsi'|'either';
   stop_mode: 'none'|'fixed'|'breakeven'|'trailing'|'breakeven_trailing';

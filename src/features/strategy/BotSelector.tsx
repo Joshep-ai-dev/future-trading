@@ -1,7 +1,7 @@
 import SetupPicker,{type SavedSetup} from './SetupPicker';
 
-const BOTS:readonly (readonly [BotKey,string,string])[]=[['adx_supertrend','ADX + Supertrend','Trend following · backtest & paper']];
-export type BotKey='none'|'adx_supertrend'|'bb_outer_reversal'|'ml_directional';
+const BOTS:readonly (readonly [BotKey,string,string])[]=[['adx_supertrend','ADX + Supertrend','Trend following · backtest & paper'],['st_scalper','SuperTrend Scalper','5m scalping · filters · research lab']];
+export type BotKey='none'|'adx_supertrend'|'st_scalper'|'bb_outer_reversal'|'ml_directional';
 
 /** Choose the bot model, then one of its saved parameter setups. Used on the Backtest and Trading pages. */
 export default function BotSelector({strategy,onStrategyChange,profiles,onApplySetup,disabled=false,setupLabel='Saved parameters',actionLabel}:{
