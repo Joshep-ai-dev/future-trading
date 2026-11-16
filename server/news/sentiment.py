@@ -37,7 +37,9 @@ MOVES = {
     'declines': -.5, 'lower': -.5, 'bearish': -1, 'downside': -.5, 'losses': -.5, 'retreat': -.5, 'retreats': -.5,
     'weaken': -.5, 'weakens': -.5, 'ease': -.5, 'eases': -.5,
 }
-NEGATIONS = {'not', 'no', 'never', "isn't", "aren't", "won't", 'without', 'fails', 'failed'}
+NEGATIONS = {'not', 'no', 'never', "isn't", "aren't", "won't", 'without', 'fails', 'failed',
+             # fading expectations reverse what follows ('wane Fed rate cut hopes')
+             'wane', 'wanes', 'fade', 'fades', 'dim', 'dims', 'dash', 'dashes', 'pare', 'pares', 'trim', 'trims'}
 
 # Whole-word cues; a trailing "*" also matches longer words (tariff* -> tariffs).
 TOPICS = {
