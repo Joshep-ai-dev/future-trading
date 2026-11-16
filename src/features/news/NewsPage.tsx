@@ -125,7 +125,7 @@ function TimelineChart({ buckets }: { buckets: Bucket[] }) {
 }
 
 /** Browse silver news, see how the news flow is leaning, and find past moments with similar price and news. */
-export default function NewsPage({ visible }: { visible: boolean }) {
+export default function NewsPage({ visible, onOpenChart }: { visible: boolean; onOpenChart?: (time: number, label: string) => void }) {
   const zone = useChartTimeZone();
   const [query, setQuery] = useState(""),
     [search, setSearch] = useState(""),
@@ -484,7 +484,7 @@ export default function NewsPage({ visible }: { visible: boolean }) {
         </aside>
       </div>
 
-      <div hidden={tab !== "calendar"}>{opened.includes("calendar") && <EconomicCalendar visible={visible && tab === "calendar"} />}</div>
+      <div hidden={tab !== "calendar"}>{opened.includes("calendar") && <EconomicCalendar visible={visible && tab === "calendar"} onOpenChart={onOpenChart} />}</div>
 
       <section className='news-panel news-similar' aria-label='Similar history' hidden={tab !== "similar"}>
         <header>

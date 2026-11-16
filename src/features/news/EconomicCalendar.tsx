@@ -77,7 +77,7 @@ function BiasPill({ bias }: { bias: number | null }) {
 }
 
 /** US releases that move silver: forecast vs actual, the surprise, and how silver really reacted. */
-export default function EconomicCalendar({ visible }: { visible: boolean }) {
+export default function EconomicCalendar({ visible, onOpenChart }: { visible: boolean; onOpenChart?: (time: number, label: string) => void }) {
   const zone = useChartTimeZone();
   const [data, setData] = useState<Calendar | null>(null),
     [error, setError] = useState("");
@@ -265,7 +265,13 @@ export default function EconomicCalendar({ visible }: { visible: boolean }) {
         dollar, which usually pushes silver down. The cards show how often silver really moved that way within an hour. FOMC minutes and the press
         conference have no forecast, and rate decisions rarely differ from it, so for those the silver move is what matters. Silver moves exist only from your first market candle, so older releases show —. Source: FXStreet economic calendar (stored from 2024).
       </p>
-      {chart && <ReleaseChart release={chart} onClose={() => setChart(null)} />}
+      {chart && (
+        <ReleaseChart
+          release={chart}
+          onClose={() => setChart(null)}
+          onOpenTrading={onOpenChart ? () => { setChart(null); onOpenChart(chart.released, chart.label); } : undefined}
+        />
+      )}
     </section>
   );
 }

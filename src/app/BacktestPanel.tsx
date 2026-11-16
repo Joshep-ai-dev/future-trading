@@ -5,6 +5,7 @@ import {adxSupertrendDefaults,bbDefaults,mlDefaults,mlDirectionalDefaults,rlDefa
 import {fmt,type BacktestResult,type BacktestSettings} from '../shared/types/types';
 import type {Page} from './Tabs';
 import {api} from '../shared/api/api';
+import type {ChartFocus} from '../shared/charts/PaperPriceChart';
 
 const ForecastPage=lazy(()=>import('../features/research/ForecastPage'));
 const NewsPage=lazy(()=>import('../features/news/NewsPage'));
@@ -82,6 +83,12 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
   const [busy,setBusy]=useState(false);
   const [runError,setRunError]=useState('');
   const [runId,setRunId]=useState(0);
+  const [chartFocus,setChartFocus]=useState<ChartFocus|null>(null);
+  /** Show the paper trading chart at a past moment (from the News page). */
+  function openTradingChart(time:number,label:string){
+    if(accountMode!=='paper')onAccountModeChange('paper');
+    setChartFocus({time,label,key:Date.now()});onViewChange('paper');
+  }
   async function runBacktest(override?:BacktestSettings){
     const request=override??settings;
     setBusy(true);setRunError('');onViewChange('results');
@@ -116,9 +123,9 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
   return <section className="backtest"><Suspense fallback={<div className="workspace-loading" role="status">Loading workspace...</div>}>
     {keep('account',<AccountPage settings={settings} onBack={()=>onViewChange('paper')} accountMode={accountMode} onAccountModeChange={onAccountModeChange}/>)}
     {keep('forecast',<ForecastPage range={range}/>)}
-    {keep('news',<NewsPage visible={current==='news'}/>)}
+    {keep('news',<NewsPage visible={current==='news'} onOpenChart={openTradingChart}/>)}
     {keep('paper-live',<LiveTrading settings={settings} controls={<LiveExecution view="terminal" settings={settings} onSettingsChange={setSettings} onConfigure={()=>onViewChange('strategy')} onManageAccount={()=>onViewChange('account')}/>}/>)}
-    {keep('paper-paper',<PaperTrading settings={settings} onChange={setSettings} onConfigure={()=>onViewChange('strategy')} visible={current==='paper-paper'} profiles={[]} onApplySetup={()=>{}}/>)}
+    {keep('paper-paper',<PaperTrading settings={settings} onChange={setSettings} onConfigure={()=>onViewChange('strategy')} visible={current==='paper-paper'} profiles={[]} onApplySetup={()=>{}} focus={chartFocus}/>)}
     {keep('strategy',<div id="page-strategy" role="tabpanel" aria-labelledby="tab-strategy" className="setup-page">
       {settings.strategy==='adx_supertrend'
         ?<AdxSupertrendSettings settings={settings} onChange={setSettings} onRun={()=>void runBacktest()} busy={busy} range={range}/>

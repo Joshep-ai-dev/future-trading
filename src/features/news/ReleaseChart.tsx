@@ -34,7 +34,7 @@ const pct = (value: number | null | undefined) => (value == null ? "—" : `${va
 const tone = (value: number | null | undefined) => (value == null || value === 0 ? "" : value > 0 ? "positive" : "negative");
 
 /** XAG/USDT candles around a US release: the release candle is marked and the last pre-release close is a dashed line. */
-export default function ReleaseChart({ release, onClose }: { release: ChartRelease; onClose: () => void }) {
+export default function ReleaseChart({ release, onClose, onOpenTrading }: { release: ChartRelease; onClose: () => void; onOpenTrading?: () => void }) {
   const zone = useChartTimeZone();
   const dialog = useRef<HTMLDialogElement>(null);
   const host = useRef<HTMLDivElement>(null);
@@ -107,6 +107,14 @@ export default function ReleaseChart({ release, onClose }: { release: ChartRelea
           </h3>
           <small>{formatTradingTime(release.released, zone)}</small>
         </div>
+        {onOpenTrading && (
+          <button type='button' className='release-open-trading' onClick={onOpenTrading} title='Open the Trading page chart at this release'>
+            <svg viewBox='0 0 18 18' aria-hidden='true'>
+              <path d='M3 14l4-5 3 3 5-7M11 5h4v4' />
+            </svg>
+            Open in trading chart
+          </button>
+        )}
         <button type='button' className='tv-dialog-close' aria-label='Close' onClick={onClose}>
           <svg viewBox='0 0 18 18' aria-hidden='true'>
             <path d='M4.5 4.5l9 9M13.5 4.5l-9 9' />

@@ -908,3 +908,40 @@
 .release-chart-canvas {
   height: min(520px, 60vh);
 }
+
+.release-chart .tv-dialog-header {
+  gap: 12px;
+}
+
+.release-chart .tv-dialog-header > div {
+  flex: 1;
+}
+
+.release-open-trading {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid #2962ff80;
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: var(--tv-blue-light);
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.release-open-trading svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.release-open-trading:hover {
+  background: #2962ff33;
+}

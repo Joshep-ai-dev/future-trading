@@ -11,7 +11,7 @@ import {FILL_COLORS} from '../../shared/charts/fillMarkers';
 import {useEffect,useMemo,useRef,useState} from 'react';
 import {api} from '../../shared/api/api';
 import {EquityChart} from '../../shared/charts/BacktestChart';
-import PaperPriceChart from '../../shared/charts/PaperPriceChart';
+import PaperPriceChart,{type ChartFocus} from '../../shared/charts/PaperPriceChart';
 import {fmt,type Analysis,type BacktestSettings} from '../../shared/types/types';
 import {candleAt,useReplayAnimation,type Candle} from './replayAnimation';
 import {accountAt} from './replayAccount';
@@ -62,7 +62,7 @@ function adxSupertrendRules(settings:BacktestSettings):[string,string][]{
   ];
 }
 
-export default function PaperTrading({settings,onChange,onConfigure,visible,profiles,onApplySetup}:{settings:BacktestSettings;onChange:(s:BacktestSettings)=>void;onConfigure:()=>void;visible:boolean;profiles:SavedSetup[];onApplySetup:(setup:SavedSetup)=>void}) {
+export default function PaperTrading({settings,onChange,onConfigure,visible,profiles,onApplySetup,focus=null}:{settings:BacktestSettings;onChange:(s:BacktestSettings)=>void;onConfigure:()=>void;visible:boolean;profiles:SavedSetup[];onApplySetup:(setup:SavedSetup)=>void;focus?:ChartFocus|null}) {
   const tradingTimeZone=useTradingTimeZone();
   const marketDataRevision=useMarketDataRevision();
   const [chartTimeframe,setChartTimeframe]=useState<BacktestSettings['entry_timeframe']>(settings.entry_timeframe);
@@ -152,7 +152,7 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
     </div>
     <div className="terminal-grid"><div className="terminal-main">
       <section className="terminal-panel price-panel"><TradingChartHeader timeframe={s?chartTimeframe:settings.entry_timeframe} onTimeframeChange={value=>changeChartTimeframe(value as BacktestSettings['entry_timeframe'])} mode={s?s.mode==='replay'?'HISTORICAL REPLAY':'PAPER SESSION':'MARKET PREVIEW'} caption={s?`Bot executes on ${s.settings.entry_timeframe} candles`:'Choose a timeframe to view the market chart'}/><BotChartBadge state={s?.strategyState} running={!!s?.running}/>
-        {hasChart?<PaperPriceChart atrLength={(s?.settings??settings).bb_reversal.atr_length} adxLength={(s?.settings??settings).bb_reversal.adx_length} indicatorClock={s?(s.mode==='replay'?displayClock:s.quoteTime??s.virtualTime??0):Date.now()/1000} timeframe={s?chartTimeframe:settings.entry_timeframe} sessionId={s?.startedAt??0} candles={visibleCandles} indicators={visibleIndicators} stops={alternate?[]:chartStops} trades={visibleTrades} position={visiblePosition??null} showSma={settings.strategy!=='none'&&(s?.settings??settings).bb_reversal.use_sma_trend_adjustment!==false}/>:<div className="chart-empty"><span className="empty-chart-icon">⌁</span><h3>{chartView.error||previewError?'Chart unavailable':'Preparing your chart'}</h3><p>{previewError||'Loading downloaded market candles…'}</p></div>}
+        {hasChart?<PaperPriceChart focus={focus} atrLength={(s?.settings??settings).bb_reversal.atr_length} adxLength={(s?.settings??settings).bb_reversal.adx_length} indicatorClock={s?(s.mode==='replay'?displayClock:s.quoteTime??s.virtualTime??0):Date.now()/1000} timeframe={s?chartTimeframe:settings.entry_timeframe} sessionId={s?.startedAt??0} candles={visibleCandles} indicators={visibleIndicators} stops={alternate?[]:chartStops} trades={visibleTrades} position={visiblePosition??null} showSma={settings.strategy!=='none'&&(s?.settings??settings).bb_reversal.use_sma_trend_adjustment!==false}/>:<div className="chart-empty"><span className="empty-chart-icon">⌁</span><h3>{chartView.error||previewError?'Chart unavailable':'Preparing your chart'}</h3><p>{previewError||'Loading downloaded market candles…'}</p></div>}
         {alternate&&chartView.error&&hasChart&&<p className="chart-history-status error" role="alert">{chartView.error}</p>}
         <div className="chart-legend"><span><b style={{color:FILL_COLORS.buy}}>↑</b> Buy / close short</span><span><b style={{color:FILL_COLORS.sell}}>↓</b> Sell / close long</span><span><i className="legend-line" style={{borderColor:STOP_COLORS.initial}}/> Stop loss</span><span><i className="legend-line" style={{borderColor:STOP_COLORS.trailing}}/> Trailing stop / TRAIL activation</span></div>
         {!s&&(liveMarket.error||liveMarket.stale)&&<p className="chart-history-status" role="status">{liveMarket.error||'Waiting for fresh public market candles. Existing history remains visible.'}</p>}

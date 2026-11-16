@@ -106,7 +106,10 @@ type Props = Data & {
   loadHistory?: (before: number) => Promise<HistoryPage>;
   historyLabel?: string;
   symbol?: string;
+  /** Scroll to this moment (e.g. an economic release); ``key`` changes on every request. */
+  focus?: ChartFocus | null;
 };
+export type ChartFocus = { time: number; label: string; key: number };
 
 export default function PaperPriceChart(props: Props) {
   const container = useRef<HTMLDivElement>(null),
@@ -167,6 +170,7 @@ export default function PaperPriceChart(props: Props) {
   const updateVisibility = useRef<() => void>(() => {});
   const updateStrategyVisibility = useRef<() => void>(() => {});
   const loadEarlier = useRef<() => void>(() => {});
+  const focusOn = useRef<(focus: ChartFocus) => Promise<void>>(async () => {});
   const [loading, setLoading] = useState(false),
     [hasMore, setHasMore] = useState(true),
     [historyError, setHistoryError] = useState("");
@@ -247,6 +251,7 @@ export default function PaperPriceChart(props: Props) {
     const bollingerOverlay = new BollingerOverlay();
     price.attachPrimitive(bollingerOverlay);
     const markers = createSeriesMarkers(price, []);
+    const focusMarker = createSeriesMarkers(price, []);
     const fillLabels = new FillLabels();
     price.attachPrimitive(fillLabels);
     const overlays = props.showSma
@@ -621,6 +626,44 @@ export default function PaperPriceChart(props: Props) {
     loadEarlier.current = () => {
       void earlier();
     };
+    focusOn.current = async (focus) => {
+      // Load contiguous history back to a little before the focus time (large pages), then centre it.
+      const duration = TIMEFRAMES[props.timeframe as keyof typeof TIMEFRAMES];
+      following.current = false;
+      setFollow(false);
+      setLoading(true);
+      setHistoryError("");
+      try {
+        while (!disposed && cached.length && cached[0].time > focus.time - 120 * duration && more && !props.loadHistory) {
+          const before = cached[0].time;
+          const page = await api<HistoryPage>("/api/candles", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            signal: abort.signal,
+            body: JSON.stringify({ timeframe: props.timeframe, before, limit: 5000 }),
+          });
+          const older = page.candles.filter((c) => c.time < before);
+          cached = mergeHistory(older, cached);
+          more = page.hasMore && older.length > 0;
+        }
+        if (disposed || !latestData) return;
+        setHasMore(more);
+        update.current(latestData);
+        const bucket = Math.floor(focus.time / duration) * duration;
+        const index = cached.findIndex((c) => c.time >= bucket);
+        if (index < 0 || cached[0].time > focus.time) {
+          setHistoryError("No candles are available for that date.");
+          return;
+        }
+        focusMarker.setMarkers([{ time: cached[index].time as UTCTimestamp, position: "aboveBar", shape: "arrowDown", color: TV.orange, text: focus.label }]);
+        const span = Math.max(80, Math.round(5 * 3600 / duration));
+        chart.timeScale().setVisibleLogicalRange({ from: index - span * 0.25, to: index + span * 0.75 });
+      } catch (error) {
+        if (!disposed) setHistoryError(`Could not load candles for that date: ${String(error)}`);
+      } finally {
+        if (!disposed) setLoading(false);
+      }
+    };
     chart.timeScale().subscribeVisibleLogicalRangeChange(scheduleHistory);
     let fillReadouts = new Map<number, string[]>();
     update.current = (data) => {
@@ -954,6 +997,7 @@ export default function PaperPriceChart(props: Props) {
       stopResize();
       changePanels.current = () => {};
       loadEarlier.current = () => {};
+      focusOn.current = async () => {};
       update.current = () => {};
       chartRef.current = null;
       chart.remove();
@@ -974,6 +1018,9 @@ export default function PaperPriceChart(props: Props) {
   useEffect(() => {
     update.current(props);
   }, [props]);
+  useEffect(() => {
+    if (props.focus) void focusOn.current(props.focus);
+  }, [props.focus?.key]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     updateVisibility.current();
   }, [hiddenIndicators, hiddenOverlays]);
