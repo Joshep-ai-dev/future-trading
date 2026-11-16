@@ -289,5 +289,45 @@ class HistoryBackfillTests(unittest.TestCase):
         self.assertEqual(starts, [635*86400])
 
 
+
+class ReleaseWatcherTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.store = NewsStore(Path(directory.name)/'news.sqlite')
+        self.now = 1_794_922_200  # 2026-11-17 13:30 UTC
+        self.store.upsert_events(parse_events([
+            fx_row('Retail Sales ex Autos (MoM)', '2026-11-17T13:30:00Z', None, .4),
+            fx_row('FOMC Minutes', '2026-11-17T13:30:00Z', None, None)], now=1))
+        self.fetches = []
+
+    def service(self, actual):
+        def calendar(start, end):
+            self.fetches.append((start, end))
+            return parse_events([fx_row('Retail Sales ex Autos (MoM)', '2026-11-17T13:30:00Z', actual, .4)], now=1)
+        service = NewsService(store=self.store, gdelt=None, feeds=(), calendar=calendar)
+        service.collect_articles = lambda: 0
+        return service
+
+    def test_due_release_is_polled_until_its_actual_arrives(self):
+        waiting = self.service(actual=None)
+        self.assertEqual(waiting.watch_once(now=self.now+20), dict(due=1, refreshed=True))
+        self.assertEqual(waiting.status()['watching'], ['Retail Sales ex Autos (MoM)'])  # minutes have no number to wait for
+        arrived = self.service(actual=.7)
+        arrived.watch_once(now=self.now+35)
+        self.assertEqual({row['name']: row['actual'] for row in self.store.events()}['Retail Sales ex Autos (MoM)'], .7)
+        self.assertEqual(arrived.watch_once(now=self.now+50), dict(due=0, refreshed=False))
+        self.assertEqual(len(self.fetches), 2)
+        self.assertEqual(waiting.watch_once(now=self.now+16*60)['due'], 0)  # gives up after the watch window
+
+    def test_one_headline_pass_after_a_release(self):
+        service = self.service(actual=.7)
+        passes = []
+        service.collect_articles = lambda: passes.append(1) or 0
+        for offset in (60, 4*60, 4*60+15, 4*60+30, 6*60):
+            service.watch_once(now=self.now+offset)
+        self.assertEqual(len(passes), 1)
+
+
 if __name__ == '__main__':
     unittest.main()

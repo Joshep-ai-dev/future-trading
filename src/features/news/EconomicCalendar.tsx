@@ -86,6 +86,10 @@ export default function EconomicCalendar({ visible, onOpenChart }: { visible: bo
   const [view, setView] = useState<"past" | "upcoming">("past"),
     [group, setGroup] = useState(""),
     [coreOnly, setCoreOnly] = useState(true);
+  // Poll every 10 s from 10 minutes before a release to 30 minutes after it, otherwise every minute.
+  const hot = [...(data?.past ?? []), ...(data?.upcoming ?? [])].some(
+    (row) => row.released >= Date.now() / 1000 - 30 * 60 && row.released <= Date.now() / 1000 + 10 * 60,
+  );
   useEffect(() => {
     if (!visible) return;
     const load = () =>
@@ -96,9 +100,9 @@ export default function EconomicCalendar({ visible, onOpenChart }: { visible: bo
         })
         .catch((reason) => setError(String(reason)));
     void load();
-    const timer = setInterval(load, 60000);
+    const timer = setInterval(load, hot ? 10000 : 60000);
     return () => clearInterval(timer);
-  }, [visible, group, days]);
+  }, [visible, group, days, hot]);
 
   /** Released rows with market candles open the chart around the release. */
   function openChart(row: Release) {

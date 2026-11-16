@@ -7,6 +7,8 @@ import { chartTimeOptions, useChartTimeZone } from "../../shared/charts/chartTim
 import { formatTradingTime } from "../../shared/charts/tradingTime";
 import PatternPanel from "../trading/PatternPanel";
 import EconomicCalendar, { shortName } from "./EconomicCalendar";
+import JustReleased, { COMING_SECONDS, JUST_RELEASED_SECONDS, type LiveRelease } from "./JustReleased";
+import ReleaseChart, { type ChartRelease } from "./ReleaseChart";
 
 type Article = {
   id: string;
@@ -56,7 +58,7 @@ const NEWS_TABS: readonly [NewsTab, string][] = [
   ["calendar", "Economic calendar"],
   ["similar", "Similar history"],
 ];
-type Release = { id: string; name: string; released: number; forecast: number | null; potency: string; core: boolean };
+type Release = LiveRelease & { reaction: ChartRelease["reaction"] };
 const releaseValue = (row: Release, value: number) => `${fmt(value, 2)}${row.potency === "K" ? "K" : "%"}`;
 function until(seconds: number) {
   const diff = seconds - Date.now() / 1000;
@@ -149,7 +151,17 @@ export default function NewsPage({ visible, onOpenChart }: { visible: boolean; o
     }
   });
   const [opened, setOpened] = useState<NewsTab[]>([tab]);
-  const [upcoming, setUpcoming] = useState<Release[]>([]);
+  const [upcoming, setUpcoming] = useState<Release[]>([]),
+    [recent, setRecent] = useState<Release[]>([]),
+    [chart, setChart] = useState<ChartRelease | null>(null);
+  // Around a release (10 min before to 30 min after) everything on the page refreshes every 10 s.
+  const [clockNow, setClockNow] = useState(() => Date.now() / 1000);
+  useEffect(() => {
+    const timer = setInterval(() => setClockNow(Date.now() / 1000), 15000);
+    return () => clearInterval(timer);
+  }, []);
+  const hot = [...recent, ...upcoming].some((row) => row.released >= clockNow - 30 * 60 && row.released <= clockNow + COMING_SECONDS);
+  const every = hot ? 10000 : 60000;
   function changeTab(next: NewsTab) {
     setTab(next);
     setOpened((old) => (old.includes(next) ? old : [...old, next]));
@@ -162,13 +174,18 @@ export default function NewsPage({ visible, onOpenChart }: { visible: boolean; o
   useEffect(() => {
     if (!visible) return;
     const load = () =>
-      api<{ upcoming: Release[] }>("/api/news/calendar?days_back=1&days_ahead=21")
-        .then((value) => setUpcoming(value.upcoming.filter((row) => row.core)))
+      api<{ upcoming: Release[]; past: Release[] }>("/api/news/calendar?days_back=1&days_ahead=21")
+        .then((value) => {
+          setUpcoming(value.upcoming.filter((row) => row.core));
+          // Every figure of releases from the last hour or due soon feeds the "Just released" card.
+          const now = Date.now() / 1000;
+          setRecent([...value.past, ...value.upcoming].filter((row) => row.released >= now - JUST_RELEASED_SECONDS && row.released <= now + COMING_SECONDS));
+        })
         .catch(() => setUpcoming([]));
     void load();
-    const timer = setInterval(load, 300000);
+    const timer = setInterval(load, hot ? 10000 : 120000);
     return () => clearInterval(timer);
-  }, [visible]);
+  }, [visible, hot]);
 
   const loadFeed = useCallback(async () => {
     const params = new URLSearchParams({ q: search, topic, sentiment, limit: String(limit) });
@@ -188,15 +205,15 @@ export default function NewsPage({ visible, onOpenChart }: { visible: boolean; o
   useEffect(() => {
     if (!visible) return;
     void loadFeed();
-    const timer = setInterval(() => void loadFeed(), 60000);
+    const timer = setInterval(() => void loadFeed(), every);
     return () => clearInterval(timer);
-  }, [visible, loadFeed]);
+  }, [visible, loadFeed, every]);
   useEffect(() => {
     if (!visible) return;
     void loadSide().catch((reason) => setError(String(reason)));
-    const timer = setInterval(() => void loadSide().catch(() => {}), 60000);
+    const timer = setInterval(() => void loadSide().catch(() => {}), every);
     return () => clearInterval(timer);
-  }, [visible, loadSide]);
+  }, [visible, loadSide, every]);
   useEffect(() => {
     if (!visible) return;
     void api<{ buckets: Bucket[] }>(`/api/news/timeline?hours=${range.hours}&resolution=${range.resolution}`)
@@ -298,6 +315,28 @@ export default function NewsPage({ visible, onOpenChart }: { visible: boolean; o
           </div>
         </dl>
       </section>
+
+      <JustReleased
+        rows={recent}
+        onOpen={(row) =>
+          setChart({
+            name: row.name,
+            label: shortName(row.name),
+            released: row.released,
+            actual: row.actual == null ? "—" : `${fmt(row.actual, 2)}${row.potency === "K" ? "K" : "%"}`,
+            forecast: row.forecast == null ? "—" : `${fmt(row.forecast, 2)}${row.potency === "K" ? "K" : "%"}`,
+            surprise: row.surprise == null ? "—" : `${row.surprise > 0 ? "+" : ""}${fmt(row.surprise, 2)}${row.potency === "K" ? "K" : "%"}`,
+            reaction: (recent.find((item) => item.id === row.id) as Release | undefined)?.reaction ?? null,
+          })
+        }
+      />
+      {chart && (
+        <ReleaseChart
+          release={chart}
+          onClose={() => setChart(null)}
+          onOpenTrading={onOpenChart ? () => onOpenChart(chart.released, chart.label) : undefined}
+        />
+      )}
 
       {error && (
         <p className='error' role='alert'>

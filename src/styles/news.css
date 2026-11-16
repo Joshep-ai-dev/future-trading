@@ -925,3 +925,141 @@
 .release-open-trading:hover {
   background: #2962ff33;
 }
+
+/* "Just released" / "Coming up" card under the mood strip */
+.just-released {
+  display: grid;
+  gap: 8px;
+}
+
+.just-released article {
+  border: 1px solid #ff980066;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #ff980014, transparent 60%), var(--panel);
+}
+
+.just-released article.is-coming {
+  border-color: #2962ff66;
+  background: linear-gradient(90deg, #2962ff14, transparent 60%), var(--panel);
+}
+
+.just-released header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.just-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #ff9800;
+  color: #000;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .3px;
+  text-transform: uppercase;
+}
+
+.is-coming .just-badge {
+  background: var(--tv-blue);
+  color: #fff;
+}
+
+.just-released header > b {
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.just-released header small {
+  color: var(--faint);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.just-silver {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.just-silver b {
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.just-released ul {
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+}
+
+.just-released li button {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.4fr) minmax(90px, .8fr) minmax(90px, .8fr) minmax(110px, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 6px 16px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12.5px;
+  text-align: left;
+}
+
+.just-released li button:not(:disabled):hover {
+  background: #ffffff08;
+  cursor: pointer;
+}
+
+.just-released li.is-core button {
+  color: var(--text);
+}
+
+.just-released li.is-core .just-name,
+.just-released li.is-core .just-actual {
+  font-weight: 650;
+}
+
+.just-actual {
+  color: var(--text);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.just-forecast,
+.just-surprise {
+  font-variant-numeric: tabular-nums;
+}
+
+.just-waiting {
+  color: #ffb74d;
+  font-size: 12px;
+  font-style: normal;
+  animation: just-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes just-pulse {
+  50% { opacity: .35; }
+}
+
+@media (max-width: 800px) {
+  .just-released li button {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .just-forecast,
+  .just-surprise {
+    display: none;
+  }
+}
+
+.just-released ul {
+  max-width: 1000px;
+}

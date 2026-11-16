@@ -147,6 +147,7 @@ def news_status():
 
 @router.post('/refresh')
 def refresh_news():
-    """Collect headlines now (RSS feeds and GDELT article list)."""
+    """Collect headlines now (RSS feeds and GDELT article list) and refresh the economic calendar."""
     added = news_service.collect_articles()
+    news_service.collect_calendar()
     return dict(added=added, status=news_service.status())

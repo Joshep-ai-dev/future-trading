@@ -13,7 +13,7 @@ import threading
 import time
 from pathlib import Path
 
-from server.news.calendar import CALENDAR_START, fetch_calendar
+from server.news.calendar import CALENDAR_START, EVENTS, fetch_calendar
 from server.news.sources import RSS_FEEDS, GdeltClient, GdeltRateLimited, fetch_rss
 from server.news.store import NewsStore
 
@@ -24,6 +24,9 @@ BACKFILL_CHUNKS = 8
 HISTORY_DAYS = 365  # news history kept even before the first market candle
 HEADLINE_DAYS_PER_CYCLE = 12
 HEADLINES_PER_DAY = 75
+WATCH_SECONDS = 15        # how often the release watcher looks at the calendar
+WATCH_WINDOW = 15*60      # keep polling a release this long for its actual value
+HEADLINES_AFTER_RELEASE = 4*60  # one extra headline pass this long after a release
 BUCKET_SECONDS = 900
 MARKET_CSV = Path(__file__).resolve().parents[2] / 'data' / 'OKX_XAG-USDT-SWAP_1m.csv'
 
@@ -49,9 +52,11 @@ class NewsService:
         self.calendar = calendar
         self.stop_event = threading.Event()
         self.thread: threading.Thread | None = None
+        self.watcher: threading.Thread | None = None
+        self.headline_pass_done: set[int] = set()
         self.lock = threading.Lock()
         # errors: real failures. waiting: normal pauses (GDELT rate limit backoff).
-        self.state = dict(lastRun=None, lastNew=0, errors={}, waiting={}, backfilling=False)
+        self.state = dict(lastRun=None, lastNew=0, errors={}, waiting={}, watching=[], backfilling=False)
         self.retry_at = 0.  # monotonic time before which GDELT timeline calls wait (after a rate limit)
         self.backoff = 0.
 
@@ -178,6 +183,43 @@ class NewsService:
                 self.state['errors'].pop('headlines', None)
         return cursor > oldest
 
+    def due_releases(self, now: int | None = None) -> list[dict]:
+        """Numeric releases scheduled within the watch window that have no actual value yet."""
+        now = int(now or time.time())
+        rows = self.store.events(since=now-WATCH_WINDOW, until=now+1)
+        return [row for row in rows if row['actual'] is None and EVENTS.get(row['name'], ('', 0, False))[1] != 0]
+
+    def watch_once(self, now: int | None = None) -> dict:
+        """One watcher step: re-read the calendar while a release is due, then one headline pass after it."""
+        now = int(now or time.time())
+        due = self.due_releases(now)
+        refreshed = False
+        if due:
+            try:
+                self.store.upsert_events(self.calendar(now-86400, now+86400))
+                refreshed = True
+                with self.lock:
+                    self.state['errors'].pop('calendar', None)
+            except Exception as error:
+                with self.lock:
+                    self.state['errors']['calendar'] = str(error)[:200]
+        # A few minutes after a release, fetch headlines once so the first reactions appear quickly.
+        recent = {row['released'] for row in self.store.events(since=now-HEADLINES_AFTER_RELEASE-120, until=now-HEADLINES_AFTER_RELEASE+1)
+                  if EVENTS.get(row['name'], ('', 0, False))[2]}
+        for released in sorted(recent-self.headline_pass_done):
+            self.headline_pass_done.add(released)
+            self.collect_articles()
+        with self.lock:
+            self.state['watching'] = sorted({row['name'] for row in self.due_releases(now)})
+        return dict(due=len(due), refreshed=refreshed)
+
+    def _watch(self):
+        while not self.stop_event.wait(WATCH_SECONDS):
+            try:
+                self.watch_once()
+            except Exception:
+                logger.exception('Release watcher failed')
+
     def _run(self):
         while not self.stop_event.is_set():
             try:
@@ -196,13 +238,16 @@ class NewsService:
         self.stop_event.clear()
         self.thread = threading.Thread(target=self._run, name='news-collector', daemon=True)
         self.thread.start()
+        self.watcher = threading.Thread(target=self._watch, name='news-release-watcher', daemon=True)
+        self.watcher.start()
 
     def shutdown(self):
         self.stop_event.set()
 
     def status(self) -> dict:
         with self.lock:
-            state = {**self.state, 'errors': dict(self.state['errors']), 'waiting': dict(self.state['waiting'])}
+            state = {**self.state, 'errors': dict(self.state['errors']), 'waiting': dict(self.state['waiting']),
+                     'watching': list(self.state['watching'])}
         back = self.store.get_meta('headlines_back_until')
         state['headlinesFrom'] = int(back) if back else None
         return dict(running=bool(self.thread and self.thread.is_alive()), enabled=os.environ.get('SILVER_NEWS', '1') != '0',
