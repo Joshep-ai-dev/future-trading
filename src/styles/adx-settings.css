@@ -1,11 +1,16 @@
 /* ADX + Supertrend bot settings (features/strategy/AdxSupertrendSettings.tsx). */
 
 .adx-st-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  max-width: 1180px;
   margin: 0 0 32px;
+}
+
+.adx-st-aside .setup-summary h2,
+.adx-st-aside .setup-note {
+  margin: 0;
+}
+
+.adx-st-aside .chip-group button {
+  flex: 1 0 auto;
 }
 
 .adx-st-count {
@@ -83,59 +88,8 @@
   margin: 0;
 }
 
-.adx-st-run {
-  position: sticky;
-  bottom: 0;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 14px 22px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--panel);
-  box-shadow: 0 -8px 24px rgba(0, 0, 0, .45);
-}
-
-.adx-st-run p {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  margin: 0;
-  min-width: 0;
-}
-
-.adx-st-run strong {
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.adx-st-run span {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.adx-st-run .setup-run {
-  flex: none;
-  width: auto;
-  min-width: 170px;
-}
-
 @media (max-width: 900px) {
   .adx-st-filters {
     grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-@media (max-width: 600px) {
-  .adx-st-run {
-    flex-direction: column;
-    align-items: stretch;
-    padding: 14px 16px;
-  }
-
-  .adx-st-run .setup-run {
-    width: 100%;
   }
 }

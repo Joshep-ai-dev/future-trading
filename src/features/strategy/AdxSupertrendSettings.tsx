@@ -7,6 +7,16 @@ import TradingCostsCard from "./TradingCostsCard";
 type Config = BacktestSettings["adx_supertrend"];
 type ForecastModel = { id: string; name: string; trainedThrough: string; config: { model: string; timeframe: string; horizon: number } };
 
+const PRESETS: [string, number | null][] = [["1M", 1], ["3M", 3], ["6M", 6], ["1Y", 12], ["All", null]];
+/** Start date for a preset ending at the last available day, clamped to the first available day. */
+function presetStart(range: { startDate: string; endDate: string }, months: number | null) {
+  if (months === null) return range.startDate;
+  const date = new Date(range.endDate + "T00:00:00Z");
+  date.setUTCMonth(date.getUTCMonth() - months);
+  const start = date.toISOString().slice(0, 10);
+  return start < range.startDate ? range.startDate : start;
+}
+
 /** One minor filter: title, on/off switch, description, and its inputs when on. */
 function FilterCard({ title, description, checked, onChange, children }: { title: string; description: string; checked: boolean; onChange: (value: boolean) => void; children: ReactNode }) {
   return (
@@ -61,49 +71,21 @@ export default function AdxSupertrendSettings({
       />
     </Field>
   );
+  const days = Math.round((Date.parse(settings.end_date) - Date.parse(settings.start_date)) / 86400000);
   const activeFilters = [config.htf_filter, config.atr_filter, config.rsi_filter, config.forecast_filter].filter(Boolean).length;
   function submit(event: FormEvent) {
     event.preventDefault();
     onRun();
   }
   return (
-    <form className='setup-form adx-st-settings' onSubmit={submit}>
+    <form className='setup-layout adx-st-settings' onSubmit={submit}>
+      <div className='setup-main'>
       <SettingsCard
         step={1}
-        title='ADX + Supertrend'
-        description='Enters in the Supertrend direction when ADX is at or above the threshold and rising, on an ADX cross or a Supertrend flip. The stop follows the Supertrend line and an opposite flip closes the trade. Filters below are minor checks that can only skip trades.'
+        title='Account and sizing'
+        description='Enters in the Supertrend direction when ADX is at or above the threshold and rising, on an ADX cross or a Supertrend flip. The stop follows the Supertrend line and an opposite flip closes the trade.'
       >
         <div className='setup-grid'>
-          <Field label='Timeframe'>
-            <select
-              value={settings.entry_timeframe}
-              onChange={(e) => onChange({ ...settings, entry_timeframe: e.target.value as BacktestSettings["entry_timeframe"] })}
-            >
-              {TIMEFRAME_CHOICES.map((tf) => (
-                <option key={tf}>{tf}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label='Backtest start (UTC)'>
-            <input
-              type='date'
-              required
-              min={range.startDate}
-              max={settings.end_date}
-              value={settings.start_date}
-              onChange={(e) => onChange({ ...settings, start_date: e.target.value })}
-            />
-          </Field>
-          <Field label='Backtest end (UTC)'>
-            <input
-              type='date'
-              required
-              min={settings.start_date}
-              max={range.endDate}
-              value={settings.end_date}
-              onChange={(e) => onChange({ ...settings, end_date: e.target.value })}
-            />
-          </Field>
           <Field label='Trade direction'>
             <select value={config.trade_mode} onChange={(e) => set({ trade_mode: e.target.value as Config["trade_mode"] })}>
               <option>Both</option>
@@ -254,17 +236,88 @@ export default function AdxSupertrendSettings({
 
       <TradingCostsCard settings={settings} onChange={onChange} step={5} />
 
-      <div className='adx-st-run'>
-        <p>
-          <strong>
-            {settings.entry_timeframe} · {settings.start_date} → {settings.end_date}
-          </strong>
-          <span>Backtests and paper trading only. Live trading stays off until the strategy is validated.</span>
-        </p>
-        <button type='submit' className='setup-run' disabled={busy || (config.forecast_filter && (!config.forecast_model_id || !!lookAhead))}>
-          {busy ? "Running backtest…" : "Run backtest"}
-        </button>
       </div>
+
+      <aside className='setup-aside adx-st-aside'>
+        <section className='setup-summary'>
+          <h2>Backtest period</h2>
+          <div className='chip-group' role='radiogroup' aria-label='Period preset'>
+            {PRESETS.map(([label, months]) => {
+              const start = presetStart(range, months);
+              return (
+                <button
+                  key={label}
+                  type='button'
+                  role='radio'
+                  aria-checked={settings.start_date === start && settings.end_date === range.endDate}
+                  onClick={() => onChange({ ...settings, start_date: start, end_date: range.endDate })}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+          <div className='setup-dates'>
+            <Field label='Start (UTC)'>
+              <input
+                type='date'
+                required
+                min={range.startDate}
+                max={settings.end_date}
+                value={settings.start_date}
+                onChange={(e) => onChange({ ...settings, start_date: e.target.value })}
+              />
+            </Field>
+            <Field label='End (UTC)'>
+              <input
+                type='date'
+                required
+                min={settings.start_date}
+                max={range.endDate}
+                value={settings.end_date}
+                onChange={(e) => onChange({ ...settings, end_date: e.target.value })}
+              />
+            </Field>
+          </div>
+          <small className='setup-note'>
+            {days > 0 ? `${days} days` : 'Choose an end date after the start date'} · data available {range.startDate} → {range.endDate}
+          </small>
+          <div className='setup-field'>
+            <span className='setup-label'>Timeframe</span>
+            <div className='chip-group' role='radiogroup' aria-label='Execution timeframe'>
+              {TIMEFRAME_CHOICES.map((tf) => (
+                <button
+                  key={tf}
+                  type='button'
+                  role='radio'
+                  aria-checked={settings.entry_timeframe === tf}
+                  onClick={() => onChange({ ...settings, entry_timeframe: tf })}
+                >
+                  {tf}
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className='setup-summary'>
+          <h2>Summary</h2>
+          <dl>
+            <div><dt>Strategy</dt><dd>ADX + Supertrend</dd></div>
+            <div><dt>Entry</dt><dd>ADX ≥ {config.adx_threshold}, rising</dd></div>
+            <div><dt>Supertrend</dt><dd>{config.st_length} / {config.st_multiplier}</dd></div>
+            <div><dt>Direction</dt><dd>{config.trade_mode}</dd></div>
+            <div><dt>Balance</dt><dd>{settings.capital.toLocaleString()} USDT</dd></div>
+            <div><dt>Leverage</dt><dd>{settings.max_leverage}×</dd></div>
+            <div><dt>Per trade</dt><dd>{config.amount_unit === "percent" ? `${config.amount_per_trade}% of balance` : `${config.amount_per_trade} USDT`}</dd></div>
+            <div><dt>Filters</dt><dd>{activeFilters} of 4 on</dd></div>
+          </dl>
+          <button type='submit' className='setup-run' disabled={busy || days <= 0 || (config.forecast_filter && (!config.forecast_model_id || !!lookAhead))}>
+            {busy ? "Running backtest…" : "Run backtest"}
+          </button>
+          <small className='setup-note'>Backtests and paper trading only. Live trading stays off until the strategy is validated.</small>
+        </section>
+      </aside>
     </form>
   );
 }
