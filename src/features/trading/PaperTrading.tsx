@@ -31,6 +31,25 @@ type Session={animationMinutes?:Candle[];formingCandle?:Candle|null;displayPrice
 type Response={session:Session|null;error:string|null};
 const date=(t:number|null,timeZone:TradingTimeZone)=>t===null?'Waiting':formatTradingTime(t,timeZone);
 
+const compactNumber=new Intl.NumberFormat('en-US',{notation:'compact',maximumFractionDigits:2});
+const compact=(value:number|null)=>value===null||!Number.isFinite(value)?'—':compactNumber.format(value);
+const signed=(value:number|null,digits:number)=>value===null?'—':`${value>=0?'+':''}${fmt(value,digits)}`;
+
+/** Exchange-style 24h statistics from the loaded candles, plus the direction of the latest move. */
+function tickerStats(candles:Analysis['candles'],duration:number,price:number|null){
+  const last=candles.at(-1);
+  if(!last)return {change:null,percent:null,high:null,low:null,volume:null,tick:'flat' as const};
+  const cutoff=last.time+duration-86400;
+  const day=candles.filter(c=>c.time>=cutoff);
+  const open=day[0].open,close=price??last.close;
+  let high=-Infinity,low=Infinity,volume=0;
+  // Volume is in exchange contracts (the market files store volume_contracts).
+  for(const c of day){high=Math.max(high,c.high);low=Math.min(low,c.low);volume+=c.volume??0;}
+  const previous=candles.at(-2)?.close??open;
+  return {change:close-open,percent:open?(close-open)/open*100:null,high,low,volume:volume||null,
+    tick:close>previous?'up' as const:close<previous?'down' as const:'flat' as const};
+}
+
 function adxSupertrendSummary(settings:BacktestSettings){
   const c={...adxSupertrendDefaults,...settings.adx_supertrend};
   const filters=[c.htf_filter&&c.htf_timeframe+' trend',c.atr_filter&&'ATR',c.rsi_filter&&'RSI',c.forecast_filter&&'forecast'].filter(Boolean).join(', ');
@@ -107,12 +126,23 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
   const visibleTrades=alternate?chartTrades.map(t=>chartPosition(t,duration,chartDuration)):chartTrades;
   const visiblePosition=alternate&&p?chartPosition(p,duration,chartDuration):p;
   const hasChart=visibleCandles.length>0;
+  const ticker=useMemo(()=>tickerStats(visibleCandles,chartDuration,price),[visibleCandles,chartDuration,price]);
   function changeChartTimeframe(value:BacktestSettings['entry_timeframe']){setChartTimeframe(value);if(!s){onChange({...settings,entry_timeframe:value});}}
   return <div id="page-paper" role="tabpanel" aria-labelledby="tab-paper" hidden={!visible}>
-    <div className="market-bar"><div className="instrument"><span className="instrument-icon">Ag</span><div><h1>XAG / USDT <span>PERP</span></h1><small>Local chart data / paper execution</small></div></div>
-      <div className="market-price"><strong>{fmt(price,3)}</strong><small>USDT {s?'current price':liveMarket.checkedAt&&!liveMarket.stale?'live market':'historical / delayed'}</small></div>
-      <Metric label="Account equity" value={`$${fmt(equity)}`}/><Metric label="Total P&L" value={`${pnl>=0?'+':''}${fmt(pnl)}`} unit="USDT" tone={pnl>=0?'positive':'negative'}/>
-      <div className="market-stat clock-stat"><small>{s?.mode==='replay'?'Replay clock':'Last candle'}</small><b>{date(s?(s.mode==='replay'?displayClock:s.virtualTime??s.lastProcessed):liveMarket.minutes.at(-1)?.time??preview.at(-1)?.time??null,tradingTimeZone)}</b></div>
+    <div className="market-bar">
+      <div className="instrument"><span className="instrument-icon">Ag</span><div><h1>XAG / USDT <span>PERP</span></h1><small>OKX data · paper trading</small></div></div>
+      <div className={`market-price is-${ticker.tick}`}><strong>{fmt(price,3)}</strong><small>{s?(s.mode==='replay'?'Replay price':'Last price'):liveMarket.checkedAt&&!liveMarket.stale?'Live market · USDT':'Delayed · USDT'}</small></div>
+      <div className="ticker-stats" aria-label="24 hour market statistics">
+        <Metric label="24h change" value={ticker.change===null?'—':`${signed(ticker.change,3)} ${signed(ticker.percent,2)}%`} tone={(ticker.change??0)<0?'negative':'positive'}/>
+        <Metric label="24h high" value={fmt(ticker.high,3)}/>
+        <Metric label="24h low" value={fmt(ticker.low,3)}/>
+        <Metric label="24h volume" value={compact(ticker.volume)} unit="Cont."/>
+      </div>
+      <div className="ticker-account" aria-label="Paper account">
+        <Metric label="Equity" value={`$${fmt(equity)}`}/>
+        <Metric label="Total P&L" value={`${pnl>=0?'+':''}${fmt(pnl)}`} unit="USDT" tone={pnl>=0?'positive':'negative'}/>
+        <div className="market-stat clock-stat"><small>{s?.mode==='replay'?'Replay clock':'Last candle'}</small><b>{date(s?(s.mode==='replay'?displayClock:s.virtualTime??s.lastProcessed):liveMarket.minutes.at(-1)?.time??preview.at(-1)?.time??null,tradingTimeZone)}</b></div>
+      </div>
     </div>
     <div className="terminal-grid"><div className="terminal-main">
       <section className="terminal-panel price-panel"><TradingChartHeader timeframe={s?chartTimeframe:settings.entry_timeframe} onTimeframeChange={value=>changeChartTimeframe(value as BacktestSettings['entry_timeframe'])} mode={s?s.mode==='replay'?'HISTORICAL REPLAY':'PAPER SESSION':'MARKET PREVIEW'} caption={s?`Bot executes on ${s.settings.entry_timeframe} candles`:'Choose a timeframe to view the market chart'}/><BotChartBadge state={s?.strategyState} running={!!s?.running}/>
@@ -136,7 +166,7 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
           <td className={unrealized<0?'negative':'positive'}>{unrealized>=0?'+':''}{fmt(unrealized,4)} <small>USDT</small></td>
           <td className={unrealized<0?'negative':'positive'}>{margin?fmt(unrealized/margin*100,2):'—'}%</td>
           <td>{fmt(p.stop,3)}</td><td>{fmt(p.quantity,4)}</td><td>{date(p.entry_time+duration,tradingTimeZone)}</td>
-        </tr></TableFrame>:<div className="empty-position"><span className="empty-state-symbol">◇</span><h3>{s?.running?'Watching for your next setup':'No open position'}</h3><p>{s?.running?'The bot is scanning for a qualified Bollinger band rebound.':settings.strategy==='none'?'No automated strategy is configured. Market viewing and past sessions remain available.':'Start a virtual session to see entries, stops and position P&L here.'}</p></div>}</div>
+        </tr></TableFrame>:<div className="empty-position"><span className="empty-state-symbol">◇</span><h3>{s?.running?'Watching for your next setup':'No open position'}</h3><p>{s?.running?(active.strategy==='adx_supertrend'?'The bot opens a trade when ADX confirms a Supertrend trend and every enabled filter passes.':'The bot is scanning each completed candle for its next entry.'):settings.strategy==='none'?'No automated strategy is configured. Market viewing and past sessions remain available.':'Start a virtual session to see entries, stops and position P&L here.'}</p></div>}</div>
         <div id="activity-history" role="tabpanel" aria-labelledby="activity-tab-history" hidden={bottomTab!=='history'}><TradeView key={s?.startedAt??0} scope="Session" capital={s?.settings.capital??settings.capital} timeZone={tradingTimeZone} unrealized={equity-balance} trades={chartTrades.map(t=>({id:t.id,direction:t.direction,pnl:t.pnl,entry:t.entry_price,exit:t.exit_price,quantity:t.quantity,exitTime:t.exit_time+duration}))}>{chartTrades.length?<div className="table-scroll"><table><thead><tr>{['ID','Side','Leverage',`Entry time (${tradingTimeZone})`,'Entry','Exit','Quantity','P&L','Exit reason'].map(label=><th key={label}>{label}</th>)}</tr></thead><tbody>{chartTrades.slice(-100).reverse().map(t=><tr key={t.id}><td>#{t.id}</td><td><span className={`side-badge ${t.direction===1?'long':'short'}`}>{t.direction===1?'LONG':'SHORT'}</span></td><td>{fmt(leverage,1)}x</td><td>{date(t.entry_time+duration,tradingTimeZone)}</td><td>{fmt(t.entry_price,3)}</td><td>{fmt(t.exit_price,3)}</td><td>{fmt(t.quantity,4)}</td><td className={t.pnl>=0?'positive':'negative'}>{t.pnl>=0?'+':''}{fmt(t.pnl)}</td><td>{t.exit_reason==='rsi_price_exit'?'RSI + price exit':t.exit_reason.replaceAll('_',' ')}</td></tr>)}</tbody></table></div>:<div className="empty-position"><h3>Your trade history starts here</h3><p>Closed virtual trades appear automatically as the bot runs.</p></div>}</TradeView></div>
         <div id="activity-equity" role="tabpanel" aria-labelledby="activity-tab-equity" hidden={bottomTab!=='equity'}>{chartTrades.length?<EquityChart key={s?.startedAt??0} period={{name:'Paper trading'}} initialValue={s?.settings.capital??settings.capital} trades={chartTrades.map(t=>({pnl:t.pnl}))}/>:<div className="empty-position"><h3>No closed trades yet</h3><p>The balance curve adds one point after each trade closes.</p></div>}</div>
         <div id="activity-patterns" role="tabpanel" aria-labelledby="activity-tab-patterns" hidden={bottomTab!=='patterns'}>{bottomTab==='patterns'&&<PatternPanel defaultTimeframe={(s?.settings??settings).entry_timeframe}/>}</div>

@@ -650,12 +650,12 @@ button:hover:not(:disabled) {
 }
 
 .side-badge.long {
-  background: #089981;
+  background: #0899811a;
   color: #089981;
 }
 
 .side-badge.short {
-  background: #f23645;
+  background: #f236451a;
   color: #f7525f;
 }
 
@@ -771,9 +771,9 @@ button:hover:not(:disabled) {
 }
 
 .bot-pause {
-  background: #ff9800;
-  border-color: #ff9800;
-  color: #ff9800;
+  background: #ff980014;
+  border-color: #ff980059;
+  color: #ffb74d;
 }
 
 .resume-button {
@@ -1074,10 +1074,10 @@ details p {
 
 .notice {
   padding: 10px 14px;
-  background: #ff9800;
-  border: 1px solid #ff9800;
-  border-radius: 5px;
-  color: #ff9800;
+  background: #ff980014;
+  border: 1px solid #ff980059;
+  border-radius: 6px;
+  color: #ffb74d;
   margin: 12px 0;
 }
 

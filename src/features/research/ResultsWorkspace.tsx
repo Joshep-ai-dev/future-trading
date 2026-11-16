@@ -44,7 +44,11 @@ const reason = (value: string) =>
     period_end: "End of backtest",
     data_gap: "Data gap",
     trailing_stop_at_close: "Trailing stop",
+    supertrend_stop: "Supertrend stop",
+    supertrend_flip: "Supertrend flip",
   })[value] ?? value.replaceAll("_", " ");
+/** "2026-08-17 09:20" in the chosen zone (the zone is shown once in the table header). */
+const shortTime = (t: number, zone: TradingTimeZone) => formatTradingTime(t, zone).slice(0, 16);
 
 export default function ResultsWorkspace({
   profiles,
@@ -84,6 +88,13 @@ export default function ResultsWorkspace({
   const select = (trade: Trade) => setSelectedId(trade.id);
   const pages = Math.max(1, Math.ceil((p?.trades.length ?? 0) / 15));
   const currentPage = Math.min(page, pages - 1);
+  // Running net P&L after each trade, in trade order (TradingView's "Cum. Profit").
+  const cumulative = useMemo(() => {
+    const totals = new Map<number, number>();
+    let sum = 0;
+    for (const trade of p?.trades ?? []) totals.set(trade.id, (sum += trade.netPnl));
+    return totals;
+  }, [p]);
   const [testerTab, setTesterTab] = useState<
     "trades" | "balance" | "exits" | "model" | "saved"
   >("trades");
@@ -208,18 +219,23 @@ export default function ResultsWorkspace({
           </>
         }
       />
-      <BotSelector
-        strategy={strategy}
-        onStrategyChange={onStrategyChange}
-        profiles={profiles}
-        onApplySetup={onRunSetup}
-        disabled={busy}
-        setupLabel='Saved parameters'
-        actionLabel={busy ? "Running…" : "Run this setup"}
-      />
+      {profiles.some((profile) => profile.settings.strategy === strategy) && (
+        <BotSelector
+          strategy={strategy}
+          onStrategyChange={onStrategyChange}
+          profiles={profiles}
+          onApplySetup={onRunSetup}
+          disabled={busy}
+          setupLabel='Saved parameters'
+          actionLabel={busy ? "Running…" : "Run this setup"}
+        />
+      )}
       {stale && (
-        <p className='notice result-stale'>
-          Your current bot settings differ from this run.
+        <p className='notice result-stale' role='status'>
+          <span>
+            <b>Settings changed.</b> Your bot settings differ from this run. Run the backtest again, or load
+            this run&apos;s settings.
+          </span>
           <button type='button' className='secondary' onClick={onApplySettings}>
             Use these settings
           </button>
@@ -568,16 +584,19 @@ export default function ResultsWorkspace({
                 {p.trades.length ? (
                   <>
                     <div className='table-scroll'>
-                      <table>
+                      <table className='trades-table'>
                         <thead>
                           <tr>
                             {[
                               "Trade",
                               "Side",
-                              `Entry candle (${tradingTimeZone})`,
-                              "Entry",
-                              "Exit",
+                              "Entry candle",
+                              "Exit candle",
+                              "Entry price",
+                              "Exit price",
+                              "Size (XAG)",
                               "Net P&L",
+                              "Cum. P&L",
                               "R",
                               "Exit reason",
                             ].map((label) => (
@@ -611,11 +630,11 @@ export default function ResultsWorkspace({
                                     {t.direction === 1 ? "LONG" : "SHORT"}
                                   </span>
                                 </td>
-                                <td>
-                                  {tradeTime(t.entryTime, tradingTimeZone)}
-                                </td>
+                                <td>{shortTime(t.entryTime, tradingTimeZone)}</td>
+                                <td>{shortTime(t.exitTime, tradingTimeZone)}</td>
                                 <td>{fmt(t.entry, 3)}</td>
                                 <td>{fmt(t.exit, 3)}</td>
+                                <td>{fmt(t.quantity, 3)}</td>
                                 <td
                                   className={
                                     t.netPnl >= 0 ? "positive" : "negative"
@@ -624,7 +643,15 @@ export default function ResultsWorkspace({
                                   {t.netPnl >= 0 ? "+" : ""}
                                   {fmt(t.netPnl)}
                                 </td>
-                                <td>{fmt(t.netR)}</td>
+                                <td
+                                  className={
+                                    (cumulative.get(t.id) ?? 0) >= 0 ? "positive" : "negative"
+                                  }
+                                >
+                                  {(cumulative.get(t.id) ?? 0) >= 0 ? "+" : ""}
+                                  {fmt(cumulative.get(t.id) ?? 0)}
+                                </td>
+                                <td className={t.netR >= 0 ? "positive" : "negative"}>{fmt(t.netR)}</td>
                                 <td>{reason(t.exitReason)}</td>
                               </tr>
                             ))}

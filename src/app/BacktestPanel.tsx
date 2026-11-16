@@ -14,6 +14,19 @@ const LiveExecution=lazy(()=>import('../features/trading/LiveExecution'));
 const AdxSupertrendSettings=lazy(()=>import('../features/strategy/AdxSupertrendSettings'));
 const ResultsWorkspace=lazy(()=>import('../features/research/ResultsWorkspace'));
 
+/** JSON with sorted keys, so key order never matters. */
+function canonical(value:unknown):string{
+  if(Array.isArray(value))return '['+value.map(canonical).join(',')+']';
+  if(value&&typeof value==='object')return '{'+Object.keys(value).sort().filter(key=>(value as Record<string,unknown>)[key]!==undefined).map(key=>JSON.stringify(key)+':'+canonical((value as Record<string,unknown>)[key])).join(',')+'}';
+  return JSON.stringify(value)??'null';
+}
+/** The inputs that change an ADX + Supertrend run. Legacy fields the server normalizes are ignored. */
+function runKey(value:BacktestSettings){
+  const strategy={...adxSupertrendDefaults,...value.adx_supertrend,forecast_owner:undefined};
+  return canonical({strategy:value.strategy,timeframe:value.entry_timeframe,start:value.start_date,end:value.end_date,capital:value.capital,
+    leverage:value.max_leverage,tick:value.tick_size,fee:value.fee_bps,slippage:value.slippage,spread:value.spread,funding:value.funding_bps,adx_supertrend:strategy});
+}
+
 function initial(range: {
   startDate: string;
   endDate: string;
@@ -84,8 +97,7 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
     const url=URL.createObjectURL(new Blob([JSON.stringify(result,null,2)],{type:'application/json'}));
     const link=document.createElement('a');link.href=url;link.download='adx-supertrend-backtest.json';link.click();URL.revokeObjectURL(url);
   }
-  const comparable=(value:BacktestSettings)=>JSON.stringify({...value,adx_supertrend:{...value.adx_supertrend,forecast_owner:undefined}});
-  const stale=!!result&&comparable(settings)!==comparable(result.settings);
+  const stale=!!result&&runKey(settings)!==runKey(result.settings);
   async function stopAutomation(){
     setStopping(true);setMessage('');
     try{

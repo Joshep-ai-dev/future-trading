@@ -674,11 +674,13 @@ export default function BacktestChart({
             ),
           );
       }
+      // Legacy strategy RSI pane: only when the run produced RSI values (ADX + Supertrend does not).
       if (
         indicatorSettings.strategy !== "bb_outer_reversal" &&
         indicatorSettings.strategy !== "ml_ensemble" &&
         indicatorSettings.strategy !== "ml_directional" &&
-        (indicatorSettings.strategy !== "mtf" || indicatorSettings.rsi_active)
+        (indicatorSettings.strategy !== "mtf" || indicatorSettings.rsi_active) &&
+        indicators.some((p) => p.rsi20 != null)
       ) {
         const rsi = chart.addSeries(
           LineSeries,

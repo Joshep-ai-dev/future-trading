@@ -416,43 +416,71 @@
 /* Strategy picker in the paper bot panel */
 .bot-picker {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 6px;
   margin-bottom: 14px;
-  padding: 3px;
-  border-radius: 8px;
-  background: var(--field);
 }
 
 .bot-picker button {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 1px;
-  padding: 7px 6px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
+  gap: 10px;
+  min-height: 52px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--field);
   color: var(--muted);
+  text-align: left;
+}
+
+.bot-picker button:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.bot-picker-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--tv-blue-light);
+}
+
+.bot-picker-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.bot-picker-copy {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
 }
 
 .bot-picker button strong {
-  font-size: 12.5px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .bot-picker button small {
   color: var(--faint);
-  font-size: 10.5px;
+  font-size: 11px;
+}
+
+.bot-picker-check {
+  color: var(--tv-blue-light);
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .bot-picker button[aria-checked=true] {
-  background: var(--surface-raised);
-  color: var(--text);
-  box-shadow: inset 0 0 0 1px var(--border-strong);
-}
-
-.bot-picker button[aria-checked=true] small {
-  color: #5b9cf6;
+  border-color: #2962ff80;
+  background: #2962ff12;
 }
 
 fieldset:disabled .bot-picker button {

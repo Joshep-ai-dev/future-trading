@@ -58,3 +58,35 @@ textarea {
 ::selection {
   background: #2962ff55;
 }
+
+/* Exchange-style number inputs: no spinner arrows (typing and arrow keys still work). */
+input[type=number]::-webkit-outer-spin-button,
+input[type=number]::-webkit-inner-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
+}
+
+input[type=number] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* Thin dark scrollbars, as on TradingView. */
+* {
+  scrollbar-color: #363636 transparent;
+  scrollbar-width: thin;
+}
+
+/* One keyboard focus ring for every control. */
+:where(button, a, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid #2962ffb3;
+  outline-offset: 1px;
+}
+
+/* Numbers line up in tables, tickers and stats. */
+table,
+.ui-metric strong,
+.market-price strong,
+.exchange-last strong {
+  font-variant-numeric: tabular-nums;
+}

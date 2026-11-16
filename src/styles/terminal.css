@@ -194,8 +194,15 @@ table tbody tr:hover td {
 
 /* Header */
 .app-shell {
+  display: flex;
+  flex-direction: column;
   max-width: none;
   padding: 0 8px;
+}
+
+/* Flex children may shrink below their content width (wide tables and charts scroll inside). */
+.app-shell > * {
+  min-width: 0;
 }
 
 .app-header {
@@ -429,6 +436,7 @@ table tbody tr:hover td {
 
 .app-footer {
   min-height: 28px;
+  margin-top: auto;
   padding: 6px 8px;
   border-color: var(--border);
   color: var(--faint);
@@ -505,6 +513,88 @@ table tbody tr:hover td {
 .exchange-market-header .ui-tone--positive > strong { color: var(--green); }
 .market-bar .ui-tone--negative > strong,
 .exchange-market-header .ui-tone--negative > strong { color: var(--red); }
+
+/* Paper ticker: last price, 24h statistics, then the paper account on the right (Binance-style). */
+.market-bar {
+  gap: 28px;
+  margin-bottom: 0;
+}
+
+.market-bar .instrument {
+  min-width: 0;
+}
+
+.market-bar .market-price {
+  min-width: 112px;
+  padding-right: 28px;
+}
+
+.market-price.is-up strong { color: var(--green); }
+.market-price.is-down strong { color: var(--red); }
+.market-price.is-flat strong { color: var(--text); }
+
+.market-bar .ui-metric {
+  display: grid;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.market-bar .ui-metric > strong small {
+  margin-left: 3px;
+  color: var(--faint);
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.ticker-stats,
+.ticker-account {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  min-width: 0;
+}
+
+.ticker-stats {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.ticker-stats::-webkit-scrollbar {
+  display: none;
+}
+
+.ticker-account {
+  flex: none;
+  margin-left: auto;
+  padding-left: 28px;
+  border-left: 1px solid var(--border);
+}
+
+.ticker-account .clock-stat {
+  margin-left: 0;
+}
+
+.ticker-account .clock-stat small {
+  margin-bottom: 4px;
+  color: var(--faint);
+}
+
+.ticker-account .clock-stat b {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+@media (max-width: 1280px) {
+  .ticker-stats .ui-metric:nth-child(n+4) {
+    display: none;
+  }
+}
+
+@media (max-width: 1100px) {
+  .ticker-stats {
+    display: none;
+  }
+}
 
 /* Terminal grid */
 .terminal-grid {
@@ -742,7 +832,7 @@ table tbody tr:hover td {
 
 .empty-run-summary {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 1px;
   max-width: 860px;
   margin: 0 auto 28px;
@@ -757,6 +847,25 @@ table tbody tr:hover td {
   display: block;
   padding: 12px 16px;
   background: var(--surface-raised);
+}
+
+/* Market | Period (wide) | Timeframe, then four short values: a full 4 x 2 grid. */
+.empty-run-summary > div:nth-child(2) {
+  grid-column: span 2;
+}
+
+@media (max-width: 700px) {
+  .empty-run-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .empty-run-summary > div:nth-child(2) {
+    grid-column: auto;
+  }
+
+  .empty-run-summary > div:last-child:nth-child(odd) {
+    grid-column: span 2;
+  }
 }
 
 .empty-run-summary dt {

@@ -8,6 +8,27 @@ export type SignedInUser = {
   level: "viewer" | "trader" | "admin";
 };
 
+const BRAND_MARK = (
+  <svg viewBox='0 0 24 24' fill='none' aria-hidden='true'>
+    <path d='M4 16l5-7 5 4 6-9M4 21h16' stroke='currentColor' strokeWidth='2' strokeLinecap='round' strokeLinejoin='round' />
+  </svg>
+);
+
+/** Decorative rising candles for the sign-in panel (deterministic, no data). */
+const HERO_CANDLES = Array.from({ length: 60 }, (_, i) => {
+  const base = 150 - i * 1.6 - Math.sin(i * 0.45) * 14;
+  const open = base + Math.sin(i * 1.9) * 9;
+  const close = base + Math.cos(i * 1.3) * 9 - 3;
+  return { x: 6 + i * 16, open, close, high: Math.min(open, close) - 5 - (i % 3) * 3, low: Math.max(open, close) + 5 + (i % 4) * 2 };
+});
+
+const FEATURES: readonly [string, string][] = [
+  ["TradingView-style charts", "Indicators, drawing tools and candle-accurate replays."],
+  ["ADX + Supertrend bot", "Backtest it, then paper trade with exactly the same rules."],
+  ["Forecast lab", "Quantile Boost models checked on held-back data before use."],
+  ["Your keys stay on this machine", "Exchange credentials are stored encrypted, locally."],
+];
+
 export default function AuthScreen({
   configured,
   databaseError,
@@ -46,9 +67,44 @@ export default function AuthScreen({
   }
   return (
     <main className='auth-page'>
+      <section className='auth-hero' aria-label='About Silver'>
+        <div className='auth-brand'>
+          <span className='brand-mark'>{BRAND_MARK}</span>
+          <div>
+            <strong>SILVER</strong>
+            <small>TRADING WORKSPACE</small>
+          </div>
+        </div>
+        <div className='auth-hero-copy'>
+          <h2>Silver perpetuals in one focused terminal.</h2>
+          <p>Chart, backtest and paper trade XAG / USDT, then trade live on your own exchange account.</p>
+          <ul className='auth-features'>
+            {FEATURES.map(([title, detail]) => (
+              <li key={title}>
+                <span aria-hidden='true'>✓</span>
+                <div>
+                  <b>{title}</b>
+                  <small>{detail}</small>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <svg className='auth-chart' viewBox='0 0 966 190' preserveAspectRatio='xMidYMid meet' aria-hidden='true'>
+          {HERO_CANDLES.map((c) => {
+            const up = c.close < c.open;
+            return (
+              <g key={c.x} className={up ? "up" : "down"}>
+                <line x1={c.x + 4.5} x2={c.x + 4.5} y1={c.high} y2={c.low} />
+                <rect x={c.x} y={Math.min(c.open, c.close)} width={9} height={Math.max(2, Math.abs(c.close - c.open))} rx={1} />
+              </g>
+            );
+          })}
+        </svg>
+      </section>
       <section className='auth-card'>
         <div className='auth-brand'>
-          <span className='brand-mark'>↗</span>
+          <span className='brand-mark'>{BRAND_MARK}</span>
           <div>
             <strong>SILVER</strong>
             <small>TRADING WORKSPACE</small>

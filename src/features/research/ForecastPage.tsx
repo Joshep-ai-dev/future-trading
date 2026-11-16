@@ -113,6 +113,12 @@ function modelScore(model: SavedForecastModel): { text: string; tone: "up" | "do
   return { text: "—", tone: "flat", title: "No holdout diagnostic" };
 }
 
+const FORECAST_STEPS: readonly [string, string][] = [
+  ["Train", "Pick a method, timeframe and cutoff date. The model learns only from candles before the cutoff and is checked on a held-back tail."],
+  ["Backtest", "Replay the saved model on later candles it never saw, and compare its forecasts with what really happened."],
+  ["Live", "Follow the model's forecast for the next candles as new candles close (Quantile Boost adds an 80% band and up-probability)."],
+];
+
 function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
     <label className='fc-field'>
@@ -416,7 +422,6 @@ export default function ForecastPage({ range }: { range: { startDate: string; en
                     {ARCHITECTURES.map(([value, label]) => (
                       <option key={value} value={value}>
                         {label}
-                        {value === "boost" ? " (recommended)" : ""}
                       </option>
                     ))}
                   </select>
@@ -450,6 +455,18 @@ export default function ForecastPage({ range }: { range: { startDate: string; en
                 {busy && <span className='fc-muted'>Learning from past candles. Neural models can take several minutes.</span>}
               </div>
             </form>
+          )}
+
+          {step === "train" && !models.length && (
+            <ol className='fc-steps' aria-label='How forecasting works'>
+              {FORECAST_STEPS.map(([title, detail], index) => (
+                <li key={title}>
+                  <span>{index + 1}</span>
+                  <b>{title}</b>
+                  <small>{detail}</small>
+                </li>
+              ))}
+            </ol>
           )}
 
           {step === "historical" && selected && (

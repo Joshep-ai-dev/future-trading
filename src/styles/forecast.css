@@ -329,6 +329,57 @@
   align-items: end;
 }
 
+/* First-run guide under the training form: Train → Backtest → Live. */
+.fc-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fc-steps li {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 16px;
+  border: 1px solid var(--tv-border);
+  border-radius: 6px;
+  background: var(--tv-panel);
+}
+
+.fc-steps li > span {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-bottom: 4px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--tv-blue-light);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.fc-steps b {
+  color: var(--tv-text);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.fc-steps small {
+  color: var(--tv-muted);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+@media (max-width: 800px) {
+  .fc-steps {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .fc-panel-title h2 {
   margin: 0 0 6px;
   font-size: 15px;
@@ -358,6 +409,7 @@
 
 .fc-field {
   display: grid;
+  align-content: start;
   gap: 6px;
   min-width: 0;
   margin: 0;
