@@ -110,7 +110,7 @@ class StoreAndFeatureTests(unittest.TestCase):
         with patch('server.news.service.history_start', return_value=0), \
                 patch('server.news.service.fetch_rss', side_effect=OSError('down')):
             self.assertEqual(service.collect_articles(), 0)
-            self.assertTrue(service.extend_timeline(now=10*86400, max_chunks=2))
+            self.assertTrue(service.extend_timeline(now=400*86400, max_chunks=2))
         self.assertEqual(calls, [(0, 2*86400), (2*86400, 4*86400)])
         self.assertEqual(self.store.get_meta('timeline_until'), str(4*86400))
         self.assertEqual(set(service.status()['errors']), {'broken', 'gdelt'})
@@ -179,14 +179,17 @@ class CalendarTests(unittest.TestCase):
         self.assertEqual(rows[0]['released'], 1770384600)
 
     def test_surprise_z_bias_and_reaction(self):
-        events = parse_events([fx_row('Consumer Price Index (YoY)', f'2026-0{month}-11T13:30:00Z', 3.0+(month % 2)*.2, 3.0)
+        core = 'Consumer Price Index ex Food & Energy (MoM)'
+        events = parse_events([fx_row(core, f'2026-0{month}-11T13:30:00Z', .2+(month % 2)*.2, .2)
                                for month in range(1, 8)], now=1)
         scales = surprise_scales(events)
-        self.assertAlmostEqual(scales['Consumer Price Index (YoY)'], np.std([.2, 0, .2, 0, .2, 0, .2]))
+        self.assertAlmostEqual(scales[core], np.std([.2, 0, .2, 0, .2, 0, .2]))
         released = events[0]['released']  # 13:30 UTC
         times = np.arange(released-600, released+5*3600, 60)
         closes = np.where(times < released, 100., 99.)  # silver drops 1% from the release candle on
         rows = enrich(events[:1], scales, pd.DataFrame(dict(close=closes), index=pd.to_datetime(times, unit='s', utc=True)))
+        self.assertTrue(rows[0]['core'])
+        self.assertFalse(enrich(parse_events([fx_row('Consumer Price Index (YoY)', '2026-01-11T13:30:00Z', 3, 3)], now=1), {}, None)[0]['core'])
         self.assertGreater(rows[0]['surpriseZ'], 0)
         self.assertLess(rows[0]['silverBias'], 0)  # hotter CPI -> silver down (textbook)
         self.assertAlmostEqual(rows[0]['reaction']['m60'], -1.0)
@@ -219,6 +222,55 @@ class CalendarTests(unittest.TestCase):
             service.collect_calendar(now=400*86400)
         self.assertEqual(calls, [(0, 180*86400), (180*86400, 360*86400), (360*86400, 390*86400), (390*86400, 430*86400)])
         self.assertEqual(len(store.events()), 1)  # same id upserted, not duplicated
+
+
+class HistoryBackfillTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.store = NewsStore(Path(directory.name)/'news.sqlite')
+
+    def test_headlines_go_back_day_by_day_to_one_year(self):
+        calls = []
+
+        class FakeGdelt:
+            def articles(self, limit=75, start=None, end=None):
+                calls.append((start, end))
+                return [make_article(provider='gdelt', source='x.com', title=f'Silver rises {start}', url=f'https://x.com/{start}',
+                                     published=start+3600)]
+
+        service = NewsService(store=self.store, gdelt=FakeGdelt(), feeds=(), calendar=lambda a, b: [])
+        now = 1000*86400+500
+        self.assertTrue(service.backfill_headlines(now=now, max_days=3))
+        self.assertEqual(calls, [(999*86400, 1000*86400), (998*86400, 999*86400), (997*86400, 998*86400)])
+        self.assertEqual(service.status()['headlinesFrom'], 997*86400)
+        self.assertFalse(service.backfill_headlines(now=now, max_days=400))  # stops one year back
+        self.assertEqual(calls[-1][0], (1000-365)*86400)
+        self.assertEqual(self.store.articles(limit=1)[1], 365)
+
+    def test_rate_limit_backs_off_without_moving_the_cursor(self):
+        class Limited:
+            def articles(self, **kwargs):
+                raise GdeltRateLimited('limit')
+
+        service = NewsService(store=self.store, gdelt=Limited(), feeds=(), calendar=lambda a, b: [])
+        self.assertTrue(service.backfill_headlines(now=1000*86400))
+        self.assertIsNone(self.store.get_meta('headlines_back_until'))
+        self.assertEqual(service.backoff, 60.)
+        self.assertIn('rate limit', service.status()['errors']['headlines'])
+
+    def test_timeline_starts_one_year_back(self):
+        starts = []
+
+        class FakeGdelt:
+            def timeline(self, start, end):
+                starts.append(start)
+                return []
+
+        service = NewsService(store=self.store, gdelt=FakeGdelt(), feeds=(), calendar=lambda a, b: [])
+        with patch('server.news.service.history_start', return_value=900*86400):
+            service.extend_timeline(now=1000*86400, max_chunks=1)
+        self.assertEqual(starts, [635*86400])
 
 
 if __name__ == '__main__':

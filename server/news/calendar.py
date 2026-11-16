@@ -33,23 +33,24 @@ GROUPS = (
     ('cpi', 'US CPI'), ('ppi', 'US PPI'), ('retail', 'US Retail Sales'), ('minutes', 'FOMC Minutes'),
     ('gdp_pce', 'US GDP + PCE'), ('nfp', 'US NFP'), ('rate', 'FOMC Interest Rate Decision'), ('press', 'Fed Press Conference'),
 )
-# FXStreet event name -> (group, silver sign per unit of surprise, headline event of the group)
+# FXStreet event name -> (group, silver sign per unit of surprise, core figure of the group).
+# Core = the figure markets trade on: core CPI / PPI / PCE m/m, retail sales ex autos, NFP, GDP, FOMC events.
 EVENTS = {
-    'Consumer Price Index (YoY)': ('cpi', -1, True),
+    'Consumer Price Index ex Food & Energy (MoM)': ('cpi', -1, True),
+    'Consumer Price Index (YoY)': ('cpi', -1, False),
     'Consumer Price Index (MoM)': ('cpi', -1, False),
-    'Consumer Price Index ex Food & Energy (MoM)': ('cpi', -1, False),
     'Consumer Price Index ex Food & Energy (YoY)': ('cpi', -1, False),
-    'Producer Price Index (MoM)': ('ppi', -1, True),
+    'Producer Price Index ex Food & Energy (MoM)': ('ppi', -1, True),
+    'Producer Price Index (MoM)': ('ppi', -1, False),
     'Producer Price Index (YoY)': ('ppi', -1, False),
-    'Producer Price Index ex Food & Energy (MoM)': ('ppi', -1, False),
     'Producer Price Index ex Food & Energy (YoY)': ('ppi', -1, False),
-    'Retail Sales (MoM)': ('retail', -1, True),
+    'Retail Sales ex Autos (MoM)': ('retail', -1, True),
+    'Retail Sales (MoM)': ('retail', -1, False),
     'Retail Sales Control Group': ('retail', -1, False),
-    'Retail Sales ex Autos (MoM)': ('retail', -1, False),
     'FOMC Minutes': ('minutes', 0, True),
     'Gross Domestic Product Annualized': ('gdp_pce', -1, True),
     'Core Personal Consumption Expenditures - Price Index (YoY)': ('gdp_pce', -1, False),
-    'Core Personal Consumption Expenditures - Price Index (MoM)': ('gdp_pce', -1, False),
+    'Core Personal Consumption Expenditures - Price Index (MoM)': ('gdp_pce', -1, True),
     'Personal Consumption Expenditures - Price Index (YoY)': ('gdp_pce', -1, False),
     'Personal Consumption Expenditures - Price Index (MoM)': ('gdp_pce', -1, False),
     'Nonfarm Payrolls': ('nfp', -1, True),
@@ -146,30 +147,32 @@ def enrich(events: list[dict], scales: dict[str, float], bars: pd.DataFrame | No
         reaction = reactions(times, bars['close'].to_numpy(float), [event['released'] for event in events])
     rows = []
     for event, moved in zip(events, reaction):
+        # Core flag and sign always come from EVENTS, so stored rows follow later changes of the table.
+        _, sign, core = EVENTS.get(event['name'], (event['grp'], event['silver_sign'], bool(event['primary_event'])))
         surprise = None if event['actual'] is None or event['consensus'] is None else round(event['actual']-event['consensus'], 6)
         scale = scales.get(event['name'])
         z = None if surprise is None or not scale else surprise/scale
         rows.append(dict(
-            id=event['id'], name=event['name'], group=event['grp'], primary=bool(event['primary_event']), released=event['released'],
+            id=event['id'], name=event['name'], group=event['grp'], core=core, released=event['released'],
             period=event['period'], periodType=event['period_type'], actual=event['actual'], forecast=event['consensus'],
             previous=event['previous'], revised=event['revised'], potency=event['potency'], volatility=event['volatility'],
-            surprise=surprise, surpriseZ=z, silverBias=None if z is None or not event['silver_sign'] else float(np.clip(event['silver_sign']*z, -3, 3)),
+            surprise=surprise, surpriseZ=z, silverBias=None if z is None or not sign else float(np.clip(sign*z, -3, 3)),
             reaction=moved))
     return rows
 
 
 def group_stats(rows: list[dict]) -> list[dict]:
-    """Per group, from headline releases with a measured 1-hour reaction: how silver actually responded to surprises."""
+    """Per group, from core releases with a measured 1-hour reaction: how silver actually responded to surprises."""
     stats = []
     for key, label in GROUPS:
-        group = [row for row in rows if row['group'] == key and row['primary'] and row['released'] <= time.time()]
+        group = [row for row in rows if row['group'] == key and row['core'] and row['released'] <= time.time()]
         measured = [row for row in group if row['reaction'] and row['reaction'].get('m60') is not None]
         moves = np.array([row['reaction']['m60'] for row in measured], dtype=float)
         biased = [row for row in measured if row['silverBias']]
         agree = [np.sign(row['silverBias']) == np.sign(row['reaction']['m60']) for row in biased if row['reaction']['m60']]
         pairs = np.array([(row['surpriseZ'], row['reaction']['m60']) for row in measured if row['surpriseZ'] is not None], dtype=float)
         correlation = float(np.corrcoef(pairs[:, 0], pairs[:, 1])[0, 1]) if len(pairs) >= 5 and pairs[:, 0].std() > 0 and pairs[:, 1].std() > 0 else None
-        upcoming = [row for row in rows if row['group'] == key and row['primary'] and row['released'] > time.time()]
+        upcoming = [row for row in rows if row['group'] == key and row['core'] and row['released'] > time.time()]
         stats.append(dict(
             group=key, label=label, releases=len(group), measured=len(measured),
             averageAbsMove=float(np.mean(np.abs(moves))) if len(moves) else None,

@@ -20,7 +20,10 @@ from server.news.store import NewsStore
 logger = logging.getLogger(__name__)
 CYCLE_SECONDS = 600
 CHUNK_SECONDS = 2*86400
-BACKFILL_CHUNKS = 12
+BACKFILL_CHUNKS = 8
+HISTORY_DAYS = 365  # news history kept even before the first market candle
+HEADLINE_DAYS_PER_CYCLE = 12
+HEADLINES_PER_DAY = 75
 BUCKET_SECONDS = 900
 MARKET_CSV = Path(__file__).resolve().parents[2] / 'data' / 'OKX_XAG-USDT-SWAP_1m.csv'
 
@@ -71,7 +74,7 @@ class NewsService:
             errors['gdelt'] = str(error)[:200]
         with self.lock:
             self.state.update(lastRun=int(time.time()), lastNew=added,
-                              errors={**{k: v for k, v in self.state['errors'].items() if k in ('timeline', 'calendar')}, **errors})
+                              errors={**{k: v for k, v in self.state['errors'].items() if k in ('timeline', 'calendar', 'headlines')}, **errors})
         return added
 
     def collect_calendar(self, now: int | None = None) -> int:
@@ -101,7 +104,7 @@ class NewsService:
         """Fetch the next timeline chunks. Returns True while older history is still missing."""
         now = int(now or time.time())
         latest = now//BUCKET_SECONDS*BUCKET_SECONDS-BUCKET_SECONDS  # last finished bucket
-        cursor = int(self.store.get_meta('timeline_until') or history_start())
+        cursor = int(self.store.get_meta('timeline_until') or min(history_start(), (now-HISTORY_DAYS*86400)//86400*86400))
         if time.monotonic() < self.retry_at:
             return latest-cursor > 12*3600
         for _ in range(max_chunks):
@@ -135,12 +138,41 @@ class NewsService:
             self.state['backfilling'] = behind
         return behind
 
+    def backfill_headlines(self, now: int | None = None, max_days: int = HEADLINE_DAYS_PER_CYCLE) -> bool:
+        """GDELT headlines day by day, newest day first, back to HISTORY_DAYS. Returns True while days remain."""
+        now = int(now or time.time())
+        oldest = (now-HISTORY_DAYS*86400)//86400*86400
+        cursor = int(self.store.get_meta('headlines_back_until') or now//86400*86400)  # days before this are pending
+        for _ in range(max_days):
+            if cursor <= oldest or time.monotonic() < self.retry_at:
+                break
+            try:
+                rows = self.gdelt.articles(limit=HEADLINES_PER_DAY, start=cursor-86400, end=cursor)
+            except GdeltRateLimited:
+                self.backoff = min(900., max(60., self.backoff*2))
+                self.retry_at = time.monotonic()+self.backoff
+                with self.lock:
+                    self.state['errors']['headlines'] = f'GDELT rate limit, retrying in {int(self.backoff//60)} min'
+                break
+            except Exception as error:
+                with self.lock:
+                    self.state['errors']['headlines'] = str(error)[:200]
+                break
+            self.backoff = 0.
+            self.store.add_articles(rows)
+            cursor -= 86400
+            self.store.set_meta('headlines_back_until', str(cursor))
+            with self.lock:
+                self.state['errors'].pop('headlines', None)
+        return cursor > oldest
+
     def _run(self):
         while not self.stop_event.is_set():
             try:
                 self.collect_articles()
                 self.collect_calendar()
                 behind = self.extend_timeline()
+                behind = self.backfill_headlines() or behind
             except Exception:
                 logger.exception('News collection failed')
                 behind = False
@@ -159,6 +191,8 @@ class NewsService:
     def status(self) -> dict:
         with self.lock:
             state = {**self.state, 'errors': dict(self.state['errors'])}
+        back = self.store.get_meta('headlines_back_until')
+        state['headlinesFrom'] = int(back) if back else None
         return dict(running=bool(self.thread and self.thread.is_alive()), enabled=os.environ.get('SILVER_NEWS', '1') != '0',
                     sources=[dict(id=provider, name=name) for provider, name, _ in self.feeds] + [dict(id='gdelt', name='GDELT'), dict(id='calendar', name='FXStreet calendar')],
                     **state, **self.store.counts())

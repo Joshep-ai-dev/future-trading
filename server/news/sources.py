@@ -114,7 +114,7 @@ class GdeltRateLimited(RuntimeError):
 class GdeltClient:
     """Spaced GDELT DOC API calls: article list and 15-minute volume / tone timelines."""
 
-    def __init__(self, spacing: float = 8., opener=_get):
+    def __init__(self, spacing: float = 10., opener=_get):
         self.spacing = spacing
         self.opener = opener
         self.last_call = 0.
@@ -137,8 +137,13 @@ class GdeltClient:
             raise ValueError(f'Unexpected GDELT response: {text[:120]}')
         return json.loads(text) if text else {}
 
-    def articles(self, timespan: str = '1d', limit: int = 75) -> list[dict]:
-        data = self._call(mode='artlist', maxrecords=limit, sort='datedesc', timespan=timespan)
+    def articles(self, timespan: str = '1d', limit: int = 75, start: int | None = None, end: int | None = None) -> list[dict]:
+        """Latest articles, or the most relevant ones between ``start`` and ``end`` (GDELT keeps over a year)."""
+        if start is not None and end is not None:
+            data = self._call(mode='artlist', maxrecords=limit, sort='hybridrel',
+                              startdatetime=gdelt_stamp(start), enddatetime=gdelt_stamp(end))
+        else:
+            data = self._call(mode='artlist', maxrecords=limit, sort='datedesc', timespan=timespan)
         now = int(time.time())
         rows = []
         for item in data.get('articles', []):

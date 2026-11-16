@@ -9,7 +9,7 @@ type Release = {
   id: string;
   name: string;
   group: string;
-  primary: boolean;
+  core: boolean;
   released: number;
   period: string;
   periodType: string;
@@ -70,7 +70,7 @@ export default function EconomicCalendar({ visible }: { visible: boolean }) {
     [error, setError] = useState("");
   const [view, setView] = useState<"past" | "upcoming">("past"),
     [group, setGroup] = useState(""),
-    [headline, setHeadline] = useState(true);
+    [coreOnly, setCoreOnly] = useState(true);
   useEffect(() => {
     if (!visible) return;
     const load = () =>
@@ -85,14 +85,14 @@ export default function EconomicCalendar({ visible }: { visible: boolean }) {
     return () => clearInterval(timer);
   }, [visible, group]);
 
-  const rows = (view === "past" ? data?.past : data?.upcoming)?.filter((row) => !headline || row.primary) ?? [];
+  const rows = (view === "past" ? data?.past : data?.upcoming)?.filter((row) => !coreOnly || row.core) ?? [];
   return (
     <section className='news-panel econ' aria-label='US economic calendar'>
       <header>
         <div>
           <h2>US economic calendar</h2>
           <p>
-            Forecast (consensus) vs actual for the releases that move silver. <b>Surprise</b> = actual − forecast; σ compares it with
+            Forecast (consensus) vs actual for the releases that move silver, using core figures: core CPI, core PPI and core PCE m/m, retail sales ex autos, payrolls, GDP and the FOMC events. <b>Surprise</b> = actual − forecast; σ compares it with
             that release&apos;s past surprises. <b>Silver 15m / 1h / 4h</b> is the real move after the release, from your market data.
           </p>
         </div>
@@ -153,12 +153,12 @@ export default function EconomicCalendar({ visible }: { visible: boolean }) {
             Released
           </button>
           <button type='button' aria-pressed={view === "upcoming"} onClick={() => setView("upcoming")}>
-            Upcoming ({data?.upcoming.filter((row) => !headline || row.primary).length ?? 0})
+            Upcoming ({data?.upcoming.filter((row) => !coreOnly || row.core).length ?? 0})
           </button>
         </div>
         <label className='econ-check'>
-          <input type='checkbox' checked={headline} onChange={(event) => setHeadline(event.target.checked)} />
-          Headline figures only
+          <input type='checkbox' checked={coreOnly} onChange={(event) => setCoreOnly(event.target.checked)} />
+          Core figures only
         </label>
         {group && (
           <button type='button' className='text-button' onClick={() => setGroup("")}>
@@ -188,7 +188,7 @@ export default function EconomicCalendar({ visible }: { visible: boolean }) {
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={row.id} className={row.primary ? "is-primary" : ""}>
+                <tr key={row.id} className={row.core ? "is-core" : ""}>
                   <td title={formatTradingTime(row.released, zone)}>
                     {formatTradingTime(row.released, zone).slice(0, 16)}
                     {view === "upcoming" && <small> {until(row.released)}</small>}

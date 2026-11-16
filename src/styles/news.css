@@ -110,6 +110,16 @@
   color: var(--text);
 }
 
+.news-date {
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--background);
+  color: var(--text);
+  color-scheme: dark;
+}
+
 .news-segment {
   display: inline-flex;
   gap: 2px;
@@ -547,12 +557,12 @@
   color: var(--faint);
 }
 
-.econ-table tr:not(.is-primary) td:nth-child(2) {
+.econ-table tr:not(.is-core) td:nth-child(2) {
   padding-left: 24px;
   color: var(--muted);
 }
 
-.econ-table tr.is-primary td:nth-child(2),
+.econ-table tr.is-core td:nth-child(2),
 .econ-actual {
   font-weight: 600;
 }

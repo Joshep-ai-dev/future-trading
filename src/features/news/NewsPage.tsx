@@ -45,6 +45,7 @@ type Status = {
   timelineBuckets: number;
   timelineStart: number | null;
   timelineEnd: number | null;
+  headlinesFrom: number | null;
 };
 
 const PAGE = 30;
@@ -113,7 +114,8 @@ export default function NewsPage({ visible }: { visible: boolean }) {
   const [query, setQuery] = useState(""),
     [search, setSearch] = useState(""),
     [topic, setTopic] = useState(""),
-    [sentiment, setSentiment] = useState<"" | "positive" | "negative" | "neutral">("");
+    [sentiment, setSentiment] = useState<"" | "positive" | "negative" | "neutral">(""),
+    [before, setBefore] = useState(""); // "YYYY-MM-DD": show headlines up to the end of that UTC day
   const [feed, setFeed] = useState<Feed | null>(null),
     [limit, setLimit] = useState(PAGE),
     [error, setError] = useState("");
@@ -125,13 +127,14 @@ export default function NewsPage({ visible }: { visible: boolean }) {
 
   const loadFeed = useCallback(async () => {
     const params = new URLSearchParams({ q: search, topic, sentiment, limit: String(limit) });
+    if (before) params.set("until", String(Date.parse(`${before}T00:00:00Z`) / 1000 + 86400));
     try {
       setFeed(await api<Feed>(`/api/news?${params}`));
       setError("");
     } catch (reason) {
       setError(String(reason));
     }
-  }, [search, topic, sentiment, limit]);
+  }, [search, topic, sentiment, limit, before]);
   const loadSide = useCallback(async () => {
     const [nextOutlook, nextStatus] = await Promise.all([api<Outlook>("/api/news/outlook"), api<Status>("/api/news/status")]);
     setOutlook(nextOutlook);
@@ -185,7 +188,7 @@ export default function NewsPage({ visible }: { visible: boolean }) {
               ? "Loading…"
               : !status.enabled
                 ? "Collector off (SILVER_NEWS=0)"
-                : `${status.articles.toLocaleString()} headlines · ${status.lastRun ? `updated ${ago(status.lastRun)}` : "starting"}${status.backfilling ? " · backfilling history" : ""}`}
+                : `${status.articles.toLocaleString()} headlines · ${status.lastRun ? `updated ${ago(status.lastRun)}` : "starting"}${status.headlinesFrom ? ` · history from ${new Date(status.headlinesFrom * 1000).toISOString().slice(0, 10)}` : ""}${status.backfilling ? " · backfilling" : ""}`}
           </span>
           <button type='button' className='secondary' disabled={refreshing} onClick={() => void refresh()}>
             {refreshing ? "Refreshing…" : "Refresh"}
@@ -214,6 +217,23 @@ export default function NewsPage({ visible }: { visible: boolean }) {
             }}
           >
             <input type='search' placeholder='Search headlines' aria-label='Search headlines' value={query} onChange={(e) => setQuery(e.target.value)} />
+            <input
+              type='date'
+              className='news-date'
+              aria-label='Show headlines up to this day (UTC)'
+              title='Browse history: headlines up to this day (UTC)'
+              max={new Date().toISOString().slice(0, 10)}
+              value={before}
+              onChange={(e) => {
+                setLimit(PAGE);
+                setBefore(e.target.value);
+              }}
+            />
+            {before && (
+              <button type='button' className='text-button' onClick={() => setBefore("")}>
+                Latest
+              </button>
+            )}
             <div className='news-segment' role='group' aria-label='Sentiment'>
               {(["", "positive", "negative", "neutral"] as const).map((value) => (
                 <button key={value || "all"} type='button' aria-pressed={sentiment === value} onClick={() => setSentiment(value)}>
