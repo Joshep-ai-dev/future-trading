@@ -7,6 +7,7 @@ import type {Page} from './Tabs';
 import {api} from '../shared/api/api';
 
 const ForecastPage=lazy(()=>import('../features/research/ForecastPage'));
+const NewsPage=lazy(()=>import('../features/news/NewsPage'));
 const AccountPage=lazy(()=>import('../features/account/AccountPage'));
 const PaperTrading=lazy(()=>import('../features/trading/PaperTrading'));
 const LiveTrading=lazy(()=>import('../features/trading/LiveTrading'));
@@ -115,6 +116,7 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
   return <section className="backtest"><Suspense fallback={<div className="workspace-loading" role="status">Loading workspace...</div>}>
     {keep('account',<AccountPage settings={settings} onBack={()=>onViewChange('paper')} accountMode={accountMode} onAccountModeChange={onAccountModeChange}/>)}
     {keep('forecast',<ForecastPage range={range}/>)}
+    {keep('news',<NewsPage visible={current==='news'}/>)}
     {keep('paper-live',<LiveTrading settings={settings} controls={<LiveExecution view="terminal" settings={settings} onSettingsChange={setSettings} onConfigure={()=>onViewChange('strategy')} onManageAccount={()=>onViewChange('account')}/>}/>)}
     {keep('paper-paper',<PaperTrading settings={settings} onChange={setSettings} onConfigure={()=>onViewChange('strategy')} visible={current==='paper-paper'} profiles={[]} onApplySetup={()=>{}}/>)}
     {keep('strategy',<div id="page-strategy" role="tabpanel" aria-labelledby="tab-strategy" className="setup-page">
@@ -139,7 +141,7 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
           ['Per trade',settings.adx_supertrend.amount_unit==='percent'?settings.adx_supertrend.amount_per_trade+'% of balance':'$'+fmt(settings.adx_supertrend.amount_per_trade)],
         ]}/>
     </div>)}
-    {view!=='account'&&view!=='forecast'&&view!=='paper'&&view!=='strategy'&&view!=='results'&&<div id={`page-${view}`} role="tabpanel" aria-labelledby={`tab-${view}`} className="setup-page">
+    {view!=='account'&&view!=='forecast'&&view!=='news'&&view!=='paper'&&view!=='strategy'&&view!=='results'&&<div id={`page-${view}`} role="tabpanel" aria-labelledby={`tab-${view}`} className="setup-page">
         <PageHeader eyebrow="STRATEGY WORKSPACE" title="No strategy configured" description="All trading strategies have been removed. This workspace is ready for a new implementation."/>
         <p>Strategy settings, backtests and automated trading are unavailable until a new strategy is added.</p>
         <p>Market history, account connections and saved research remain available.</p>

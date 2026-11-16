@@ -2,13 +2,24 @@ import {useCallback,useEffect,useState} from 'react';
 import {api} from '../../shared/api/api';
 import {fmt} from '../../shared/types/types';
 
-type Match={start:number;end:number;distance:number;correlation:number;futureClosePct:number;futureHighPct:number;futureLowPct:number;path:number[];future:number[]};
+type NewsSummary={tone:number|null;volumeZ:number|null;coverage:number};
+type Match={start:number;end:number;distance:number;correlation:number;futureClosePct:number;futureHighPct:number;futureLowPct:number;path:number[];future:number[];news?:NewsSummary|null};
 type Band=Record<string,number[]>;
-type PatternResult={window:number;horizon:number;end:number;stepSeconds:number;current:number;query:number[];matches:Match[];
+type PatternResult={window:number;horizon:number;end:number;stepSeconds:number;current:number;query:number[];matches:Match[];forecast?:number[];newsWeight?:number;queryNews?:NewsSummary|null;
   projection:{close:Band;high:Band;low:Band};
   summary:{probabilityUp:number;expectedClose:number;expectedHigh:number;highP90:number;expectedLow:number;lowP10:number;averageCorrelation:number;candidates:number}};
 
 const TIMEFRAMES=['5m','15m','30m','1h','4h'] as const;
+type ForecastModel={id:string;name:string;config:{model:string;timeframe:string;horizon:number}};
+type LivePrediction={prediction:{path?:{time:number;close:number}[];originClose:number;predictedClose:number;horizon:number}};
+const tone=(value:number|null|undefined)=>value==null?'—':`${value>=0?'+':''}${fmt(value,2)}`;
+/** Forecast closes for the next candles: the model's step path, or a straight line to its predicted close. */
+function forecastPath(live:LivePrediction):{closes:number[];straight:boolean}{
+  const p=live.prediction;
+  if(p.path?.length)return {closes:p.path.map(point=>point.close),straight:false};
+  const steps=Math.max(1,p.horizon);
+  return {closes:Array.from({length:steps},(_,i)=>p.originClose+(p.predictedClose-p.originClose)*(i+1)/steps),straight:true};
+}
 const when=(t:number)=>new Date(t*1000).toISOString().slice(0,16).replace('T',' ');
 const pct=(value:number)=>`${value>=0?'+':''}${fmt(value,2)}%`;
 const W=900,H=320,PAD={left:8,right:74,top:14,bottom:22};
@@ -16,7 +27,8 @@ const W=900,H=320,PAD={left:8,right:74,top:14,bottom:22};
 function PatternChart({result,highlight}:{result:PatternResult;highlight:number|null}){
   const {window,horizon,query,matches,projection,current}=result;
   const total=window+horizon;
-  const values=[...query,...projection.high.p90,...projection.low.p10,...matches.flatMap(m=>[...m.path,...m.future])];
+  const forecast=result.forecast??[];
+  const values=[...query,...forecast,...projection.high.p90,...projection.low.p10,...matches.flatMap(m=>[...m.path,...m.future])];
   const min=Math.min(...values),max=Math.max(...values),span=max-min||1;
   const x=(step:number)=>PAD.left+step/(total-1)*(W-PAD.left-PAD.right);
   const y=(price:number)=>PAD.top+(max-price)/span*(H-PAD.top-PAD.bottom);
@@ -36,28 +48,43 @@ function PatternChart({result,highlight}:{result:PatternResult;highlight:number|
     <path className="pattern-high" d={line([current,...projection.high.p50],window-1)}/>
     <path className="pattern-low" d={line([current,...projection.low.p50],window-1)}/>
     <path className="pattern-query" d={line(query)}/>
+    {forecast.length>0&&<path className="pattern-forecast" d={line([current,...forecast],window-1)}/>}
     <circle className="pattern-now" cx={x(window-1)} cy={y(current)} r={4}/>
     {tag(result.summary.highP90,'H90','up')}{tag(result.summary.expectedHigh,'H50','up-soft')}{tag(result.summary.expectedLow,'L50','down-soft')}{tag(result.summary.lowP10,'L10','down')}
   </svg>;
 }
 
 /** Find past windows shaped like the latest candles and project the next high and low. */
-export default function PatternPanel({defaultTimeframe='15m'}:{defaultTimeframe?:string}){
+export default function PatternPanel({defaultTimeframe='15m',newsControls=false}:{defaultTimeframe?:string;newsControls?:boolean}){
   const [timeframe,setTimeframe]=useState<string>(TIMEFRAMES.includes(defaultTimeframe as typeof TIMEFRAMES[number])?defaultTimeframe:'15m');
   const [window,setWindow]=useState(48),[horizon,setHorizon]=useState(24),[topK,setTopK]=useState(20);
   const [result,setResult]=useState<PatternResult|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
   const [highlight,setHighlight]=useState<number|null>(null);
+  const [newsWeight,setNewsWeight]=useState(newsControls?.5:0),[modelId,setModelId]=useState(''),[models,setModels]=useState<ForecastModel[]>([]);
+  const [straight,setStraight]=useState(false);
+  useEffect(()=>{if(newsControls)void api<ForecastModel[]>('/api/forecast/models').then(setModels).catch(()=>setModels([]));},[newsControls]);
+  const model=models.find(item=>item.id===modelId);
+  const usedTimeframe=model?model.config.timeframe:timeframe;
   const analyze=useCallback(async()=>{
     setBusy(true);setError('');
-    try{setResult(await api<PatternResult>('/api/patterns',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({timeframe,window,horizon,top_k:topK})}));}
+    try{
+      let forecast:number[]|undefined;let look=horizon;
+      if(model){
+        const path=forecastPath(await api<LivePrediction>(`/api/forecast/models/${model.id}/live`));
+        forecast=path.closes;setStraight(path.straight);look=Math.max(horizon,forecast.length);
+      }
+      setResult(await api<PatternResult>('/api/patterns',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({timeframe:usedTimeframe,window,horizon:look,top_k:topK,news_weight:newsWeight,forecast})}));
+    }
     catch(reason){setError(String(reason));}finally{setBusy(false);}
-  },[timeframe,window,horizon,topK]);
+  },[usedTimeframe,window,horizon,topK,newsWeight,model]);
   useEffect(()=>{void analyze();},[]);// eslint-disable-line react-hooks/exhaustive-deps
   const summary=result?.summary;
   const minutes=result?Math.round(result.horizon*result.stepSeconds/60):0;
   return <div className="pattern-panel">
     <form className="pattern-controls" onSubmit={event=>{event.preventDefault();void analyze();}}>
-      <label>Timeframe<select value={timeframe} onChange={event=>setTimeframe(event.target.value)}>{TIMEFRAMES.map(tf=><option key={tf}>{tf}</option>)}</select></label>
+      <label>Timeframe<select value={usedTimeframe} disabled={!!model} onChange={event=>setTimeframe(event.target.value)}>{[...new Set([...TIMEFRAMES,usedTimeframe])].map(tf=><option key={tf}>{tf}</option>)}</select></label>
+      {newsControls&&<label>News weight<select value={newsWeight} onChange={event=>setNewsWeight(Number(event.target.value))}><option value={0}>Price only</option><option value={.25}>25% news</option><option value={.5}>50% news</option><option value={.75}>75% news</option></select></label>}
+      {newsControls&&<label>Add forecast<select value={modelId} onChange={event=>setModelId(event.target.value)}><option value="">None (actual only)</option>{models.map(item=><option key={item.id} value={item.id}>{item.name} · {item.config.timeframe} · {item.config.horizon} bars</option>)}</select></label>}
       <label>Pattern length<input type="number" min={8} max={500} value={window} onChange={event=>setWindow(Number(event.target.value))}/></label>
       <label>Look ahead<input type="number" min={1} max={500} value={horizon} onChange={event=>setHorizon(Number(event.target.value))}/></label>
       <label>Matches<input type="number" min={1} max={200} value={topK} onChange={event=>setTopK(Number(event.target.value))}/></label>
@@ -75,17 +102,19 @@ export default function PatternPanel({defaultTimeframe='15m'}:{defaultTimeframe?
       <div className="pattern-body">
         <div className="pattern-chart-wrap">
           <PatternChart result={result} highlight={highlight}/>
-          <div className="pattern-legend"><span><i className="is-query"/>Current pattern</span><span><i className="is-up"/>Match that rose</span><span><i className="is-down"/>Match that fell</span><span><i className="is-band"/>10–90% high/low range</span><span><i className="is-median"/>Median close</span></div>
+          <div className="pattern-legend"><span><i className="is-query"/>Current pattern</span><span><i className="is-up"/>Match that rose</span><span><i className="is-down"/>Match that fell</span><span><i className="is-band"/>10–90% high/low range</span><span><i className="is-median"/>Median close</span>{!!result.forecast?.length&&<span><i className="is-forecast"/>Forecast</span>}</div>
         </div>
         <div className="pattern-table" onMouseLeave={()=>setHighlight(null)}>
-          <table><thead><tr><th>#</th><th>Matched window (UTC)</th><th>Similarity</th><th>Then high</th><th>Then low</th><th>Then close</th></tr></thead><tbody>
+          <table><thead><tr><th>#</th><th>Matched window (UTC)</th><th>Similarity</th>{result.queryNews&&<th>News tone</th>}<th>Then high</th><th>Then low</th><th>Then close</th></tr></thead><tbody>
             {result.matches.map((match,index)=><tr key={match.start} className={highlight===index?'selected-row':''} onMouseEnter={()=>setHighlight(index)}>
-              <td>{index+1}</td><td>{when(match.start)} → {when(match.end).slice(11)}</td><td>{fmt(match.correlation,2)}</td>
+              <td>{index+1}</td><td>{when(match.start)} → {when(match.end).slice(11)}</td><td>{fmt(match.correlation,2)}</td>{result.queryNews&&<td className={(match.news?.tone??0)>=0?'positive':'negative'}>{tone(match.news?.tone)}</td>}
               <td className="positive">{pct(match.futureHighPct)}</td><td className="negative">{pct(match.futureLowPct)}</td>
               <td className={match.futureClosePct>=0?'positive':'negative'}>{pct(match.futureClosePct)}</td></tr>)}
           </tbody></table>
         </div>
       </div>
+      {result.queryNews&&<p className="pattern-note">News now: GDELT tone {tone(result.queryNews.tone)}, volume {tone(result.queryNews.volumeZ)} σ vs. 7 days ({fmt(result.queryNews.coverage*100,0)}% of the window has news data){result.newsWeight?` · news counts ${fmt(result.newsWeight*100,0)}% of the match distance`:' · ranking uses price only'}.</p>}
+      {!!result.forecast?.length&&<p className="pattern-note">Dashed line: the model's forecast for the next {result.forecast.length} candles{straight?' (a straight line to its predicted close; this model has no step path)':''}. Matches had to follow the actual candles and this predicted move.</p>}
       <p className="pattern-note">Shapes are compared after removing price level and volatility. Only past windows whose full future was already known are used. Similar history is not a forecast guarantee.</p>
     </>}
   </div>;

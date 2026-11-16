@@ -186,3 +186,5 @@
 @media (max-width: 600px) {
   .pattern-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+.pattern-forecast { fill: none; stroke: #ff9800; stroke-width: 2.2; stroke-dasharray: 6 3; }
+.pattern-legend .is-forecast { background: #ff9800; }

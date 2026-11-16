@@ -31,6 +31,8 @@ from server.storage.credential_store import credential_store
 from server.core.serialization import optional_volume
 from server.strategies.fine_tuning import fine_tune
 from server.market.orderflow_recorder import orderflow_service
+from server.news.routes import router as news_router
+from server.news.service import news_service
 from server.storage.auth_store import SESSION_DAYS, auth_store
 
 workspaces = WorkspaceRegistry(user_data_store)
@@ -63,9 +65,11 @@ async def lifespan(app):
             logging.getLogger(__name__).exception('User data storage is unavailable')
     refresh_service.start()
     orderflow_service.start()
+    news_service.start()
     try:
         yield
     finally:
+        news_service.shutdown()
         orderflow_service.shutdown()
         await workspaces.shutdown()
         history_backfill.shutdown()
@@ -73,13 +77,15 @@ async def lifespan(app):
 
 
 app = FastAPI(title='Silver Price Research', lifespan=lifespan)
+app.include_router(news_router)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 logger = logging.getLogger(__name__)
 AUTH_COOKIE = 'silver_session'
 TRADER_PATHS = ('/api/exchange/connect', '/api/exchange/disconnect', '/api/exchange/reconnect',
                 '/api/exchange/forget', '/api/exchange/order', '/api/exchange/close', '/api/exchange/protection',
                 '/api/exchange/auto/', '/api/paper/start', '/api/paper/speed', '/api/paper/pause',
-                '/api/paper/resume', '/api/profiles', '/api/market-refresh', '/api/market-backfill')
+                '/api/paper/resume', '/api/profiles', '/api/market-refresh', '/api/market-backfill',
+                '/api/news/refresh')
 
 
 @app.middleware('http')
@@ -964,6 +970,9 @@ class PatternRequest(BaseModel):
     horizon: int = Field(default=24, ge=1, le=500)
     top_k: int = Field(default=20, ge=1, le=200)
     end: int | None = Field(default=None, ge=0, le=4102444800)
+    # Predicted closes after the last candle (actual + forecast query) and how much news flow counts (0-1).
+    forecast: list[float] | None = Field(default=None, max_length=500)
+    news_weight: float = Field(default=0., ge=0, le=1)
 
 
 @app.post('/api/patterns')
@@ -973,7 +982,10 @@ def similar_patterns(parameters: PatternRequest):
     try:
         bars, _ = load_bars(parameters.timeframe)
         end = pd.Timestamp(parameters.end, unit='s', tz='UTC') if parameters.end else None
-        return find_similar(bars, window=parameters.window, horizon=parameters.horizon, top_k=parameters.top_k, end=end)
+        from server.news.features import news_features
+        news = news_features(bars.index, TIMEFRAMES[parameters.timeframe], store=news_service.store)
+        return find_similar(bars, window=parameters.window, horizon=parameters.horizon, top_k=parameters.top_k, end=end,
+                            forecast=parameters.forecast, news=news, news_weight=parameters.news_weight)
     except (ValueError, OSError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
