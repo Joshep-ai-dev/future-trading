@@ -1,0 +1,141 @@
+/* ADX + Supertrend bot settings (features/strategy/AdxSupertrendSettings.tsx). */
+
+.adx-st-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 1180px;
+  margin: 0 0 32px;
+}
+
+.adx-st-count {
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.adx-st-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.adx-st-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  transition: border-color .15s, background .15s;
+}
+
+.adx-st-filter:not(.is-off) {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+.adx-st-filter.is-off {
+  background: transparent;
+}
+
+.adx-st-filter > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.adx-st-filter h3 {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.adx-st-filter.is-off h3 {
+  color: var(--muted);
+}
+
+.adx-st-filter header p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.adx-st-filter .setup-toggle {
+  flex: none;
+}
+
+.adx-st-filter-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.adx-st-wide {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.adx-st-run {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 22px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, .45);
+}
+
+.adx-st-run p {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  min-width: 0;
+}
+
+.adx-st-run strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.adx-st-run span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.adx-st-run .setup-run {
+  flex: none;
+  width: auto;
+  min-width: 170px;
+}
+
+@media (max-width: 900px) {
+  .adx-st-filters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .adx-st-run {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 14px 16px;
+  }
+
+  .adx-st-run .setup-run {
+    width: 100%;
+  }
+}

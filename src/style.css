@@ -12,6 +12,7 @@
 @import './styles/header.css';
 @import './styles/terminal.css';
 @import './styles/setup.css';
+@import './styles/adx-settings.css';
 @import './styles/chart-toolbar.css';
 @import './styles/results.css';
 @import './styles/results-strip.css';

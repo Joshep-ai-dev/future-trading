@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { api } from "../../shared/api/api";
 import type { BacktestSettings } from "../../shared/types/types";
 import { Field, SettingsCard, TIMEFRAME_CHOICES, Toggle } from "./BBReversalSettings";
@@ -6,6 +6,22 @@ import TradingCostsCard from "./TradingCostsCard";
 
 type Config = BacktestSettings["adx_supertrend"];
 type ForecastModel = { id: string; name: string; trainedThrough: string; config: { model: string; timeframe: string; horizon: number } };
+
+/** One minor filter: title, on/off switch, description, and its inputs when on. */
+function FilterCard({ title, description, checked, onChange, children }: { title: string; description: string; checked: boolean; onChange: (value: boolean) => void; children: ReactNode }) {
+  return (
+    <section className={checked ? "adx-st-filter" : "adx-st-filter is-off"}>
+      <header>
+        <div>
+          <h3>{title}</h3>
+          <p>{description}</p>
+        </div>
+        <Toggle label={title} checked={checked} onChange={onChange} />
+      </header>
+      {checked && <div className='adx-st-filter-fields'>{children}</div>}
+    </section>
+  );
+}
 
 /** Bot settings for the ADX + Supertrend strategy (server/strategies/adx_supertrend.py). */
 export default function AdxSupertrendSettings({
@@ -45,6 +61,7 @@ export default function AdxSupertrendSettings({
       />
     </Field>
   );
+  const activeFilters = [config.htf_filter, config.atr_filter, config.rsi_filter, config.forecast_filter].filter(Boolean).length;
   function submit(event: FormEvent) {
     event.preventDefault();
     onRun();
@@ -155,108 +172,98 @@ export default function AdxSupertrendSettings({
         </div>
       </SettingsCard>
 
-      <SettingsCard step={4} title='Minor filters' description='Each filter can only block an entry. Turn any of them off to compare.'>
+      <SettingsCard
+        step={4}
+        title='Minor filters'
+        description='Each filter can only block an entry. Turn any of them off to compare.'
+        actions={<span className='adx-st-count'>{activeFilters} of 4 on</span>}
+      >
         <div className='adx-st-filters'>
-          <div className='adx-st-filter'>
-            <header>
-              <strong>Higher-timeframe trend</strong>
-              <Toggle label='Higher-timeframe filter' checked={config.htf_filter} onChange={(value) => set({ htf_filter: value })} />
-            </header>
-            <p>Trade only with the higher-timeframe Supertrend (closed candles only).</p>
-            {config.htf_filter && (
-              <div className='setup-grid'>
-                <Field label='Higher timeframe'>
-                  <select value={config.htf_timeframe} onChange={(e) => set({ htf_timeframe: e.target.value as Config["htf_timeframe"] })}>
-                    {["15m", "30m", "1h", "4h", "1d"].map((tf) => (
-                      <option key={tf}>{tf}</option>
-                    ))}
-                  </select>
-                </Field>
-              </div>
-            )}
-          </div>
-          <div className='adx-st-filter'>
-            <header>
-              <strong>Volatility (ATR)</strong>
-              <Toggle label='ATR filter' checked={config.atr_filter} onChange={(value) => set({ atr_filter: value })} />
-            </header>
-            <p>Skip trades when ATR/price is unusually low (choppy) or extreme, by percentile over a rolling window.</p>
-            {config.atr_filter && (
-              <div className='setup-grid'>
-                {num("atr_length", "ATR length", 1, 500)}
-                {num("atr_window", "Percentile window", 20, 5000)}
-                {num("atr_min_pct", "Min percentile", 0, 100, 1, undefined, "%")}
-                {num("atr_max_pct", "Max percentile", 0, 100, 1, undefined, "%")}
-              </div>
-            )}
-          </div>
-          <div className='adx-st-filter'>
-            <header>
-              <strong>RSI extremes</strong>
-              <Toggle label='RSI filter' checked={config.rsi_filter} onChange={(value) => set({ rsi_filter: value })} />
-            </header>
-            <p>Skip longs when RSI is overbought and shorts when oversold.</p>
-            {config.rsi_filter && (
-              <div className='setup-grid'>
-                {num("rsi_length", "RSI length", 1, 500)}
-                {num("rsi_overbought", "Overbought", 0, 100, 0.5)}
-                {num("rsi_oversold", "Oversold", 0, 100, 0.5)}
-              </div>
-            )}
-          </div>
-          <div className='adx-st-filter'>
-            <header>
-              <strong>Forecast probability</strong>
-              <Toggle
-                label='Forecast filter'
-                checked={config.forecast_filter}
-                onChange={(value) => set({ forecast_filter: value, forecast_model_id: value ? config.forecast_model_id || usable[0]?.id || "" : config.forecast_model_id })}
+          <FilterCard
+            title='Higher-timeframe trend'
+            description='Trade only with the higher-timeframe Supertrend (closed candles only).'
+            checked={config.htf_filter}
+            onChange={(value) => set({ htf_filter: value })}
+          >
+            <Field label='Higher timeframe'>
+              <select value={config.htf_timeframe} onChange={(e) => set({ htf_timeframe: e.target.value as Config["htf_timeframe"] })}>
+                {["15m", "30m", "1h", "4h", "1d"].map((tf) => (
+                  <option key={tf}>{tf}</option>
+                ))}
+              </select>
+            </Field>
+          </FilterCard>
+          <FilterCard
+            title='Volatility (ATR)'
+            description='Skip trades when ATR/price is unusually low (choppy) or extreme, by percentile over a rolling window.'
+            checked={config.atr_filter}
+            onChange={(value) => set({ atr_filter: value })}
+          >
+            {num("atr_length", "ATR length", 1, 500)}
+            {num("atr_window", "Percentile window", 20, 5000)}
+            {num("atr_min_pct", "Min percentile", 0, 100, 1, undefined, "%")}
+            {num("atr_max_pct", "Max percentile", 0, 100, 1, undefined, "%")}
+          </FilterCard>
+          <FilterCard
+            title='RSI extremes'
+            description='Skip longs when RSI is overbought and shorts when oversold.'
+            checked={config.rsi_filter}
+            onChange={(value) => set({ rsi_filter: value })}
+          >
+            {num("rsi_length", "RSI length", 1, 500)}
+            {num("rsi_overbought", "Overbought", 0, 100, 0.5)}
+            {num("rsi_oversold", "Oversold", 0, 100, 0.5)}
+          </FilterCard>
+          <FilterCard
+            title='Forecast probability'
+            description="Require a saved Quantile Boost model's calibrated direction probability to agree. The model must use the same timeframe and be trained before the backtest start."
+            checked={config.forecast_filter}
+            onChange={(value) => set({ forecast_filter: value, forecast_model_id: value ? config.forecast_model_id || usable[0]?.id || "" : config.forecast_model_id })}
+          >
+            <Field label='Forecast model' hint={usable.length ? undefined : `No Quantile Boost model for ${settings.entry_timeframe}. Train one on the Forecast page.`}>
+              <select required value={config.forecast_model_id} onChange={(e) => set({ forecast_model_id: e.target.value })}>
+                <option value='' disabled>
+                  Choose a model
+                </option>
+                {usable.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.name} · {model.config.horizon} bars · to {model.trainedThrough.slice(0, 10)}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label='Minimum probability' unit='%'>
+              <input
+                type='number'
+                required
+                min={50}
+                max={100}
+                step={1}
+                value={Math.round(config.forecast_min_probability * 100)}
+                onChange={(e) => set({ forecast_min_probability: Number(e.target.value) / 100 })}
               />
-            </header>
-            <p>Require a saved Quantile Boost model's calibrated direction probability to agree. The model must use the same timeframe and be trained before the backtest start.</p>
-            {config.forecast_filter && (
-              <div className='setup-grid'>
-                <Field label='Forecast model' hint={usable.length ? undefined : `No Quantile Boost model for ${settings.entry_timeframe}. Train one on the Forecast page.`}>
-                  <select required value={config.forecast_model_id} onChange={(e) => set({ forecast_model_id: e.target.value })}>
-                    <option value='' disabled>
-                      Choose a model
-                    </option>
-                    {usable.map((model) => (
-                      <option key={model.id} value={model.id}>
-                        {model.name} · {model.config.horizon} bars · to {model.trainedThrough.slice(0, 10)}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label='Minimum probability' unit='%'>
-                  <input
-                    type='number'
-                    required
-                    min={50}
-                    max={100}
-                    step={1}
-                    value={Math.round(config.forecast_min_probability * 100)}
-                    onChange={(e) => set({ forecast_min_probability: Number(e.target.value) / 100 })}
-                  />
-                </Field>
-              </div>
-            )}
-            {config.forecast_filter && lookAhead && (
-              <p className='error' role='alert'>
+            </Field>
+            {lookAhead && (
+              <p className='error adx-st-wide' role='alert'>
                 This model was trained through {chosen!.trainedThrough.slice(0, 10)}, after the backtest start. Move the start date later or train an earlier model.
               </p>
             )}
-          </div>
+          </FilterCard>
         </div>
       </SettingsCard>
 
       <TradingCostsCard settings={settings} onChange={onChange} step={5} />
 
-      <div className='setup-run'>
-        <button type='submit' disabled={busy || (config.forecast_filter && (!config.forecast_model_id || !!lookAhead))}>
+      <div className='adx-st-run'>
+        <p>
+          <strong>
+            {settings.entry_timeframe} · {settings.start_date} → {settings.end_date}
+          </strong>
+          <span>Backtests and paper trading only. Live trading stays off until the strategy is validated.</span>
+        </p>
+        <button type='submit' className='setup-run' disabled={busy || (config.forecast_filter && (!config.forecast_model_id || !!lookAhead))}>
           {busy ? "Running backtest…" : "Run backtest"}
         </button>
-        <small>Backtests and paper trading only. Live trading stays off until the strategy is validated.</small>
       </div>
     </form>
   );

@@ -28,7 +28,7 @@ const defaultStyle:IndicatorStyle={
   rsiColor:'#7e57c2',rsiWidth:1,
   atrColor:'#b71c1c',atrWidth:1,
   adxWidth:2,
-  adxWeakColor:'#787b86',adxTrendColor:'#ff9800',adxStrongColor:'#f23645',
+  adxWeakColor:'#787b86',adxTrendColor:'#ff9800',adxStrongColor:'#4caf50',
   diPlusColor:'#00e676',diMinusColor:'#f23645',adxBullBgColor:'#4caf50',adxBearBgColor:'#f23645',
   trendSmaColor:'#ff9800',trendSmaWidth:1,
 };
@@ -106,7 +106,7 @@ export default function IndicatorSettings({kind,value,onApply,onClose}:{kind:Set
   const defaultsMenu=useRef<HTMLDetailsElement>(null);
   useEffect(()=>{const element=dialog.current,previous=document.activeElement as HTMLElement|null;element?.showModal();return ()=>{element?.close();previous?.focus();};},[]);
   const valid=validInputs(draft);
-  const error=!valid?(kind==='rsi'&&draft.rsiLower>=draft.rsiUpper?'Lower band must be below the upper band.':kind==='adx'&&draft.adxTrendLevel>=draft.adxStrongLevel?'Trend level must be below the strong trend level.':'Check the highlighted inputs.'):'';
+  const error=!valid?(kind==='rsi'&&draft.rsiLower>=draft.rsiUpper?'Lower band must be below the upper band.':kind==='adx'&&draft.adxTrendLevel>=draft.adxStrongLevel?'Level 1 must be below level 2.':'Check the highlighted inputs.'):'';
   function change(next:IndicatorConfig){setDraft(next);if(validInputs(next))onApply(next);}
   function set<K extends keyof IndicatorConfig>(key:K,v:IndicatorConfig[K]){change({...draft,[key]:v});}
   function cancel(){onApply(original.current);onClose();}
@@ -152,8 +152,8 @@ export default function IndicatorSettings({kind,value,onApply,onClose}:{kind:Set
       <label className="tv-dialog-check"><input type="checkbox" checked={draft.showDi} onChange={e=>set('showDi',e.target.checked)}/>Display DI lines</label>
       <label className="tv-dialog-check"><input type="checkbox" checked={draft.showStatus} onChange={e=>set('showStatus',e.target.checked)}/>Show trend label</label>
       <label className="tv-dialog-check"><input type="checkbox" checked={draft.showAdxLevels} onChange={e=>set('showAdxLevels',e.target.checked)}/>Show threshold lines</label>
-      <Row label="Trend level">{num('adxTrendLevel',{min:0,max:100,step:.5})}</Row>
-      <Row label="Strong trend level">{num('adxStrongLevel',{min:0,max:100,step:.5})}</Row>
+      <Row label="Level 1">{num('adxTrendLevel',{min:0,max:100,step:.5})}</Row>
+      <Row label="Level 2">{num('adxStrongLevel',{min:0,max:100,step:.5})}</Row>
     </>,
     atr:<>
       <Row label="Length">{num('atrLength',{min:1,max:1000,step:1})}</Row>
