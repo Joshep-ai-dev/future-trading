@@ -6,7 +6,7 @@ import { TV, tvChartOptions, tvTimeScaleOptions } from "../../shared/charts/tvTh
 import { chartTimeOptions, useChartTimeZone } from "../../shared/charts/chartTimeZone";
 import { formatTradingTime } from "../../shared/charts/tradingTime";
 import PatternPanel from "../trading/PatternPanel";
-import EconomicCalendar from "./EconomicCalendar";
+import EconomicCalendar, { shortName } from "./EconomicCalendar";
 
 type Article = {
   id: string;
@@ -49,6 +49,21 @@ type Status = {
 };
 
 const PAGE = 30;
+type NewsTab = "headlines" | "calendar" | "similar";
+const NEWS_TABS: readonly [NewsTab, string][] = [
+  ["headlines", "Headlines"],
+  ["calendar", "Economic calendar"],
+  ["similar", "Similar history"],
+];
+type Release = { id: string; name: string; released: number; forecast: number | null; potency: string; core: boolean };
+const releaseValue = (row: Release, value: number) => `${fmt(value, 2)}${row.potency === "K" ? "K" : "%"}`;
+function until(seconds: number) {
+  const diff = seconds - Date.now() / 1000;
+  if (diff <= 0) return "now";
+  if (diff < 3600) return `in ${Math.ceil(diff / 60)}m`;
+  if (diff < 86400) return `in ${Math.round(diff / 3600)}h`;
+  return `in ${Math.round(diff / 86400)}d`;
+}
 const RANGES = [
   { key: "24h", hours: 24, resolution: "15m" },
   { key: "7d", hours: 168, resolution: "1h" },
@@ -124,6 +139,35 @@ export default function NewsPage({ visible }: { visible: boolean }) {
   const [range, setRange] = useState<(typeof RANGES)[number]>(RANGES[1]),
     [buckets, setBuckets] = useState<Bucket[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [tab, setTab] = useState<NewsTab>(() => {
+    try {
+      const saved = localStorage.getItem("silver.news.tab");
+      return NEWS_TABS.some(([key]) => key === saved) ? (saved as NewsTab) : "headlines";
+    } catch {
+      return "headlines";
+    }
+  });
+  const [opened, setOpened] = useState<NewsTab[]>([tab]);
+  const [upcoming, setUpcoming] = useState<Release[]>([]);
+  function changeTab(next: NewsTab) {
+    setTab(next);
+    setOpened((old) => (old.includes(next) ? old : [...old, next]));
+    try {
+      localStorage.setItem("silver.news.tab", next);
+    } catch {
+      /* The tab is remembered for this visit only. */
+    }
+  }
+  useEffect(() => {
+    if (!visible) return;
+    const load = () =>
+      api<{ upcoming: Release[] }>("/api/news/calendar?days_back=1&days_ahead=21")
+        .then((value) => setUpcoming(value.upcoming.filter((row) => row.core)))
+        .catch(() => setUpcoming([]));
+    void load();
+    const timer = setInterval(load, 300000);
+    return () => clearInterval(timer);
+  }, [visible]);
 
   const loadFeed = useCallback(async () => {
     const params = new URLSearchParams({ q: search, topic, sentiment, limit: String(limit) });
@@ -174,39 +218,98 @@ export default function NewsPage({ visible }: { visible: boolean }) {
   const score = outlook?.score ?? null;
   const tone = score == null ? "neutral" : mood(score);
   const sourceErrors = Object.entries(status?.errors ?? {});
+  const nowLocal = formatTradingTime(Date.now() / 1000, zone).slice(0, 10);
+  const yesterdayLocal = formatTradingTime(Date.now() / 1000 - 86400, zone).slice(0, 10);
+  const dayLabel = (day: string) => (day === nowLocal ? "Today" : day === yesterdayLocal ? "Yesterday" : day);
+  const days: [string, Article[]][] = [];
+  for (const article of feed?.articles ?? []) {
+    const day = formatTradingTime(article.published, zone).slice(0, 10);
+    if (days.at(-1)?.[0] === day) days.at(-1)![1].push(article);
+    else days.push([day, [article]]);
+  }
+  const nextRelease = upcoming[0];
   return (
     <div id='page-news' role='tabpanel' aria-labelledby='tab-news' className='news-page'>
       <header className='news-head'>
-        <div>
+        <div className='news-title'>
           <h1>News</h1>
-          <p>Silver, gold and macro drivers for XAG / USDT. Sentiment is scored from silver&apos;s point of view.</p>
+          <div className='news-tabs' role='tablist' aria-label='News views'>
+            {NEWS_TABS.map(([key, label]) => (
+              <button key={key} type='button' role='tab' aria-selected={tab === key} onClick={() => changeTab(key)}>
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
         <div className='news-head-meta'>
-          <span className={`news-collector ${status?.running ? "is-on" : ""}`}>
+          <span className={`news-collector ${status?.running ? "is-on" : ""}`} title={status?.headlinesFrom ? `Headline history from ${new Date(status.headlinesFrom * 1000).toISOString().slice(0, 10)}` : undefined}>
             <i aria-hidden='true' />
             {!status
               ? "Loading…"
               : !status.enabled
                 ? "Collector off (SILVER_NEWS=0)"
-                : `${status.articles.toLocaleString()} headlines · ${status.lastRun ? `updated ${ago(status.lastRun)}` : "starting"}${status.headlinesFrom ? ` · history from ${new Date(status.headlinesFrom * 1000).toISOString().slice(0, 10)}` : ""}${status.backfilling ? " · backfilling" : ""}`}
+                : `${status.articles.toLocaleString()} headlines · ${status.lastRun ? `updated ${ago(status.lastRun)}` : "starting"}${status.backfilling ? " · backfilling history" : ""}`}
           </span>
           <button type='button' className='secondary' disabled={refreshing} onClick={() => void refresh()}>
             {refreshing ? "Refreshing…" : "Refresh"}
           </button>
         </div>
       </header>
+
+      <section className='news-mood' aria-label='News flow in the last 24 hours'>
+        <div className='news-mood-main'>
+          <span className='news-mood-label'>News flow · 24h</span>
+          <span className={`news-pill is-${tone}`}>{outlook?.label ?? "…"}</span>
+          <div className='news-gauge' aria-hidden='true' title='Bearish ← → Bullish'>
+            <i style={{ left: `${((Math.max(-1, Math.min(1, score ?? 0)) + 1) / 2) * 100}%` }} />
+          </div>
+        </div>
+        <dl className='news-mood-stats'>
+          <div>
+            <dt>Headline sentiment</dt>
+            <dd className={tone === "neutral" ? "" : (outlook?.headlineSentiment ?? 0) >= 0 ? "positive" : "negative"}>
+              {signed(outlook?.headlineSentiment)} <small>{outlook?.headlines ?? 0} headlines</small>
+            </dd>
+          </div>
+          <div>
+            <dt>GDELT tone</dt>
+            <dd>
+              {signed(outlook?.tone24h)} <small>{outlook?.toneShift == null ? "no 7-day baseline" : `${signed(outlook.toneShift)} vs 7d`}</small>
+            </dd>
+          </div>
+          <div>
+            <dt>Coverage</dt>
+            <dd>
+              {outlook?.volumeRatio == null ? "—" : `${fmt(outlook.volumeRatio, 2)}×`} <small>vs daily avg</small>
+            </dd>
+          </div>
+          <div className='news-mood-next'>
+            <dt>Next release</dt>
+            <dd>
+              {nextRelease ? (
+                <button type='button' className='text-button' onClick={() => changeTab("calendar")}>
+                  {shortName(nextRelease.name)} <small>{until(nextRelease.released)}{nextRelease.forecast != null && ` · fcst ${releaseValue(nextRelease, nextRelease.forecast)}`}</small>
+                </button>
+              ) : (
+                "—"
+              )}
+            </dd>
+          </div>
+        </dl>
+      </section>
+
       {error && (
         <p className='error' role='alert'>
           {error}
         </p>
       )}
       {sourceErrors.length > 0 && (
-        <p className='notice'>
+        <p className='notice news-notice'>
           Some sources failed on the last run: {sourceErrors.map(([source, message]) => `${source} (${message})`).join(" · ")}
         </p>
       )}
 
-      <div className='news-grid'>
+      <div className='news-grid' hidden={tab !== "headlines"}>
         <section className='news-panel news-feed' aria-label='Headlines'>
           <form
             className='news-filters'
@@ -216,7 +319,7 @@ export default function NewsPage({ visible }: { visible: boolean }) {
               setSearch(query.trim());
             }}
           >
-            <input type='search' placeholder='Search headlines' aria-label='Search headlines' value={query} onChange={(e) => setQuery(e.target.value)} />
+            <input type='search' placeholder='Search headlines and sources' aria-label='Search headlines' value={query} onChange={(e) => setQuery(e.target.value)} />
             <input
               type='date'
               className='news-date'
@@ -231,7 +334,7 @@ export default function NewsPage({ visible }: { visible: boolean }) {
             />
             {before && (
               <button type='button' className='text-button' onClick={() => setBefore("")}>
-                Latest
+                Back to latest
               </button>
             )}
             <div className='news-segment' role='group' aria-label='Sentiment'>
@@ -248,107 +351,62 @@ export default function NewsPage({ visible }: { visible: boolean }) {
                 {value || "All topics"}
               </button>
             ))}
+            {feed && <span className='news-count'>{feed.total.toLocaleString()} results</span>}
           </div>
           {feed && !feed.articles.length ? (
             <div className='news-empty'>
               <h3>{status?.articles ? "No headlines match these filters" : "Collecting the first headlines"}</h3>
-              <p>{status?.articles ? "Clear the search or pick another topic." : "The collector reads the feeds every 10 minutes. Press Refresh to fetch now."}</p>
+              <p>{status?.articles ? "Clear the search, pick another topic or date." : "The collector reads the feeds every 10 minutes. Press Refresh to fetch now."}</p>
             </div>
           ) : (
-            <ol className='news-list'>
-              {feed?.articles.map((article) => {
-                const kind = mood(article.sentiment);
-                return (
-                  <li key={article.id}>
-                    <div className='news-item-meta'>
-                      <span className='news-source'>{article.source}</span>
-                      <time dateTime={new Date(article.published * 1000).toISOString()} title={formatTradingTime(article.published, zone)}>
-                        {ago(article.published)}
-                      </time>
-                      <span className={`news-pill is-${kind}`}>
-                        {MOOD_LABEL[kind]} {signed(article.sentiment)}
-                      </span>
-                    </div>
-                    <a href={article.url} target='_blank' rel='noreferrer noopener'>
-                      {article.title}
-                    </a>
-                    {article.summary && <p>{article.summary}</p>}
-                    {article.topics.length > 0 && (
-                      <div className='news-item-topics'>
-                        {article.topics.map((name) => (
-                          <button key={name} type='button' onClick={() => setTopic(name)}>
-                            {name}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </li>
-                );
-              })}
-            </ol>
-          )}
-          {feed && feed.articles.length < feed.total && (
-            <button type='button' className='secondary news-more' onClick={() => setLimit(limit + PAGE)}>
-              Show more ({feed.total - feed.articles.length} left)
-            </button>
+            <div className='news-list'>
+              {days.map(([day, articles]) => (
+                <section key={day} className='news-day' aria-label={dayLabel(day)}>
+                  <h3>
+                    {dayLabel(day)}
+                    <small>{articles.length}</small>
+                  </h3>
+                  <ol>
+                    {articles.map((article) => {
+                      const kind = mood(article.sentiment);
+                      return (
+                        <li key={article.id} className={`is-${kind}`}>
+                          <time dateTime={new Date(article.published * 1000).toISOString()} title={formatTradingTime(article.published, zone)}>
+                            {formatTradingTime(article.published, zone).slice(11, 16)}
+                          </time>
+                          <div className='news-item'>
+                            <div className='news-item-meta'>
+                              <span className='news-source'>{article.source}</span>
+                              {article.topics.slice(0, 3).map((name) => (
+                                <button key={name} type='button' className='news-tag' onClick={() => setTopic(name)}>
+                                  {name}
+                                </button>
+                              ))}
+                              <span className={`news-pill is-${kind}`}>
+                                {MOOD_LABEL[kind]} {signed(article.sentiment)}
+                              </span>
+                            </div>
+                            <a href={article.url} target='_blank' rel='noreferrer noopener'>
+                              {article.title}
+                            </a>
+                            {article.summary && <p>{article.summary}</p>}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </section>
+              ))}
+              {feed && feed.articles.length < feed.total && (
+                <button type='button' className='secondary news-more' onClick={() => setLimit(limit + PAGE)}>
+                  Load {Math.min(PAGE, feed.total - feed.articles.length)} more · {(feed.total - feed.articles.length).toLocaleString()} left
+                </button>
+              )}
+            </div>
           )}
         </section>
 
         <aside className='news-side'>
-          <section className='news-panel news-outlook' aria-label='News flow'>
-            <header>
-              <h2>News flow · last 24h</h2>
-              <span className={`news-pill is-${tone}`}>{outlook?.label ?? "…"}</span>
-            </header>
-            <div className='news-gauge' aria-hidden='true'>
-              <i style={{ left: `${((Math.max(-1, Math.min(1, score ?? 0)) + 1) / 2) * 100}%` }} />
-            </div>
-            <div className='news-gauge-scale' aria-hidden='true'>
-              <span>Bearish</span>
-              <span>Neutral</span>
-              <span>Bullish</span>
-            </div>
-            <dl className='news-stats'>
-              <div>
-                <dt>Headline sentiment</dt>
-                <dd className={(outlook?.headlineSentiment ?? 0) >= 0 ? "positive" : "negative"}>{signed(outlook?.headlineSentiment)}</dd>
-                <small>{outlook?.headlines ?? 0} headlines</small>
-              </div>
-              <div>
-                <dt>GDELT tone</dt>
-                <dd>{signed(outlook?.tone24h)}</dd>
-                <small>
-                  {outlook?.toneShift == null ? "no 7-day baseline yet" : `${signed(outlook.toneShift)} vs 7-day`}
-                </small>
-              </div>
-              <div>
-                <dt>Coverage</dt>
-                <dd>{outlook?.volumeRatio == null ? "—" : `${fmt(outlook.volumeRatio, 2)}×`}</dd>
-                <small>{fmt(outlook?.volume24h ?? 0, 0)} articles vs daily avg</small>
-              </div>
-            </dl>
-            {!!outlook?.topics.length && (
-              <ul className='news-topic-bars'>
-                {outlook.topics.map((item) => (
-                  <li key={item.topic}>
-                    <button type='button' onClick={() => setTopic(item.topic)}>
-                      {item.topic}
-                    </button>
-                    <span className='news-topic-track'>
-                      <i className={`is-${mood(item.sentiment)}`} style={{ width: `${Math.min(100, Math.abs(item.sentiment) * 100)}%` }} />
-                    </span>
-                    <small>
-                      {item.count} · {signed(item.sentiment)}
-                    </small>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <p className='news-caption'>
-              Describes the news, not the price. Use Similar history below to see how silver moved after comparable price and news.
-            </p>
-          </section>
-
           <section className='news-panel news-timeline' aria-label='News volume and tone'>
             <header>
               <h2>Volume &amp; tone</h2>
@@ -367,27 +425,77 @@ export default function NewsPage({ visible }: { visible: boolean }) {
                 <p>{status?.backfilling ? "GDELT history is still downloading." : "No GDELT coverage in this range yet."}</p>
               </div>
             )}
-            <p className='news-caption'>
-              Bars: GDELT articles about silver prices per bucket (green when the average tone is positive). Line: average tone.
-              {status?.timelineStart != null && ` History from ${formatTradingTime(status.timelineStart, zone).slice(0, 10)}.`}
-            </p>
+            <p className='news-caption'>Bars: silver-price articles per bucket (green = positive tone). Line: average tone.</p>
+          </section>
+
+          <section className='news-panel' aria-label='Topics in the last 24 hours'>
+            <header>
+              <h2>Topics · 24h</h2>
+            </header>
+            {outlook?.topics.length ? (
+              <ul className='news-topic-bars'>
+                {outlook.topics.map((item) => (
+                  <li key={item.topic}>
+                    <button type='button' onClick={() => setTopic(item.topic)}>
+                      {item.topic}
+                    </button>
+                    <span className='news-topic-track'>
+                      <i className={`is-${mood(item.sentiment)}`} style={{ width: `${Math.min(100, Math.abs(item.sentiment) * 100)}%` }} />
+                    </span>
+                    <small>
+                      {item.count} · {signed(item.sentiment)}
+                    </small>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className='news-caption'>No headlines in the last 24 hours.</p>
+            )}
+            <p className='news-caption'>Bar length = average sentiment for silver. Click a topic to filter the feed.</p>
+          </section>
+
+          <section className='news-panel' aria-label='Upcoming US releases'>
+            <header>
+              <h2>Upcoming releases</h2>
+              <button type='button' className='text-button' onClick={() => changeTab("calendar")}>
+                Calendar ↗
+              </button>
+            </header>
+            {upcoming.length ? (
+              <ol className='news-upcoming'>
+                {upcoming.slice(0, 5).map((row) => (
+                  <li key={row.id}>
+                    <span>
+                      <b>{shortName(row.name)}</b>
+                      <small>{formatTradingTime(row.released, zone).slice(5, 16)}</small>
+                    </span>
+                    <span>
+                      <b>{row.forecast == null ? "—" : releaseValue(row, row.forecast)}</b>
+                      <small>{until(row.released)}</small>
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className='news-caption'>No core releases scheduled in the next three weeks.</p>
+            )}
           </section>
         </aside>
       </div>
 
-      <EconomicCalendar visible={visible} />
+      <div hidden={tab !== "calendar"}>{opened.includes("calendar") && <EconomicCalendar visible={visible && tab === "calendar"} />}</div>
 
-      <section className='news-panel news-similar' aria-label='Similar history'>
+      <section className='news-panel news-similar' aria-label='Similar history' hidden={tab !== "similar"}>
         <header>
           <div>
             <h2>Similar history</h2>
             <p>
-              Past moments whose candles (plus an optional model forecast), news flow and US release surprises looked like now,
-              and what silver did next. News data exists from {status?.timelineStart != null ? formatTradingTime(status.timelineStart, zone).slice(0, 10) : "the start of collection"}.
+              Past moments whose candles (plus an optional model forecast), news flow and US release surprises looked like now, and what
+              silver did next. News data from {status?.timelineStart != null ? formatTradingTime(status.timelineStart, zone).slice(0, 10) : "the start of collection"}.
             </p>
           </div>
         </header>
-        <PatternPanel defaultTimeframe='1h' newsControls />
+        {opened.includes("similar") && <PatternPanel defaultTimeframe='1h' newsControls />}
       </section>
     </div>
   );

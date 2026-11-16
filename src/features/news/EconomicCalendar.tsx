@@ -49,6 +49,17 @@ const period = (release: Release) => {
   return "";
 };
 
+/** "Consumer Price Index ex Food & Energy (MoM)" -> "Core CPI m/m". */
+export function shortName(name: string) {
+  return name
+    .replace("Consumer Price Index ex Food & Energy", "Core CPI")
+    .replace("Producer Price Index ex Food & Energy", "Core PPI")
+    .replace("Core Personal Consumption Expenditures - Price Index", "Core PCE")
+    .replace("Gross Domestic Product Annualized", "GDP (annualized)")
+    .replace("Fed Interest Rate Decision", "Fed rate decision")
+    .replace(" (MoM)", " m/m")
+    .replace(" (YoY)", " y/y");
+}
 function until(seconds: number) {
   const diff = seconds - Date.now() / 1000;
   if (diff <= 0) return "now";
@@ -193,7 +204,7 @@ export default function EconomicCalendar({ visible }: { visible: boolean }) {
                     {formatTradingTime(row.released, zone).slice(0, 16)}
                     {view === "upcoming" && <small> {until(row.released)}</small>}
                   </td>
-                  <td>{row.name}</td>
+                  <td title={row.name}>{shortName(row.name)}</td>
                   <td>{period(row)}</td>
                   <td className='econ-actual'>{value(row, row.actual)}</td>
                   <td>{value(row, row.forecast)}</td>
