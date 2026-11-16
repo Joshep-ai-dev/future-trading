@@ -36,6 +36,7 @@ type GroupStats = {
 };
 type Calendar = { groups: { key: string; label: string }[]; stats: GroupStats[]; past: Release[]; upcoming: Release[] };
 
+const RANGES: readonly [string, number][] = [["3M", 92], ["6M", 183], ["1Y", 365], ["All", 1200]];
 const unit = (release: Release) => (release.potency === "K" ? "K" : "%");
 const value = (release: Release, number: number | null) => (number == null ? "—" : `${fmt(number, 2)}${unit(release)}`);
 const signed = (number: number | null | undefined, digits = 2, suffix = "") =>
@@ -79,13 +80,14 @@ export default function EconomicCalendar({ visible }: { visible: boolean }) {
   const zone = useChartTimeZone();
   const [data, setData] = useState<Calendar | null>(null),
     [error, setError] = useState("");
+  const [days, setDays] = useState(365);
   const [view, setView] = useState<"past" | "upcoming">("past"),
     [group, setGroup] = useState(""),
     [coreOnly, setCoreOnly] = useState(true);
   useEffect(() => {
     if (!visible) return;
     const load = () =>
-      api<Calendar>(`/api/news/calendar?days_back=120&days_ahead=45${group ? `&group=${group}` : ""}`)
+      api<Calendar>(`/api/news/calendar?days_back=${days}&days_ahead=45${group ? `&group=${group}` : ""}`)
         .then((value) => {
           setData(value);
           setError("");
@@ -94,7 +96,7 @@ export default function EconomicCalendar({ visible }: { visible: boolean }) {
     void load();
     const timer = setInterval(load, 60000);
     return () => clearInterval(timer);
-  }, [visible, group]);
+  }, [visible, group, days]);
 
   const rows = (view === "past" ? data?.past : data?.upcoming)?.filter((row) => !coreOnly || row.core) ?? [];
   return (
@@ -159,6 +161,13 @@ export default function EconomicCalendar({ visible }: { visible: boolean }) {
       </div>
 
       <div className='econ-toolbar'>
+        <div className='news-segment' role='group' aria-label='History range'>
+          {RANGES.map(([label, value]) => (
+            <button key={label} type='button' aria-pressed={days === value} onClick={() => setDays(value)}>
+              {label}
+            </button>
+          ))}
+        </div>
         <div className='news-segment' role='group' aria-label='Releases'>
           <button type='button' aria-pressed={view === "past"} onClick={() => setView("past")}>
             Released
@@ -222,13 +231,13 @@ export default function EconomicCalendar({ visible }: { visible: boolean }) {
         </div>
       ) : (
         <div className='news-empty is-compact'>
-          <p>{data ? (view === "past" ? "No releases in the last 120 days." : "No scheduled releases in the next 45 days.") : "Loading the calendar…"}</p>
+          <p>{data ? (view === "past" ? `No releases in the selected range.` : "No scheduled releases in the next 45 days.") : "Loading the calendar…"}</p>
         </div>
       )}
       <p className='news-caption'>
         &quot;Expected&quot; is the textbook first reaction: hotter inflation, stronger growth or a higher rate than forecast lifts yields and the
         dollar, which usually pushes silver down. The cards show how often silver really moved that way within an hour. FOMC minutes and the press
-        conference have no forecast, and rate decisions rarely differ from it, so for those the silver move is what matters. Source: FXStreet economic calendar.
+        conference have no forecast, and rate decisions rarely differ from it, so for those the silver move is what matters. Silver moves exist only from your first market candle, so older releases show —. Source: FXStreet economic calendar (stored from 2024).
       </p>
     </section>
   );
