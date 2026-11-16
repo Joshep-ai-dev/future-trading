@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
@@ -105,7 +106,13 @@ def fetch_calendar(start: int, end: int, opener=_get) -> list[dict]:
     """US events between two UTC timestamps (callers keep ranges to about six months)."""
     stamp = lambda value: datetime.fromtimestamp(value, timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')  # noqa: E731
     url = f'{CALENDAR_URL}/{stamp(start)}/{stamp(end)}?{urllib.parse.urlencode({"countries": "US"})}'
-    return parse_events(json.loads(opener(url)))
+    try:
+        body = opener(url)
+    except urllib.error.HTTPError as error:
+        if error.code == 404:  # FXStreet answers 404 for a range without events
+            return []
+        raise
+    return parse_events(json.loads(body))
 
 
 def surprise_scales(events: list[dict]) -> dict[str, float]:

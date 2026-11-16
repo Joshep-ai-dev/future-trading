@@ -46,6 +46,7 @@ type Status = {
   timelineStart: number | null;
   timelineEnd: number | null;
   headlinesFrom: number | null;
+  waiting?: Record<string, string>;
 };
 
 const PAGE = 30;
@@ -248,7 +249,7 @@ export default function NewsPage({ visible }: { visible: boolean }) {
               ? "Loading…"
               : !status.enabled
                 ? "Collector off (SILVER_NEWS=0)"
-                : `${status.articles.toLocaleString()} headlines · ${status.lastRun ? `updated ${ago(status.lastRun)}` : "starting"}${status.backfilling ? " · backfilling history" : ""}`}
+                : `${status.articles.toLocaleString()} headlines · ${status.lastRun ? `updated ${ago(status.lastRun)}` : "starting"}${status.backfilling ? " · backfilling history" : ""}${Object.values(status.waiting ?? {}).map((text) => ` · ${text}`).join("")}`}
           </span>
           <button type='button' className='secondary' disabled={refreshing} onClick={() => void refresh()}>
             {refreshing ? "Refreshing…" : "Refresh"}

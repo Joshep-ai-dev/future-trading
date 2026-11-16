@@ -50,7 +50,8 @@ class NewsService:
         self.stop_event = threading.Event()
         self.thread: threading.Thread | None = None
         self.lock = threading.Lock()
-        self.state = dict(lastRun=None, lastNew=0, errors={}, backfilling=False)
+        # errors: real failures. waiting: normal pauses (GDELT rate limit backoff).
+        self.state = dict(lastRun=None, lastNew=0, errors={}, waiting={}, backfilling=False)
         self.retry_at = 0.  # monotonic time before which GDELT timeline calls wait (after a rate limit)
         self.backoff = 0.
 
@@ -70,6 +71,9 @@ class NewsService:
                 errors[provider] = str(error)[:200]
         try:
             added += self.store.add_articles(self.gdelt.articles())
+        except GdeltRateLimited:
+            with self.lock:
+                self.state['waiting']['gdelt'] = 'GDELT pause, retrying next cycle'
         except Exception as error:
             errors['gdelt'] = str(error)[:200]
         with self.lock:
@@ -83,14 +87,16 @@ class NewsService:
         cursor = int(self.store.get_meta('calendar_until') or CALENDAR_START)
         stored = 0
         try:
-            while cursor < now-10*86400:
+            # Stop a day short of the refresh window; the refresh below reaches back to the cursor,
+            # so no tiny (and empty, 404) ranges are requested every cycle.
+            while cursor < now-11*86400:
                 end = min(cursor+180*86400, now-10*86400)
                 rows = self.calendar(cursor, end)
                 self.store.upsert_events(rows)
                 stored += len(rows)
                 cursor = end
                 self.store.set_meta('calendar_until', str(cursor))
-            rows = self.calendar(now-10*86400, now+30*86400)  # actuals arrive, forecasts get set or revised
+            rows = self.calendar(min(cursor, now-10*86400), now+30*86400)  # actuals arrive, forecasts get set or revised
             self.store.upsert_events(rows)
             stored += len(rows)
             with self.lock:
@@ -118,13 +124,16 @@ class NewsService:
                 self.backoff = min(900., max(60., self.backoff*2))
                 self.retry_at = time.monotonic()+self.backoff
                 with self.lock:
-                    self.state['errors']['timeline'] = f'GDELT rate limit, retrying in {int(self.backoff//60)} min'
+                    self.state['errors'].pop('timeline', None)
+                    self.state['waiting']['gdelt'] = f'GDELT pause, retrying in {max(1, int(self.backoff//60))} min'
                 break
             except Exception as error:
                 with self.lock:
                     self.state['errors']['timeline'] = str(error)[:200]
                 break
             self.backoff = 0.
+            with self.lock:
+                self.state['waiting'].pop('gdelt', None)
             self.store.add_timeline([row for row in rows if row[0] < end], int(time.time()))
             # Re-read the last few hours next time: GDELT keeps adding late-indexed articles.
             cursor = end if end < latest else max(end-6*3600, cursor)
@@ -152,13 +161,16 @@ class NewsService:
                 self.backoff = min(900., max(60., self.backoff*2))
                 self.retry_at = time.monotonic()+self.backoff
                 with self.lock:
-                    self.state['errors']['headlines'] = f'GDELT rate limit, retrying in {int(self.backoff//60)} min'
+                    self.state['errors'].pop('headlines', None)
+                    self.state['waiting']['gdelt'] = f'GDELT pause, retrying in {max(1, int(self.backoff//60))} min'
                 break
             except Exception as error:
                 with self.lock:
                     self.state['errors']['headlines'] = str(error)[:200]
                 break
             self.backoff = 0.
+            with self.lock:
+                self.state['waiting'].pop('gdelt', None)
             self.store.add_articles(rows)
             cursor -= 86400
             self.store.set_meta('headlines_back_until', str(cursor))
@@ -190,7 +202,7 @@ class NewsService:
 
     def status(self) -> dict:
         with self.lock:
-            state = {**self.state, 'errors': dict(self.state['errors'])}
+            state = {**self.state, 'errors': dict(self.state['errors']), 'waiting': dict(self.state['waiting'])}
         back = self.store.get_meta('headlines_back_until')
         state['headlinesFrom'] = int(back) if back else None
         return dict(running=bool(self.thread and self.thread.is_alive()), enabled=os.environ.get('SILVER_NEWS', '1') != '0',

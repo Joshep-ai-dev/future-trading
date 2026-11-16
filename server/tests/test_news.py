@@ -257,7 +257,23 @@ class HistoryBackfillTests(unittest.TestCase):
         self.assertTrue(service.backfill_headlines(now=1000*86400))
         self.assertIsNone(self.store.get_meta('headlines_back_until'))
         self.assertEqual(service.backoff, 60.)
-        self.assertIn('rate limit', service.status()['errors']['headlines'])
+        status = service.status()
+        self.assertNotIn('headlines', status['errors'])  # a pause, not a failure
+        self.assertIn('GDELT pause', status['waiting']['gdelt'])
+
+    def test_calendar_refresh_has_no_tiny_ranges_and_404_means_empty(self):
+        import urllib.error
+        from server.news.calendar import fetch_calendar
+        calls = []
+        service = NewsService(store=self.store, gdelt=None, feeds=(), calendar=lambda a, b: calls.append((a, b)) or [])
+        self.store.set_meta('calendar_until', str(1000*86400-10*86400-600))  # 10 minutes behind the refresh window
+        service.collect_calendar(now=1000*86400)
+        self.assertEqual(calls, [(1000*86400-10*86400-600, 1000*86400+30*86400)])  # one refresh, reaching back to the cursor
+
+        def missing(url):
+            raise urllib.error.HTTPError(url, 404, 'Not Found', {}, None)
+
+        self.assertEqual(fetch_calendar(0, 600, opener=missing), [])
 
     def test_timeline_starts_one_year_back(self):
         starts = []
