@@ -9,7 +9,8 @@ import pandas as pd
 
 from server.market.patterns import find_similar
 from server.news import routes
-from server.news.features import news_features
+from server.news.calendar import enrich, group_stats, parse_events, reactions, surprise_scales
+from server.news.features import news_features, release_surprises
 from server.news.sentiment import score_text, topics_for
 from server.news.service import NewsService
 from server.news.sources import GdeltClient, GdeltRateLimited, article_id, make_article, parse_feed
@@ -81,7 +82,7 @@ class StoreAndFeatureTests(unittest.TestCase):
         base = 1_767_225_600
         timeline = [dict(bucket=base, volume=1., tone=4.), dict(bucket=base+900, volume=3., tone=-4.)]
         index = pd.date_range(pd.Timestamp(base, unit='s', tz='UTC'), periods=4, freq='15min')
-        frame = news_features(index, 900, timeline=timeline, articles=[(base+100, .5), (base+1000, -1.)])
+        frame = news_features(index, 900, timeline=timeline, articles=[(base+100, .5), (base+1000, -1.)], releases=[(base+900, -2.)])
         # Candle 0 closes at base+900: only bucket 0 has ended.
         self.assertEqual(frame['news_volume'].iloc[0], 1.)
         self.assertEqual(frame['news_tone'].iloc[0], 4.)
@@ -89,7 +90,8 @@ class StoreAndFeatureTests(unittest.TestCase):
         self.assertAlmostEqual(frame['news_tone'].iloc[1], (4-12)/4)
         self.assertEqual(frame['headline_count'].iloc[0], 1)
         self.assertAlmostEqual(frame['headline_sentiment'].iloc[1], -.25)
-        early = news_features(pd.DatetimeIndex([pd.Timestamp(base-3600, unit='s', tz='UTC')]), 900, timeline=timeline, articles=[])
+        self.assertEqual(list(frame['macro_surprise'].iloc[:2]), [-2., -2.])  # known from the release time
+        early = news_features(pd.DatetimeIndex([pd.Timestamp(base-3600, unit='s', tz='UTC')]), 900, timeline=timeline, articles=[], releases=[])
         self.assertTrue(np.isnan(early['news_volume'].iloc[0]))  # before coverage: unknown, not zero
 
     def test_service_backfills_in_chunks_and_survives_feed_errors(self):
@@ -103,7 +105,8 @@ class StoreAndFeatureTests(unittest.TestCase):
             def articles(self):
                 raise RuntimeError('offline')
 
-        service = NewsService(store=self.store, gdelt=FakeGdelt(), feeds=(('broken', 'Broken', 'https://invalid.example/rss'),))
+        service = NewsService(store=self.store, gdelt=FakeGdelt(), feeds=(('broken', 'Broken', 'https://invalid.example/rss'),),
+                              calendar=lambda start, end: [])
         with patch('server.news.service.history_start', return_value=0), \
                 patch('server.news.service.fetch_rss', side_effect=OSError('down')):
             self.assertEqual(service.collect_articles(), 0)
@@ -156,6 +159,66 @@ class PatternNewsTests(unittest.TestCase):
                         np.mean([abs(m['news']['tone']-query_tone) for m in priced['matches']]))
         with self.assertRaises(ValueError):
             find_similar(self.bars, window=32, horizon=12, news_weight=.5)
+
+
+
+def fx_row(name, when, actual, consensus, country='US', **extra):
+    return dict(id=f'{name}-{when}', name=name, countryCode=country, dateUtc=when, periodDateUtc='2026-01-01T00:00:00Z',
+                periodType='MONTH', actual=actual, consensus=consensus, previous=1.0, revised=None, potency='ZERO',
+                volatility='HIGH', isBetterThanExpected=None, **extra)
+
+
+class CalendarTests(unittest.TestCase):
+    def test_parse_keeps_listed_us_events(self):
+        rows = parse_events([fx_row('Nonfarm Payrolls', '2026-02-06T13:30:00Z', 150, 100),
+                             fx_row('Nonfarm Payrolls', '2026-02-06T13:30:00Z', 1, 1, country='CA'),
+                             fx_row('Building Permits', '2026-02-06T13:30:00Z', 1, 1),
+                             fx_row('Unemployment Rate', '2026-02-06T13:30:00Z', 4.2, 4.1)], now=1)
+        self.assertEqual([(row['name'], row['grp'], row['silver_sign'], row['primary_event']) for row in rows],
+                         [('Nonfarm Payrolls', 'nfp', -1, 1), ('Unemployment Rate', 'nfp', 1, 0)])
+        self.assertEqual(rows[0]['released'], 1770384600)
+
+    def test_surprise_z_bias_and_reaction(self):
+        events = parse_events([fx_row('Consumer Price Index (YoY)', f'2026-0{month}-11T13:30:00Z', 3.0+(month % 2)*.2, 3.0)
+                               for month in range(1, 8)], now=1)
+        scales = surprise_scales(events)
+        self.assertAlmostEqual(scales['Consumer Price Index (YoY)'], np.std([.2, 0, .2, 0, .2, 0, .2]))
+        released = events[0]['released']  # 13:30 UTC
+        times = np.arange(released-600, released+5*3600, 60)
+        closes = np.where(times < released, 100., 99.)  # silver drops 1% from the release candle on
+        rows = enrich(events[:1], scales, pd.DataFrame(dict(close=closes), index=pd.to_datetime(times, unit='s', utc=True)))
+        self.assertGreater(rows[0]['surpriseZ'], 0)
+        self.assertLess(rows[0]['silverBias'], 0)  # hotter CPI -> silver down (textbook)
+        self.assertAlmostEqual(rows[0]['reaction']['m60'], -1.0)
+        stats = group_stats(rows)[0]
+        self.assertEqual((stats['group'], stats['measured'], stats['biasHitRate']), ('cpi', 1, 1.0))
+        # A candle that opened exactly at the release is not the "before" price.
+        moved = reactions(times, closes, [released])[0]
+        self.assertAlmostEqual(moved['m15'], -1.0)
+        self.assertEqual(reactions(times, closes, [released+86400]), [None])  # no data -> no reaction
+
+    def test_release_surprises_average_simultaneous_releases(self):
+        events = parse_events([fx_row(name, f'2026-0{month}-11T13:30:00Z', 3.0+(month % 2)*.2, 3.0)
+                               for month in range(1, 8) for name in ('Consumer Price Index (YoY)', 'Consumer Price Index (MoM)')], now=1)
+        surprises = release_surprises(events)
+        self.assertEqual(len(surprises), 7)
+        self.assertTrue(all(value < 0 for time, value in surprises[::2]))
+
+    def test_service_backfills_calendar_in_chunks(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        store = NewsStore(Path(directory.name)/'news.sqlite')
+        calls = []
+
+        def fake(start, end):
+            calls.append((start, end))
+            return parse_events([fx_row('Retail Sales (MoM)', '2026-02-17T13:30:00Z', .5, .2)], now=1)
+
+        service = NewsService(store=store, gdelt=None, feeds=(), calendar=fake)
+        with patch('server.news.service.CALENDAR_START', 0):
+            service.collect_calendar(now=400*86400)
+        self.assertEqual(calls, [(0, 180*86400), (180*86400, 360*86400), (360*86400, 390*86400), (390*86400, 430*86400)])
+        self.assertEqual(len(store.events()), 1)  # same id upserted, not duplicated
 
 
 if __name__ == '__main__':

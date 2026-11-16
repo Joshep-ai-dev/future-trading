@@ -2,7 +2,7 @@ import {useCallback,useEffect,useState} from 'react';
 import {api} from '../../shared/api/api';
 import {fmt} from '../../shared/types/types';
 
-type NewsSummary={tone:number|null;volumeZ:number|null;coverage:number};
+type NewsSummary={tone:number|null;volumeZ:number|null;macro?:number;macroMax?:number;coverage:number};
 type Match={start:number;end:number;distance:number;correlation:number;futureClosePct:number;futureHighPct:number;futureLowPct:number;path:number[];future:number[];news?:NewsSummary|null};
 type Band=Record<string,number[]>;
 type PatternResult={window:number;horizon:number;end:number;stepSeconds:number;current:number;query:number[];matches:Match[];forecast?:number[];newsWeight?:number;queryNews?:NewsSummary|null;
@@ -105,15 +105,15 @@ export default function PatternPanel({defaultTimeframe='15m',newsControls=false}
           <div className="pattern-legend"><span><i className="is-query"/>Current pattern</span><span><i className="is-up"/>Match that rose</span><span><i className="is-down"/>Match that fell</span><span><i className="is-band"/>10–90% high/low range</span><span><i className="is-median"/>Median close</span>{!!result.forecast?.length&&<span><i className="is-forecast"/>Forecast</span>}</div>
         </div>
         <div className="pattern-table" onMouseLeave={()=>setHighlight(null)}>
-          <table><thead><tr><th>#</th><th>Matched window (UTC)</th><th>Similarity</th>{result.queryNews&&<th>News tone</th>}<th>Then high</th><th>Then low</th><th>Then close</th></tr></thead><tbody>
+          <table><thead><tr><th>#</th><th>Matched window (UTC)</th><th>Similarity</th>{result.queryNews&&<th>News tone</th>}{result.queryNews&&<th>Release surprise</th>}<th>Then high</th><th>Then low</th><th>Then close</th></tr></thead><tbody>
             {result.matches.map((match,index)=><tr key={match.start} className={highlight===index?'selected-row':''} onMouseEnter={()=>setHighlight(index)}>
-              <td>{index+1}</td><td>{when(match.start)} → {when(match.end).slice(11)}</td><td>{fmt(match.correlation,2)}</td>{result.queryNews&&<td className={(match.news?.tone??0)>=0?'positive':'negative'}>{tone(match.news?.tone)}</td>}
+              <td>{index+1}</td><td>{when(match.start)} → {when(match.end).slice(11)}</td><td>{fmt(match.correlation,2)}</td>{result.queryNews&&<td className={(match.news?.tone??0)>=0?'positive':'negative'}>{tone(match.news?.tone)}</td>}{result.queryNews&&<td className={(match.news?.macroMax??0)>=0?'positive':'negative'}>{match.news?.macroMax?tone(match.news.macroMax):'—'}</td>}
               <td className="positive">{pct(match.futureHighPct)}</td><td className="negative">{pct(match.futureLowPct)}</td>
               <td className={match.futureClosePct>=0?'positive':'negative'}>{pct(match.futureClosePct)}</td></tr>)}
           </tbody></table>
         </div>
       </div>
-      {result.queryNews&&<p className="pattern-note">News now: GDELT tone {tone(result.queryNews.tone)}, volume {tone(result.queryNews.volumeZ)} σ vs. 7 days ({fmt(result.queryNews.coverage*100,0)}% of the window has news data){result.newsWeight?` · news counts ${fmt(result.newsWeight*100,0)}% of the match distance`:' · ranking uses price only'}.</p>}
+      {result.queryNews&&<p className="pattern-note">News now: GDELT tone {tone(result.queryNews.tone)}, volume {tone(result.queryNews.volumeZ)} σ vs. 7 days, US release surprise (24h) {tone(result.queryNews.macro)} ({fmt(result.queryNews.coverage*100,0)}% of the window has news data){result.newsWeight?` · news counts ${fmt(result.newsWeight*100,0)}% of the match distance`:' · ranking uses price only'}.</p>}
       {!!result.forecast?.length&&<p className="pattern-note">Dashed line: the model's forecast for the next {result.forecast.length} candles{straight?' (a straight line to its predicted close; this model has no step path)':''}. Matches had to follow the actual candles and this predicted move.</p>}
       <p className="pattern-note">Shapes are compared after removing price level and volatility. Only past windows whose full future was already known are used. Similar history is not a forecast guarantee.</p>
     </>}

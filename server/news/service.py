@@ -13,6 +13,7 @@ import threading
 import time
 from pathlib import Path
 
+from server.news.calendar import CALENDAR_START, fetch_calendar
 from server.news.sources import RSS_FEEDS, GdeltClient, GdeltRateLimited, fetch_rss
 from server.news.store import NewsStore
 
@@ -37,10 +38,12 @@ def history_start(default: int = 1767225600) -> int:
 
 
 class NewsService:
-    def __init__(self, store: NewsStore | None = None, gdelt: GdeltClient | None = None, feeds=RSS_FEEDS):
+    def __init__(self, store: NewsStore | None = None, gdelt: GdeltClient | None = None, feeds=RSS_FEEDS,
+                 calendar=fetch_calendar):
         self._store = store
         self.gdelt = gdelt or GdeltClient()
         self.feeds = feeds
+        self.calendar = calendar
         self.stop_event = threading.Event()
         self.thread: threading.Thread | None = None
         self.lock = threading.Lock()
@@ -68,8 +71,31 @@ class NewsService:
             errors['gdelt'] = str(error)[:200]
         with self.lock:
             self.state.update(lastRun=int(time.time()), lastNew=added,
-                              errors={**{k: v for k, v in self.state['errors'].items() if k == 'timeline'}, **errors})
+                              errors={**{k: v for k, v in self.state['errors'].items() if k in ('timeline', 'calendar')}, **errors})
         return added
+
+    def collect_calendar(self, now: int | None = None) -> int:
+        """Backfill the economic calendar in 180-day chunks, then keep refreshing the last 10 and next 30 days."""
+        now = int(now or time.time())
+        cursor = int(self.store.get_meta('calendar_until') or CALENDAR_START)
+        stored = 0
+        try:
+            while cursor < now-10*86400:
+                end = min(cursor+180*86400, now-10*86400)
+                rows = self.calendar(cursor, end)
+                self.store.upsert_events(rows)
+                stored += len(rows)
+                cursor = end
+                self.store.set_meta('calendar_until', str(cursor))
+            rows = self.calendar(now-10*86400, now+30*86400)  # actuals arrive, forecasts get set or revised
+            self.store.upsert_events(rows)
+            stored += len(rows)
+            with self.lock:
+                self.state['errors'].pop('calendar', None)
+        except Exception as error:
+            with self.lock:
+                self.state['errors']['calendar'] = str(error)[:200]
+        return stored
 
     def extend_timeline(self, now: int | None = None, max_chunks: int = BACKFILL_CHUNKS) -> bool:
         """Fetch the next timeline chunks. Returns True while older history is still missing."""
@@ -113,6 +139,7 @@ class NewsService:
         while not self.stop_event.is_set():
             try:
                 self.collect_articles()
+                self.collect_calendar()
                 behind = self.extend_timeline()
             except Exception:
                 logger.exception('News collection failed')
@@ -133,7 +160,7 @@ class NewsService:
         with self.lock:
             state = {**self.state, 'errors': dict(self.state['errors'])}
         return dict(running=bool(self.thread and self.thread.is_alive()), enabled=os.environ.get('SILVER_NEWS', '1') != '0',
-                    sources=[dict(id=provider, name=name) for provider, name, _ in self.feeds] + [dict(id='gdelt', name='GDELT')],
+                    sources=[dict(id=provider, name=name) for provider, name, _ in self.feeds] + [dict(id='gdelt', name='GDELT'), dict(id='calendar', name='FXStreet calendar')],
                     **state, **self.store.counts())
 
 

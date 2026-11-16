@@ -15,7 +15,8 @@ Optional inputs:
   move that followed (actual + forecast); its future starts right after the
   matched window, so the forecast part is compared with what really happened.
 * ``news`` / ``news_weight`` - per-candle news features (``news_tone``,
-  ``news_volume_z`` from ``server.news.features``). The window's news path is
+  ``news_volume_z`` and, when present, ``macro_surprise`` from
+  ``server.news.features``). The window's news path is
   compared like the price shape and blended into the distance with the given
   weight, so matches come from moments with similar news flow as well.
 """
@@ -38,16 +39,18 @@ NEWS_COLUMNS = ('news_tone', 'news_volume_z')
 
 
 def _news_matrix(news: pd.DataFrame) -> np.ndarray:
-    """(candles, 2): tone scaled to about +/-1 per 3 tone points and volume z, clipped; missing news is neutral (0)."""
+    """(candles, 3): tone (about +/-1 per 3 tone points), volume z and 24h macro surprise, clipped; missing is neutral (0)."""
     tone = (news['news_tone']/3).clip(-3, 3)
     volume = news['news_volume_z'].clip(-3, 3)
-    return np.column_stack([tone.to_numpy(float), volume.to_numpy(float)])
+    macro = news['macro_surprise'].clip(-3, 3) if 'macro_surprise' in news else pd.Series(0., index=news.index)
+    return np.column_stack([tone.to_numpy(float), volume.to_numpy(float), macro.fillna(0).to_numpy(float)])
 
 
 def _news_summary(rows: np.ndarray) -> dict:
-    tone, volume = rows[:, 0]*3, rows[:, 1]
+    tone, volume, macro = rows[:, 0]*3, rows[:, 1], rows[:, 2]
     mean = lambda values: None if np.isnan(values).all() else float(np.nanmean(values))  # noqa: E731
-    return dict(tone=mean(tone), volumeZ=mean(volume), coverage=float((~np.isnan(rows).any(axis=1)).mean()))
+    return dict(tone=mean(tone), volumeZ=mean(volume), macro=float(macro[-1]), macroMax=float(macro[np.argmax(np.abs(macro))]),
+                coverage=float((~np.isnan(rows[:, :2]).any(axis=1)).mean()))
 
 
 def find_similar(bars: pd.DataFrame, *, window: int = 48, horizon: int = 24, top_k: int = 20,

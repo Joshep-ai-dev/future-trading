@@ -6,6 +6,7 @@ import { TV, tvChartOptions, tvTimeScaleOptions } from "../../shared/charts/tvTh
 import { chartTimeOptions, useChartTimeZone } from "../../shared/charts/chartTimeZone";
 import { formatTradingTime } from "../../shared/charts/tradingTime";
 import PatternPanel from "../trading/PatternPanel";
+import EconomicCalendar from "./EconomicCalendar";
 
 type Article = {
   id: string;
@@ -354,13 +355,15 @@ export default function NewsPage({ visible }: { visible: boolean }) {
         </aside>
       </div>
 
+      <EconomicCalendar visible={visible} />
+
       <section className='news-panel news-similar' aria-label='Similar history'>
         <header>
           <div>
             <h2>Similar history</h2>
             <p>
-              Past moments whose candles (plus an optional model forecast) and news flow looked like now, and what silver did
-              next. News data exists from {status?.timelineStart != null ? formatTradingTime(status.timelineStart, zone).slice(0, 10) : "the start of collection"}.
+              Past moments whose candles (plus an optional model forecast), news flow and US release surprises looked like now,
+              and what silver did next. News data exists from {status?.timelineStart != null ? formatTradingTime(status.timelineStart, zone).slice(0, 10) : "the start of collection"}.
             </p>
           </div>
         </header>

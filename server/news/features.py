@@ -12,12 +12,17 @@ article once it was published. Columns:
 * ``headline_sentiment`` / ``headline_count`` - mean silver-POV sentiment and
   count of stored headlines in the trailing 24 hours (NaN without headlines;
   headlines exist only from when collection started).
+* ``macro_surprise`` - sum of silver-biased surprise z-scores of US releases
+  (CPI, PPI, NFP, ...) in the trailing 24 hours; a release counts from its
+  release time. Releases at the same moment (CPI m/m, y/y, core) are averaged
+  into one value. 0 when nothing was released.
 """
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 
+from server.news.calendar import enrich, surprise_scales
 from server.news.store import NewsStore
 
 BUCKET_SECONDS = 900
@@ -33,15 +38,26 @@ def _trailing(times: np.ndarray, values: np.ndarray, at: np.ndarray, span: int) 
     return total[right]-total[left]
 
 
+def release_surprises(events: list[dict]) -> list[tuple[int, float]]:
+    """(release time, mean silver bias) per release moment, from stored calendar events."""
+    by_time: dict[int, list[float]] = {}
+    for row in enrich(events, surprise_scales(events), None):
+        if row['silverBias'] is not None:
+            by_time.setdefault(row['released'], []).append(row['silverBias'])
+    return sorted((time, float(np.mean(values))) for time, values in by_time.items())
+
+
 def news_features(index: pd.DatetimeIndex, bar_seconds: int, store: NewsStore | None = None,
-                  timeline: list[dict] | None = None, articles: list[tuple[int, float]] | None = None) -> pd.DataFrame:
+                  timeline: list[dict] | None = None, articles: list[tuple[int, float]] | None = None,
+                  releases: list[tuple[int, float]] | None = None) -> pd.DataFrame:
     """News features for candles opening at ``index`` (UTC)."""
     closes = (index.asi8//10**9).astype(np.int64)+int(bar_seconds)
-    if timeline is None or articles is None:
+    if timeline is None or articles is None or releases is None:
         store = store or NewsStore()
         start = int(closes[0])-8*86400 if len(closes) else None
         timeline = store.timeline(since=start) if timeline is None else timeline
         articles = store.article_times(since=start) if articles is None else articles
+        releases = release_surprises(store.events()) if releases is None else releases
     frame = pd.DataFrame(index=index)
     if timeline:
         known = np.array([row['bucket'] for row in timeline], dtype=np.int64)+BUCKET_SECONDS
@@ -69,4 +85,9 @@ def news_features(index: pd.DatetimeIndex, bar_seconds: int, store: NewsStore | 
     else:
         frame['headline_count'] = 0.
         frame['headline_sentiment'] = np.nan
+    if releases:
+        released = np.array([time for time, _ in releases], dtype=np.int64)
+        frame['macro_surprise'] = _trailing(released, np.array([bias for _, bias in releases], dtype=float), closes, 86400)
+    else:
+        frame['macro_surprise'] = 0.
     return frame

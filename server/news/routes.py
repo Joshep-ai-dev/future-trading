@@ -12,6 +12,7 @@ from typing import Literal
 import numpy as np
 from fastapi import APIRouter, HTTPException, Query
 
+from server.news.calendar import GROUPS, enrich, group_stats, surprise_scales
 from server.news.sentiment import TOPIC_NAMES
 from server.news.service import news_service
 
@@ -99,6 +100,44 @@ def news_outlook():
                 tone24h=tone_day, tone7d=tone_week, toneShift=tone_shift, volume24h=volume_day,
                 volumeRatio=None if not volume_week else volume_day/(volume_week/7),
                 topics=topics, drivers=[_article(row) for row in drivers if row['sentiment']])
+
+
+_bars_cache: dict = {}
+
+
+def _minute_bars():
+    """1-minute XAG candles for release reactions, cached for five minutes (None if unavailable)."""
+    if _bars_cache.get('at', 0) > time.time()-300:
+        return _bars_cache['bars']
+    try:
+        from server.market.data import load_bars
+        bars, _ = load_bars('1m')
+        bars = bars.dropna(subset=['close'])
+    except (ValueError, OSError):
+        bars = None
+    _bars_cache.update(at=time.time(), bars=bars)
+    return bars
+
+
+def calendar_rows() -> list[dict]:
+    """Every stored event with surprise, z-score, silver bias and measured silver reaction."""
+    events = news_service.store.events()
+    return enrich(events, surprise_scales(events), _minute_bars())
+
+
+@router.get('/calendar')
+def economic_calendar(days_back: int = Query(60, ge=1, le=1200), days_ahead: int = Query(30, ge=0, le=90),
+                      group: str = Query('', max_length=20)):
+    """US releases (CPI, PPI, retail sales, FOMC, GDP + PCE, NFP): actual vs forecast and how silver reacted."""
+    keys = [key for key, _ in GROUPS]
+    if group and group not in keys:
+        raise HTTPException(status_code=400, detail=f'Unknown group. Use one of: {", ".join(keys)}')
+    rows = calendar_rows()
+    now = time.time()
+    shown = [row for row in rows if now-days_back*86400 <= row['released'] <= now+days_ahead*86400 and (not group or row['group'] == group)]
+    return dict(groups=[dict(key=key, label=label) for key, label in GROUPS], stats=group_stats(rows),
+                past=sorted([row for row in shown if row['released'] <= now], key=lambda row: -row['released']),
+                upcoming=[row for row in shown if row['released'] > now])
 
 
 @router.get('/status')

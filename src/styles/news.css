@@ -435,3 +435,136 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* US economic calendar */
+.econ-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding: 14px 16px 0;
+}
+
+.econ-card {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--field);
+  color: var(--text);
+  text-align: left;
+}
+
+.econ-card:hover {
+  border-color: var(--border-strong);
+}
+
+.econ-card[aria-pressed=true] {
+  border-color: #2962ff80;
+  background: #2962ff12;
+}
+
+.econ-card-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.econ-card-last {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.econ-card-last b {
+  font-size: 16px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.econ-card-last small,
+.econ-card-stats,
+.econ-card-next {
+  color: var(--faint);
+  font-size: 11.5px;
+}
+
+.econ-card-next {
+  color: var(--muted);
+}
+
+.econ-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px 10px;
+}
+
+.econ-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.econ-table-wrap {
+  max-height: 520px;
+  overflow: auto;
+  border-top: 1px solid var(--border);
+}
+
+.econ-table {
+  font-size: 12px;
+}
+
+.econ-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--panel);
+}
+
+.econ-table th,
+.econ-table td {
+  padding: 8px 12px;
+}
+
+.econ-table th:nth-child(-n+3),
+.econ-table td:nth-child(-n+3) {
+  text-align: left;
+}
+
+.econ-table td:first-child,
+.econ-table td:nth-child(3) {
+  color: var(--muted);
+}
+
+.econ-table td small {
+  color: var(--faint);
+}
+
+.econ-table tr:not(.is-primary) td:nth-child(2) {
+  padding-left: 24px;
+  color: var(--muted);
+}
+
+.econ-table tr.is-primary td:nth-child(2),
+.econ-actual {
+  font-weight: 600;
+}
+
+@media (max-width: 1300px) {
+  .econ-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .econ-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

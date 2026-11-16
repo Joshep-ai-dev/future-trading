@@ -17,7 +17,14 @@ SCHEMA = (
     '''CREATE TABLE IF NOT EXISTS tone_timeline (
         bucket INTEGER PRIMARY KEY, volume REAL, tone REAL, fetched INTEGER NOT NULL)''',
     'CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)',
+    '''CREATE TABLE IF NOT EXISTS econ_events (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, grp TEXT NOT NULL, silver_sign INTEGER NOT NULL, primary_event INTEGER NOT NULL,
+        released INTEGER NOT NULL, period TEXT, period_type TEXT, actual REAL, consensus REAL, previous REAL, revised REAL,
+        unit TEXT, potency TEXT, volatility TEXT, better INTEGER, fetched INTEGER NOT NULL)''',
+    'CREATE INDEX IF NOT EXISTS econ_events_released ON econ_events (released)',
 )
+ECON_COLUMNS = ('id', 'name', 'grp', 'silver_sign', 'primary_event', 'released', 'period', 'period_type', 'actual', 'consensus',
+                'previous', 'revised', 'unit', 'potency', 'volatility', 'better', 'fetched')
 ARTICLE_COLUMNS = ('id', 'published', 'fetched', 'provider', 'source', 'title', 'url', 'summary',
                    'sentiment', 'relevance', 'topics')
 
@@ -112,6 +119,32 @@ class NewsStore:
                                       (since or 0,)).fetchall()
         return [(int(row[0]), float(row[1])) for row in rows]
 
+    def upsert_events(self, rows: list[dict]) -> None:
+        """Insert or refresh calendar events (actuals and forecasts change until and after the release)."""
+        if not rows:
+            return
+        updates = ','.join(f'{column}=excluded.{column}' for column in ECON_COLUMNS[1:])
+        with self.lock, self._connect() as connection:
+            connection.executemany(
+                f'INSERT INTO econ_events ({",".join(ECON_COLUMNS)}) VALUES ({",".join("?" * len(ECON_COLUMNS))}) '
+                f'ON CONFLICT(id) DO UPDATE SET {updates}',
+                [tuple(row[column] for column in ECON_COLUMNS) for row in rows])
+
+    def events(self, *, since: int | None = None, until: int | None = None, group: str = '') -> list[dict]:
+        where, params = ['1=1'], []
+        if since is not None:
+            where.append('released >= ?')
+            params.append(since)
+        if until is not None:
+            where.append('released < ?')
+            params.append(until)
+        if group:
+            where.append('grp = ?')
+            params.append(group)
+        with self._connect() as connection:
+            rows = connection.execute(f'SELECT * FROM econ_events WHERE {" AND ".join(where)} ORDER BY released', params).fetchall()
+        return [dict(row) for row in rows]
+
     def get_meta(self, key: str) -> str | None:
         with self._connect() as connection:
             row = connection.execute('SELECT value FROM meta WHERE key=?', (key,)).fetchone()
@@ -126,5 +159,6 @@ class NewsStore:
         with self._connect() as connection:
             articles, newest = connection.execute('SELECT COUNT(*), MAX(published) FROM articles').fetchone()
             buckets, first, last = connection.execute('SELECT COUNT(*), MIN(bucket), MAX(bucket) FROM tone_timeline').fetchone()
+            events = connection.execute('SELECT COUNT(*) FROM econ_events').fetchone()[0]
         return dict(articles=int(articles), newestArticle=newest, timelineBuckets=int(buckets),
-                    timelineStart=first, timelineEnd=last)
+                    timelineStart=first, timelineEnd=last, calendarEvents=int(events))
