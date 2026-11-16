@@ -3,6 +3,7 @@ import { api } from "../../shared/api/api";
 import { fmt } from "../../shared/types/types";
 import { useChartTimeZone } from "../../shared/charts/chartTimeZone";
 import { formatTradingTime } from "../../shared/charts/tradingTime";
+import ReleaseChart, { type ChartRelease } from "./ReleaseChart";
 
 type Reaction = { m15: number | null; m60: number | null; m240: number | null } | null;
 type Release = {
@@ -81,6 +82,7 @@ export default function EconomicCalendar({ visible }: { visible: boolean }) {
   const [data, setData] = useState<Calendar | null>(null),
     [error, setError] = useState("");
   const [days, setDays] = useState(365);
+  const [chart, setChart] = useState<ChartRelease | null>(null);
   const [view, setView] = useState<"past" | "upcoming">("past"),
     [group, setGroup] = useState(""),
     [coreOnly, setCoreOnly] = useState(true);
@@ -210,6 +212,30 @@ export default function EconomicCalendar({ visible }: { visible: boolean }) {
               {rows.map((row) => (
                 <tr key={row.id} className={row.core ? "is-core" : ""}>
                   <td title={formatTradingTime(row.released, zone)}>
+                    {view === "past" && (
+                      <button
+                        type='button'
+                        className='econ-chart-button'
+                        title={row.reaction ? "Open the XAG/USDT chart around this release" : "No market candles for this date"}
+                        aria-label={`Chart around ${shortName(row.name)} on ${formatTradingTime(row.released, zone).slice(0, 16)}`}
+                        disabled={!row.reaction}
+                        onClick={() =>
+                          setChart({
+                            name: row.name,
+                            label: shortName(row.name),
+                            released: row.released,
+                            actual: value(row, row.actual),
+                            forecast: value(row, row.forecast),
+                            surprise: row.surprise == null ? "—" : signed(row.surprise, 2, unit(row)),
+                            reaction: row.reaction,
+                          })
+                        }
+                      >
+                        <svg viewBox='0 0 18 18' aria-hidden='true'>
+                          <path d='M4 3v10M3 5h2M3 11h2M9 5v9M8 7h2M8 12h2M14 2v8M13 4h2M13 8h2' />
+                        </svg>
+                      </button>
+                    )}
                     {formatTradingTime(row.released, zone).slice(0, 16)}
                     {view === "upcoming" && <small> {until(row.released)}</small>}
                   </td>
@@ -239,6 +265,7 @@ export default function EconomicCalendar({ visible }: { visible: boolean }) {
         dollar, which usually pushes silver down. The cards show how often silver really moved that way within an hour. FOMC minutes and the press
         conference have no forecast, and rate decisions rarely differ from it, so for those the silver move is what matters. Silver moves exist only from your first market candle, so older releases show —. Source: FXStreet economic calendar (stored from 2024).
       </p>
+      {chart && <ReleaseChart release={chart} onClose={() => setChart(null)} />}
     </section>
   );
 }
