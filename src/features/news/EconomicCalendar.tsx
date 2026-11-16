@@ -269,7 +269,7 @@ export default function EconomicCalendar({ visible, onOpenChart }: { visible: bo
         <ReleaseChart
           release={chart}
           onClose={() => setChart(null)}
-          onOpenTrading={onOpenChart ? () => { setChart(null); onOpenChart(chart.released, chart.label); } : undefined}
+          onOpenTrading={onOpenChart ? () => onOpenChart(chart.released, chart.label) : undefined}
         />
       )}
     </section>

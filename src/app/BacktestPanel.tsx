@@ -29,6 +29,14 @@ function runKey(value:BacktestSettings){
     leverage:value.max_leverage,tick:value.tick_size,fee:value.fee_bps,slippage:value.slippage,spread:value.spread,funding:value.funding_bps,adx_supertrend:strategy});
 }
 
+/** A tab opened with ?focus=<time>&label=<text> starts on the trading chart at that moment (read once, then removed from the address). */
+export const START_FOCUS:ChartFocus|null=(()=>{
+  const params=new URLSearchParams(location.search),time=Number(params.get('focus'));
+  if(!params.has('focus')||!Number.isFinite(time)||time<=0)return null;
+  history.replaceState(null,'',location.pathname);
+  return {time,label:params.get('label')??'',key:Date.now()};
+})();
+
 function initial(range: {
   startDate: string;
   endDate: string;
@@ -83,11 +91,10 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
   const [busy,setBusy]=useState(false);
   const [runError,setRunError]=useState('');
   const [runId,setRunId]=useState(0);
-  const [chartFocus,setChartFocus]=useState<ChartFocus|null>(null);
-  /** Show the paper trading chart at a past moment (from the News page). */
+  const [chartFocus]=useState<ChartFocus|null>(START_FOCUS);
+  /** Open the paper trading chart at a past moment (from the News page) in a new browser tab. */
   function openTradingChart(time:number,label:string){
-    if(accountMode!=='paper')onAccountModeChange('paper');
-    setChartFocus({time,label,key:Date.now()});onViewChange('paper');
+    window.open(`${location.pathname}?${new URLSearchParams({focus:String(time),label})}`,'_blank','noopener');
   }
   async function runBacktest(override?:BacktestSettings){
     const request=override??settings;

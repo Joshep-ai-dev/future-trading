@@ -108,11 +108,11 @@ export default function ReleaseChart({ release, onClose, onOpenTrading }: { rele
           <small>{formatTradingTime(release.released, zone)}</small>
         </div>
         {onOpenTrading && (
-          <button type='button' className='release-open-trading' onClick={onOpenTrading} title='Open the Trading page chart at this release'>
+          <button type='button' className='release-open-trading' onClick={onOpenTrading} title='Open the Trading chart at this release in a new tab'>
             <svg viewBox='0 0 18 18' aria-hidden='true'>
               <path d='M3 14l4-5 3 3 5-7M11 5h4v4' />
             </svg>
-            Open in trading chart
+            Open in trading chart ↗
           </button>
         )}
         <button type='button' className='tv-dialog-close' aria-label='Close' onClick={onClose}>

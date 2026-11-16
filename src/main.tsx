@@ -3,7 +3,7 @@ import {createRoot} from 'react-dom/client';
 import {api} from './shared/api/api';
 import type {Page} from './app/Tabs';
 import AppHeader from './app/layout/AppHeader';
-import BacktestPanel from './app/BacktestPanel';
+import BacktestPanel,{START_FOCUS} from './app/BacktestPanel';
 import MarketStatus from './shared/ui/MarketStatus';
 import AuthScreen,{type SignedInUser} from './features/auth/AuthScreen';
 import {useExchangeVenue} from './shared/api/exchangeVenue';
@@ -12,7 +12,8 @@ import './style.css';
 type Range={startDate:string;endDate:string};
 function App({user,onSignedOut}:{user:SignedInUser;onSignedOut:()=>void}) {
   const [page,setPage]=useState<Page>('paper');
-  const [accountMode,setAccountMode]=useState<'live'|'paper'>(()=>{try{return localStorage.getItem('silver.account.mode')==='live'?'live':'paper';}catch{return 'paper';}});
+  // A tab opened with ?focus=<time> ("Open in trading chart") shows the paper chart; the saved mode is left unchanged.
+  const [accountMode,setAccountMode]=useState<'live'|'paper'>(()=>{if(START_FOCUS)return 'paper';try{return localStorage.getItem('silver.account.mode')==='live'?'live':'paper';}catch{return 'paper';}});
   const exchangeVenue=useExchangeVenue();
   const [range,setRange]=useState<Range|null>(null),[error,setError]=useState('');
   const loadRange=useCallback(async()=>{
