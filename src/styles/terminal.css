@@ -820,6 +820,20 @@ table tbody tr:hover td {
   .market-bar .market-stat.clock-stat {
     display: none;
   }
+
+  /* Tabs scroll sideways: fade the right edge so the next tab reads as "more". */
+  .app-header .page-tabs {
+    -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent);
+    mask-image: linear-gradient(90deg, #000 85%, transparent);
+  }
+}
+
+/* Phones: brand, Paper / Live and the account menu share one row
+   (the market source picker is informational; live mode picks the exchange in its ticker). */
+@media (max-width: 600px) {
+  .app-header .header-exchange-picker {
+    display: none;
+  }
 }
 
 /* Backtest empty state: run directly from the current setup */

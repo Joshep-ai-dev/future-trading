@@ -759,6 +759,28 @@ button:hover:not(:disabled) {
   border-left: 1px solid #3a3a3a;
 }
 
+/* A fixed unit (USDT, ×, %) sits inside the right edge of the input. */
+.input-with-unit:has(> span) {
+  position: relative;
+}
+
+.input-with-unit:has(> span) input {
+  flex: 1;
+  padding-right: 48px;
+  border-right: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.input-with-unit > span {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  color: var(--faint);
+  font-size: 11px;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
 .bot-start,.bot-pause {
   display: block;
   width: 100%;
@@ -788,25 +810,59 @@ button:hover:not(:disabled) {
 
 .strategy-card {
   margin: 0 16px;
-  padding: 13px 0;
+  padding: 13px 0 14px;
   border-top: 1px solid var(--border);
 }
 
-.strategy-card>div {
+.strategy-card > header {
   display: flex;
   align-items: center;
-  gap: 9px;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
 }
 
 .strategy-card strong {
-  font-size: 11px;
-  display: block;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .strategy-card small {
-  font-size: 9px;
   display: block;
-  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.strategy-card .text-button {
+  padding: 0;
+  font-size: 11.5px;
+}
+
+.strategy-rules {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.strategy-rules > div {
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr);
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.strategy-rules dt {
+  color: var(--faint);
+}
+
+.strategy-rules dd {
+  margin: 0;
+  color: var(--text);
 }
 
 .strategy-icon {
@@ -818,10 +874,6 @@ button:hover:not(:disabled) {
   color: #2962ff;
   border-radius: 5px;
   font-size: 22px;
-}
-
-.strategy-card button {
-  margin: 10px 0 0 38px;
 }
 
 .control-footnote {
