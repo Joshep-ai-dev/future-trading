@@ -14,9 +14,11 @@ export type IndicatorStyle={
   rsiColor:string;rsiWidth:number;
   atrColor:string;atrWidth:number;
   adxWidth:number;
+  adxWeakColor:string;adxTrendColor:string;adxStrongColor:string;
+  diPlusColor:string;diMinusColor:string;adxBullBgColor:string;adxBearBgColor:string;
   trendSmaColor:string;trendSmaWidth:number;
 };
-export type IndicatorConfig=IndicatorStyle&{bbLength:number;bbMaType:BollingerConfig['maType'];bbSource:BollingerConfig['source'];bbMultiplier:number;bbOffset:number;supertrendLength:number;supertrendMultiplier:number;atrLength:number;atrThreshold:number;atrSmoothing:'RMA'|'SMA'|'EMA'|'WMA';adxLength:number;diLength:number;showDi:boolean;showStatus:boolean;adxLevels:number[];showAdxLevels:boolean;rsiLength:number;rsiUpper:number;rsiLower:number;maFast:number;maMid:number;maSlow:number;maType:'SMA'|'EMA';trendSmaLength:number};
+export type IndicatorConfig=IndicatorStyle&{bbLength:number;bbMaType:BollingerConfig['maType'];bbSource:BollingerConfig['source'];bbMultiplier:number;bbOffset:number;supertrendLength:number;supertrendMultiplier:number;atrLength:number;atrThreshold:number;atrSmoothing:'RMA'|'SMA'|'EMA'|'WMA';adxLength:number;diLength:number;showDi:boolean;showStatus:boolean;adxTrendLevel:number;adxStrongLevel:number;showAdxLevels:boolean;rsiLength:number;rsiUpper:number;rsiLower:number;maFast:number;maMid:number;maSlow:number;maType:'SMA'|'EMA';trendSmaLength:number};
 
 /** TradingView built-in defaults (inputs and plot colors). */
 const defaultStyle:IndicatorStyle={
@@ -26,9 +28,11 @@ const defaultStyle:IndicatorStyle={
   rsiColor:'#7e57c2',rsiWidth:1,
   atrColor:'#b71c1c',atrWidth:1,
   adxWidth:2,
+  adxWeakColor:'#787b86',adxTrendColor:'#ff9800',adxStrongColor:'#f23645',
+  diPlusColor:'#00e676',diMinusColor:'#f23645',adxBullBgColor:'#4caf50',adxBearBgColor:'#f23645',
   trendSmaColor:'#ff9800',trendSmaWidth:1,
 };
-export const defaultIndicators:IndicatorConfig={...defaultStyle,bbLength:defaultBollinger.length,bbMaType:defaultBollinger.maType,bbSource:defaultBollinger.source,bbMultiplier:defaultBollinger.multiplier,bbOffset:defaultBollinger.offset,supertrendLength:10,supertrendMultiplier:3,atrLength:14,atrThreshold:0.03,atrSmoothing:'RMA',adxLength:14,diLength:14,showDi:false,showStatus:true,adxLevels:[20,25,50,75],showAdxLevels:true,rsiLength:14,rsiUpper:70,rsiLower:30,maFast:20,maMid:50,maSlow:100,maType:'SMA',trendSmaLength:30};
+export const defaultIndicators:IndicatorConfig={...defaultStyle,bbLength:defaultBollinger.length,bbMaType:defaultBollinger.maType,bbSource:defaultBollinger.source,bbMultiplier:defaultBollinger.multiplier,bbOffset:defaultBollinger.offset,supertrendLength:10,supertrendMultiplier:3,atrLength:14,atrThreshold:0.03,atrSmoothing:'RMA',adxLength:14,diLength:14,showDi:false,showStatus:true,adxTrendLevel:25,adxStrongLevel:50,showAdxLevels:true,rsiLength:14,rsiUpper:70,rsiLower:30,maFast:20,maMid:50,maSlow:100,maType:'SMA',trendSmaLength:30};
 
 const COLOR_KEYS=Object.keys(defaultStyle).filter(key=>key.endsWith('Color')) as (keyof IndicatorStyle)[];
 const WIDTH_KEYS=Object.keys(defaultStyle).filter(key=>key.endsWith('Width')) as (keyof IndicatorStyle)[];
@@ -41,7 +45,7 @@ function validInputs(c:IndicatorConfig){
     &&Number.isFinite(c.atrThreshold)&&c.atrThreshold>=0
     &&[c.atrLength,c.adxLength,c.diLength,c.rsiLength,c.supertrendLength,c.maFast,c.maMid,c.maSlow,c.trendSmaLength].every(v=>Number.isInteger(v)&&v>=1&&v<=1000)
     &&typeof c.showDi==='boolean'&&typeof c.showAdxLevels==='boolean'
-    &&Array.isArray(c.adxLevels)&&c.adxLevels.length<=8&&c.adxLevels.every(v=>typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=100)
+    &&[c.adxTrendLevel,c.adxStrongLevel].every(v=>Number.isFinite(v)&&v>=0&&v<=100)&&c.adxTrendLevel<c.adxStrongLevel
     &&['RMA','SMA','EMA','WMA'].includes(c.atrSmoothing)&&typeof c.showStatus==='boolean'
     &&[c.rsiUpper,c.rsiLower].every(v=>Number.isFinite(v)&&v>=0&&v<=100)&&c.rsiLower<c.rsiUpper
     &&['SMA','EMA'].includes(c.maType);
@@ -85,18 +89,9 @@ const FIELDS:Record<SettingsKind,(keyof IndicatorConfig)[]>={
   supertrend:['supertrendLength','supertrendMultiplier','stUpColor','stDownColor','stWidth'],
   triplema:['maType','maFast','maMid','maSlow','maFastColor','maMidColor','maSlowColor','maWidth'],
   rsi:['rsiLength','rsiUpper','rsiLower','rsiColor','rsiWidth'],
-  adx:['diLength','adxLength','showDi','showStatus','adxLevels','showAdxLevels','adxWidth'],
+  adx:['diLength','adxLength','showDi','showStatus','adxTrendLevel','adxStrongLevel','showAdxLevels','adxWeakColor','adxTrendColor','adxStrongColor','diPlusColor','diMinusColor','adxBullBgColor','adxBearBgColor','adxWidth'],
   atr:['atrLength','atrSmoothing','atrThreshold','atrColor','atrWidth'],
 };
-
-/** Comma-separated levels such as "20, 25, 50, 75"; applies only when every value is 0-100. */
-function LevelsInput({value,onChange}:{value:number[];onChange:(levels:number[])=>void}){
-  const [text,setText]=useState(value.join(', '));
-  useEffect(()=>{setText(old=>old.split(',').map(Number).join()===value.join()?old:value.join(', '));},[value]);
-  const parse=(raw:string)=>{const parts=raw.split(',').map(part=>part.trim()).filter(Boolean);const levels=parts.map(Number);return parts.length<=8&&levels.every(v=>Number.isFinite(v)&&v>=0&&v<=100)?[...new Set(levels)].sort((a,b)=>a-b):null;};
-  const parsed=parse(text);
-  return <input type="text" inputMode="decimal" value={text} aria-invalid={!parsed} placeholder="20, 25, 50, 75" onChange={e=>{setText(e.target.value);const levels=parse(e.target.value);if(levels)onChange(levels);}}/>;
-}
 
 function Row({label,children}:{label:string;children:ReactNode}){
   return <label className="tv-dialog-row"><span>{label}</span><span className="tv-dialog-control">{children}</span></label>;
@@ -111,7 +106,7 @@ export default function IndicatorSettings({kind,value,onApply,onClose}:{kind:Set
   const defaultsMenu=useRef<HTMLDetailsElement>(null);
   useEffect(()=>{const element=dialog.current,previous=document.activeElement as HTMLElement|null;element?.showModal();return ()=>{element?.close();previous?.focus();};},[]);
   const valid=validInputs(draft);
-  const error=!valid?(kind==='rsi'&&draft.rsiLower>=draft.rsiUpper?'Lower band must be below the upper band.':'Check the highlighted inputs.'):'';
+  const error=!valid?(kind==='rsi'&&draft.rsiLower>=draft.rsiUpper?'Lower band must be below the upper band.':kind==='adx'&&draft.adxTrendLevel>=draft.adxStrongLevel?'Trend level must be below the strong trend level.':'Check the highlighted inputs.'):'';
   function change(next:IndicatorConfig){setDraft(next);if(validInputs(next))onApply(next);}
   function set<K extends keyof IndicatorConfig>(key:K,v:IndicatorConfig[K]){change({...draft,[key]:v});}
   function cancel(){onApply(original.current);onClose();}
@@ -157,7 +152,8 @@ export default function IndicatorSettings({kind,value,onApply,onClose}:{kind:Set
       <label className="tv-dialog-check"><input type="checkbox" checked={draft.showDi} onChange={e=>set('showDi',e.target.checked)}/>Display DI lines</label>
       <label className="tv-dialog-check"><input type="checkbox" checked={draft.showStatus} onChange={e=>set('showStatus',e.target.checked)}/>Show trend label</label>
       <label className="tv-dialog-check"><input type="checkbox" checked={draft.showAdxLevels} onChange={e=>set('showAdxLevels',e.target.checked)}/>Show threshold lines</label>
-      <Row label="Threshold levels"><LevelsInput value={draft.adxLevels} onChange={levels=>set('adxLevels',levels)}/></Row>
+      <Row label="Trend level">{num('adxTrendLevel',{min:0,max:100,step:.5})}</Row>
+      <Row label="Strong trend level">{num('adxStrongLevel',{min:0,max:100,step:.5})}</Row>
     </>,
     atr:<>
       <Row label="Length">{num('atrLength',{min:1,max:1000,step:1})}</Row>
@@ -171,7 +167,16 @@ export default function IndicatorSettings({kind,value,onApply,onClose}:{kind:Set
     supertrend:<>{color('stUpColor','Up trend')}{color('stDownColor','Down trend')}{width('stWidth')}</>,
     triplema:<>{color('maFastColor','Fast MA')}{color('maMidColor','Middle MA')}{color('maSlowColor','Slow MA')}{width('maWidth')}</>,
     rsi:<>{color('rsiColor','RSI')}{width('rsiWidth')}</>,
-    adx:<><p className="tv-dialog-note">ADX color by strength: blue &lt;20 Weak, green &lt;25 Emerging, yellow &lt;50 Strong, orange &lt;75 Very Strong, red Extremely Strong. +DI lime, −DI red. Background green when +DI &gt; −DI, red otherwise.</p>{width('adxWidth')}</>,
+    adx:<>
+      {color('adxWeakColor',`Weak (below ${draft.adxTrendLevel})`)}
+      {color('adxTrendColor',`Trend (${draft.adxTrendLevel}–${draft.adxStrongLevel})`)}
+      {color('adxStrongColor',`Strong trend (${draft.adxStrongLevel}+)`)}
+      {width('adxWidth')}
+      {color('diPlusColor','+DI')}
+      {color('diMinusColor','−DI')}
+      {color('adxBullBgColor','Background +DI > −DI')}
+      {color('adxBearBgColor','Background −DI > +DI')}
+    </>,
     atr:<>{color('atrColor','ATR')}{width('atrWidth')}</>,
   };
   return createPortal(<dialog ref={dialog} className="indicator-modal tv-dialog" aria-labelledby="indicator-dialog-title" onCancel={e=>{e.preventDefault();cancel();}} onClick={e=>{if(e.target!==e.currentTarget)return;const rect=e.currentTarget.getBoundingClientRect();if(e.clientX<rect.left||e.clientX>rect.right||e.clientY<rect.top||e.clientY>rect.bottom)cancel();}}>

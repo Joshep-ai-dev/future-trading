@@ -12,7 +12,7 @@ import IndicatorSettings, {
   type OverlayKind,
   type SettingsKind,
 } from "./IndicatorSettings";
-import { AdxVisualizer, adxColor, DI_COLORS, levelColor } from "./adxDisplay";
+import { AdxVisualizer, adxColor, adxLevels, diColors, levelColor } from "./adxDisplay";
 import { PaneBand } from "./PaneBand";
 import ChartLegend, {
   legendData,
@@ -363,7 +363,7 @@ export default function PaperPriceChart(props: Props) {
                 : {
                     time: p.time as UTCTimestamp,
                     value: p.adx,
-                    color: adxColor(p.adx),
+                    color: adxColor(p.adx, panelConfig),
                   },
             ),
           );
@@ -425,7 +425,7 @@ export default function PaperPriceChart(props: Props) {
             {
               color:
                 key === "adx"
-                  ? adxColor(null)
+                  ? adxColor(null, config)
                   : key === "atr"
                     ? config.atrColor
                     : config.rsiColor,
@@ -456,16 +456,16 @@ export default function PaperPriceChart(props: Props) {
           if (key === "adx") {
             // Threshold values (default 20 / 25 / 50 / 75) with their price-scale labels.
             if (config.showAdxLevels)
-              for (const value of config.adxLevels)
+              for (const value of adxLevels(config))
                 series.createPriceLine({
                   price: value,
-                  color: levelColor(value),
+                  color: levelColor(value, config),
                   lineWidth: 1,
                   lineStyle: LineStyle.Dotted,
                   axisLabelVisible: true,
                   title: "",
                 });
-            diSeries = [DI_COLORS.plus, DI_COLORS.minus].map((color) =>
+            diSeries = [config.diPlusColor, config.diMinusColor].map((color) =>
               chart.addSeries(
                 LineSeries,
                 {
@@ -481,7 +481,7 @@ export default function PaperPriceChart(props: Props) {
                 series.getPane().paneIndex(),
               ),
             );
-            adxDecoration = new AdxVisualizer(config.showStatus);
+            adxDecoration = new AdxVisualizer(config.showStatus, config);
             series.attachPrimitive(adxDecoration);
           }
           if (key === "atr") {
@@ -1080,8 +1080,8 @@ export default function PaperPriceChart(props: Props) {
             extra={
               kind === "adx" && indicatorConfig.showDi
                 ? [
-                    { value: diValues.pdi, color: DI_COLORS.plus },
-                    { value: diValues.mdi, color: DI_COLORS.minus },
+                    { value: diValues.pdi, color: diColors(indicatorConfig).plus },
+                    { value: diValues.mdi, color: diColors(indicatorConfig).minus },
                   ]
                 : undefined
             }

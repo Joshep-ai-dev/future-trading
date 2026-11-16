@@ -51,7 +51,7 @@ import {
 } from "../types/types";
 import { chartVolume } from "./chartVolume";
 import { indicatorColor } from "./indicatorColors";
-import { AdxVisualizer, adxColor, DI_COLORS, levelColor } from "./adxDisplay";
+import { AdxVisualizer, adxColor, adxLevels, diColors, levelColor } from "./adxDisplay";
 import { PaneBand } from "./PaneBand";
 import ChartLegend, {
   legendData,
@@ -452,7 +452,7 @@ export default function BacktestChart({
       const colors = {
         atr: indicatorConfig.atrColor,
         rsi: indicatorConfig.rsiColor,
-        adx: adxColor(null),
+        adx: adxColor(null, indicatorConfig),
       };
       const widths = {
         atr: indicatorConfig.atrWidth,
@@ -495,10 +495,10 @@ export default function BacktestChart({
       if (key === "adx") {
         // Threshold values (default 20 / 25 / 50 / 75) with their price-scale labels.
         if (indicatorConfig.showAdxLevels)
-          for (const value of indicatorConfig.adxLevels)
+          for (const value of adxLevels(indicatorConfig))
             series.createPriceLine({
               price: value,
-              color: levelColor(value),
+              color: levelColor(value, indicatorConfig),
               lineWidth: 1,
               lineStyle: LineStyle.Dotted,
               axisLabelVisible: true,
@@ -511,7 +511,7 @@ export default function BacktestChart({
               : {
                   time: point.time as UTCTimestamp,
                   value: point.adx,
-                  color: adxColor(point.adx),
+                  color: adxColor(point.adx, indicatorConfig),
                 },
           ),
         );
@@ -521,7 +521,7 @@ export default function BacktestChart({
               .addSeries(
                 LineSeries,
                 {
-                  color: field === "pdi" ? DI_COLORS.plus : DI_COLORS.minus,
+                  color: field === "pdi" ? indicatorConfig.diPlusColor : indicatorConfig.diMinusColor,
                   lineWidth: 1,
                   title: "",
                   priceLineVisible: false,
@@ -537,7 +537,7 @@ export default function BacktestChart({
                 ),
               ),
           );
-        const visualizer = new AdxVisualizer(indicatorConfig.showStatus);
+        const visualizer = new AdxVisualizer(indicatorConfig.showStatus, indicatorConfig);
         visualizer.setVisible(!hiddenIndicators.adx);
         visualizer.setData(oscillatorData);
         series.attachPrimitive(visualizer);
@@ -1107,8 +1107,8 @@ export default function BacktestChart({
             extra={
               kind === "adx" && indicatorConfig.showDi
                 ? [
-                    { value: diValues.pdi, color: DI_COLORS.plus },
-                    { value: diValues.mdi, color: DI_COLORS.minus },
+                    { value: diValues.pdi, color: diColors(indicatorConfig).plus },
+                    { value: diValues.mdi, color: diColors(indicatorConfig).minus },
                   ]
                 : undefined
             }

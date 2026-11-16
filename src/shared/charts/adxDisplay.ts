@@ -2,23 +2,26 @@ import type {ISeriesPrimitive,SeriesAttachedParameter,Time,IPrimitivePaneRendere
 import {TV} from './tvTheme';
 
 /**
- * "ADX 14 Trend Strength Visualizer v6" (ggs92, MPL-2.0) ported to the chart.
- * Pine color constants: blue #2962ff, green #4caf50, yellow #ffeb3b,
- * orange #ff9800, red #f23645, lime #00e676.
+ * ADX trend strength, based on "ADX 14 Trend Strength Visualizer v6" (ggs92, MPL-2.0).
+ * Two thresholds split ADX into three zones, each with its own color:
+ * below the trend level = Weak, from the trend level = Trend, from the strong level = Strong trend.
  */
-export const ADX_LEVELS=[
-  {below:20,color:'#2962ff',label:'Weak'},
-  {below:25,color:'#4caf50',label:'Emerging'},
-  {below:50,color:'#ffeb3b',label:'Strong'},
-  {below:75,color:'#ff9800',label:'Very Strong'},
-  {below:Infinity,color:'#f23645',label:'Extremely Strong'},
-] as const;
-export const DI_COLORS={plus:'#00e676',minus:'#f23645'};
-const level=(adx:number)=>ADX_LEVELS.find(item=>adx<item.below)!;
-/** Threshold line color: the strength color that starts at this level (20 green, 25 yellow, ...). */
-export const levelColor=(value:number)=>level(value).color;
-export const adxColor=(adx:number|null)=>adx===null||!Number.isFinite(adx)?TV.muted:level(adx).color;
-export const adxLabel=(adx:number)=>level(adx).label;
+export type AdxStyle={
+  adxTrendLevel:number;adxStrongLevel:number;
+  adxWeakColor:string;adxTrendColor:string;adxStrongColor:string;
+  diPlusColor:string;diMinusColor:string;adxBullBgColor:string;adxBearBgColor:string;
+};
+type Zone={color:string;label:string};
+const zone=(adx:number,c:AdxStyle):Zone=>adx>=c.adxStrongLevel?{color:c.adxStrongColor,label:'Strong trend'}
+  :adx>=c.adxTrendLevel?{color:c.adxTrendColor,label:'Trend'}:{color:c.adxWeakColor,label:'Weak'};
+/** Threshold line color: the zone color that starts at this level. */
+export const levelColor=(value:number,c:AdxStyle)=>zone(value,c).color;
+export const adxColor=(adx:number|null,c:AdxStyle)=>adx===null||!Number.isFinite(adx)?c.adxWeakColor:zone(adx,c).color;
+export const adxLabel=(adx:number,c:AdxStyle)=>zone(adx,c).label;
+export const adxLevels=(c:AdxStyle)=>[c.adxTrendLevel,c.adxStrongLevel];
+export const diColors=(c:AdxStyle)=>({plus:c.diPlusColor,minus:c.diMinusColor});
+/** Background tint: the chosen color at 10% opacity. */
+const tint=(hex:string)=>hex+'1a';
 
 export type AdxRow={time:number;adx:number|null;pdi:number|null;mdi:number|null};
 
@@ -27,7 +30,7 @@ export class AdxVisualizer implements ISeriesPrimitive<Time>{
   private host:SeriesAttachedParameter<Time>|null=null;
   private rows:AdxRow[]=[];
   private visible=true;
-  constructor(private showLabel:boolean){}
+  constructor(private showLabel:boolean,private style:AdxStyle){}
   setVisible(visible:boolean){this.visible=visible;this.host?.requestUpdate();}
   setData(rows:AdxRow[]){this.rows=rows;this.host?.requestUpdate();}
   private renderer:IPrimitivePaneRenderer={
@@ -51,7 +54,7 @@ export class AdxVisualizer implements ISeriesPrimitive<Time>{
         const bull=bars[start].bull;
         if(bull!==null){
           const left=edge(start),right=edge(i);
-          ctx.fillStyle=bull?'rgba(76,175,80,0.1)':'rgba(242,54,69,0.1)';
+          ctx.fillStyle=tint(bull?this.style.adxBullBgColor:this.style.adxBearBgColor);
           ctx.fillRect(left,0,right-left,mediaSize.height);
         }
         start=i;
@@ -64,7 +67,7 @@ export class AdxVisualizer implements ISeriesPrimitive<Time>{
       const x=host.chart.timeScale().timeToCoordinate(last.time as UTCTimestamp),y=host.series.priceToCoordinate(last.adx!);
       if(x===null||y===null||x<0||x>mediaSize.width)return;
       // label.style_label_up: box under the point with an arrow pointing up at it.
-      const text=adxLabel(last.adx!),color=adxColor(last.adx);
+      const text=adxLabel(last.adx!,this.style),color=adxColor(last.adx,this.style);
       ctx.save();ctx.font=`11px ${TV.font}`;
       const width=ctx.measureText(text).width+12,height=18,arrow=5;
       const tip=Math.min(y,mediaSize.height-height-arrow-1),left=Math.max(2,Math.min(mediaSize.width-width-2,x-width/2));
