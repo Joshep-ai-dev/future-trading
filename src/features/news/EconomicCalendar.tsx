@@ -100,6 +100,19 @@ export default function EconomicCalendar({ visible, onOpenChart }: { visible: bo
     return () => clearInterval(timer);
   }, [visible, group, days]);
 
+  /** Released rows with market candles open the chart around the release. */
+  function openChart(row: Release) {
+    if (view !== "past" || !row.reaction) return;
+    setChart({
+      name: row.name,
+      label: shortName(row.name),
+      released: row.released,
+      actual: value(row, row.actual),
+      forecast: value(row, row.forecast),
+      surprise: row.surprise == null ? "—" : signed(row.surprise, 2, unit(row)),
+      reaction: row.reaction,
+    });
+  }
   const rows = (view === "past" ? data?.past : data?.upcoming)?.filter((row) => !coreOnly || row.core) ?? [];
   return (
     <section className='news-panel econ' aria-label='US economic calendar'>
@@ -210,32 +223,20 @@ export default function EconomicCalendar({ visible, onOpenChart }: { visible: bo
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={row.id} className={row.core ? "is-core" : ""}>
-                  <td title={formatTradingTime(row.released, zone)}>
-                    {view === "past" && (
-                      <button
-                        type='button'
-                        className='econ-chart-button'
-                        title={row.reaction ? "Open the XAG/USDT chart around this release" : "No market candles for this date"}
-                        aria-label={`Chart around ${shortName(row.name)} on ${formatTradingTime(row.released, zone).slice(0, 16)}`}
-                        disabled={!row.reaction}
-                        onClick={() =>
-                          setChart({
-                            name: row.name,
-                            label: shortName(row.name),
-                            released: row.released,
-                            actual: value(row, row.actual),
-                            forecast: value(row, row.forecast),
-                            surprise: row.surprise == null ? "—" : signed(row.surprise, 2, unit(row)),
-                            reaction: row.reaction,
-                          })
-                        }
-                      >
-                        <svg viewBox='0 0 18 18' aria-hidden='true'>
-                          <path d='M4 3v10M3 5h2M3 11h2M9 5v9M8 7h2M8 12h2M14 2v8M13 4h2M13 8h2' />
-                        </svg>
-                      </button>
-                    )}
+                <tr
+                  key={row.id}
+                  className={`${row.core ? "is-core" : ""} ${view === "past" && row.reaction ? "is-clickable" : ""}`}
+                  tabIndex={view === "past" && row.reaction ? 0 : undefined}
+                  title={view === "past" ? (row.reaction ? "Click to open the XAG/USDT chart around this release" : "No market candles for this date") : undefined}
+                  onClick={() => openChart(row)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      openChart(row);
+                    }
+                  }}
+                >
+                  <td>
                     {formatTradingTime(row.released, zone).slice(0, 16)}
                     {view === "upcoming" && <small> {until(row.released)}</small>}
                   </td>

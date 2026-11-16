@@ -823,39 +823,19 @@
   min-width: 0;
 }
 
-/* Chart icon in the calendar table and the release chart dialog */
-.econ-chart-button {
-  display: inline-grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  margin-right: 8px;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  background: transparent;
-  color: var(--tv-blue-light);
-  vertical-align: middle;
+/* Clickable calendar rows open the release chart dialog */
+.econ-table tr.is-clickable {
+  cursor: pointer;
 }
 
-.econ-chart-button svg {
-  width: 14px;
-  height: 14px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.5;
-  stroke-linecap: round;
+.econ-table tr.is-clickable:hover td,
+.econ-table tr.is-clickable:focus-visible td {
+  background: #2962ff14;
 }
 
-.econ-chart-button:hover:not(:disabled) {
-  border-color: #2962ff80;
-  background: var(--accent-soft);
-}
-
-.econ-chart-button:disabled {
-  color: var(--faint);
-  opacity: .4;
-  cursor: not-allowed;
+.econ-table tr.is-clickable:focus-visible {
+  outline: 1px solid #2962ffb3;
+  outline-offset: -1px;
 }
 
 .release-chart {
