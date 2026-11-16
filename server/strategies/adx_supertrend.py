@@ -11,8 +11,8 @@ Core rules (evaluated on completed candles, fills at the candle close):
   tightens while the trend lasts). Intrabar touches fill at the stop, or at
   the open on an adverse gap; an opposite Supertrend flip closes at the close.
 
-Minor filters (each optional): higher-timeframe Supertrend agreement, ATR
-volatility percentile band, RSI extremes and a saved forecast model's
+Minor filters (each optional): higher-timeframe Supertrend agreement, minimum ATR
+(no new entries while ATR is below it), RSI extremes and a saved forecast model's
 calibrated direction probability. Every value uses only closed candles.
 """
 from __future__ import annotations
@@ -44,9 +44,7 @@ class Settings:
     htf_timeframe: str = '1h'
     atr_filter: bool = True
     atr_length: int = 14
-    atr_window: int = 500
-    atr_min_pct: float = 10.
-    atr_max_pct: float = 95.
+    atr_min: float = .03  # No new entries while ATR (price units, USDT) is below this.
     rsi_filter: bool = True
     rsi_length: int = 14
     rsi_overbought: float = 70.
@@ -62,19 +60,17 @@ class Settings:
 
     def __post_init__(self):
         ints = dict(adx_length=(1, 500), di_length=(1, 500), adx_rising_bars=(1, 50), st_length=(1, 500),
-                    atr_length=(1, 500), atr_window=(20, 5000), rsi_length=(1, 500))
+                    atr_length=(1, 500), rsi_length=(1, 500))
         for name, (low, high) in ints.items():
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
                 raise ValueError(f'{name} must be an integer between {low} and {high}')
-        checks = [('adx_threshold', 0, 100), ('st_multiplier', .01, 100), ('atr_min_pct', 0, 100), ('atr_max_pct', 0, 100),
+        checks = [('adx_threshold', 0, 100), ('st_multiplier', .01, 100), ('atr_min', 0, 1e6),
                   ('rsi_overbought', 0, 100), ('rsi_oversold', 0, 100), ('forecast_min_probability', .5, 1)]
         for name, low, high in checks:
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not np.isfinite(value) or not low <= value <= high:
                 raise ValueError(f'{name} must be between {low} and {high}')
-        if self.atr_min_pct >= self.atr_max_pct:
-            raise ValueError('ATR minimum percentile must be below the maximum')
         if self.rsi_oversold >= self.rsi_overbought:
             raise ValueError('RSI oversold level must be below overbought')
         if self.trade_mode not in ('Both', 'Long Only', 'Short Only'):
@@ -91,10 +87,15 @@ class Settings:
     @classmethod
     def from_dict(cls, values: dict, **overrides) -> 'Settings':
         known = {f.name for f in fields(cls)}
+        # The ATR percentile band was replaced by a fixed minimum ATR; old saved settings still load.
+        values = {key: value for key, value in values.items() if key not in LEGACY_KEYS}
         unknown = sorted(set(values)-known)
         if unknown:
             raise ValueError(f'Unknown ADX + Supertrend settings: {", ".join(unknown)}')
         return cls(**{**values, **overrides})
+
+
+LEGACY_KEYS = frozenset({'atr_window', 'atr_min_pct', 'atr_max_pct'})
 
 
 def _htf_direction(frame: pd.DataFrame, s: Settings, bar_seconds: int) -> pd.Series:
@@ -174,12 +175,10 @@ def calculate(frame: pd.DataFrame, s: Settings, *, bar_seconds: int | None = Non
         ok_long &= (htf == 1) | no_information
         ok_short &= (htf == -1) | no_information
     if s.atr_filter:
-        ratio = atr/bars.close
-        rank = ratio.rolling(s.atr_window, min_periods=max(20, s.atr_window//5)).rank(pct=True)*100
-        bars['atr_percentile'] = rank
-        inside = (rank >= s.atr_min_pct) & (rank <= s.atr_max_pct)
-        ok_long &= inside
-        ok_short &= inside
+        # Too little movement: skip new entries. Open trades keep their Supertrend stop.
+        active = atr >= s.atr_min
+        ok_long &= active
+        ok_short &= active
     if s.rsi_filter:
         rsi = _rsi(bars.close, s.rsi_length)
         bars['rsi'] = rsi
@@ -323,9 +322,9 @@ def readiness(bar, s: Settings) -> dict:
             checks.append(dict(label=f'{s.htf_timeframe} Supertrend agrees', passed=htf == sign,
                                value=htf, threshold=sign))
         if s.atr_filter:
-            rank = value('atr_percentile')
-            checks.append(dict(label=f'ATR percentile {s.atr_min_pct:g}–{s.atr_max_pct:g}',
-                               passed=rank is not None and s.atr_min_pct <= rank <= s.atr_max_pct, value=rank, threshold=None))
+            atr = value('atr')
+            checks.append(dict(label=f'ATR ≥ {s.atr_min:g}', passed=atr is not None and atr >= s.atr_min,
+                               value=atr, threshold=s.atr_min))
         if s.rsi_filter:
             rsi = value('rsi')
             limit = s.rsi_overbought if sign == 1 else s.rsi_oversold

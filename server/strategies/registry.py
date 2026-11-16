@@ -65,7 +65,7 @@ class AdxSupertrend(StrategyRunner):
         ratio = max(1, HTF_SECONDS[s.htf_timeframe]//TIMEFRAMES[request.entry_timeframe]) if s.htf_filter else 1
         base = max(s.adx_length, s.di_length, s.st_length, s.atr_length, s.rsi_length)*20
         forecast = 3000 if s.forecast_filter else 0  # forecast features use long windows
-        return int(max(1500, base, ratio*s.st_length*12, s.atr_window*2, forecast))
+        return int(max(1500, base, ratio*s.st_length*12, s.atr_length*20, forecast))
 
     def chart_columns(self, frame, request, bar_seconds):
         from server.strategies.adx_supertrend import calculate

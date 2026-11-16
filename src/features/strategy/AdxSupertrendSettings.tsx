@@ -177,14 +177,12 @@ export default function AdxSupertrendSettings({
           </FilterCard>
           <FilterCard
             title='Volatility (ATR)'
-            description='Skip trades when ATR/price is unusually low (choppy) or extreme, by percentile over a rolling window.'
+            description='Skip new trades while ATR is below the minimum (too little movement).'
             checked={config.atr_filter}
             onChange={(value) => set({ atr_filter: value })}
           >
             {num("atr_length", "ATR length", 1, 500)}
-            {num("atr_window", "Percentile window", 20, 5000)}
-            {num("atr_min_pct", "Min percentile", 0, 100, 1, undefined, "%")}
-            {num("atr_max_pct", "Max percentile", 0, 100, 1, undefined, "%")}
+            {num("atr_min", "Minimum ATR", 0, 1e6, "any", "No new trades while ATR is below this. Open trades keep their stop.", "USDT")}
           </FilterCard>
           <FilterCard
             title='RSI extremes'

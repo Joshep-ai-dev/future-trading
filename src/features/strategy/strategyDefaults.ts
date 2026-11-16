@@ -27,7 +27,7 @@ export const adxSupertrendDefaults: BacktestSettings['adx_supertrend'] = {
   adx_length: 14, di_length: 14, adx_threshold: 25, adx_rising_bars: 1, require_di_agreement: false,
   st_length: 10, st_multiplier: 3, trade_mode: 'Both', amount_per_trade: 100, amount_unit: 'percent',
   htf_filter: true, htf_timeframe: '1h',
-  atr_filter: true, atr_length: 14, atr_window: 500, atr_min_pct: 10, atr_max_pct: 95,
+  atr_filter: true, atr_length: 14, atr_min: 0.03,
   rsi_filter: true, rsi_length: 14, rsi_overbought: 70, rsi_oversold: 30,
   forecast_filter: false, forecast_model_id: '', forecast_min_probability: 0.55,
 };

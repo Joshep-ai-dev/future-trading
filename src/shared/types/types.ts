@@ -57,7 +57,7 @@ export type AdxSupertrendConfig = {
   st_length: number; st_multiplier: number; trade_mode: 'Both'|'Long Only'|'Short Only';
   amount_per_trade: number; amount_unit: 'price'|'percent';
   htf_filter: boolean; htf_timeframe: '15m'|'30m'|'1h'|'4h'|'1d';
-  atr_filter: boolean; atr_length: number; atr_window: number; atr_min_pct: number; atr_max_pct: number;
+  atr_filter: boolean; atr_length: number; atr_min: number;
   rsi_filter: boolean; rsi_length: number; rsi_overbought: number; rsi_oversold: number;
   forecast_filter: boolean; forecast_model_id: string; forecast_min_probability: number;
 };

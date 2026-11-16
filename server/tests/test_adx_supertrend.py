@@ -60,6 +60,20 @@ class AdxSupertrendTests(unittest.TestCase):
         rsi = filtered.loc[filtered.entry_long, 'rsi']
         self.assertTrue((rsi <= 70).all())
 
+    def test_minimum_atr_blocks_new_entries_only(self):
+        base = calculate(self.frame, plain(), bar_seconds=300)
+        limit = float(base.atr.median())
+        filtered = calculate(self.frame, plain(atr_filter=True, atr_min=limit), bar_seconds=300)
+        entries = filtered.entry_long | filtered.entry_short
+        self.assertTrue((filtered.loc[entries, 'atr'] >= limit).all())
+        blocked = (base.entry_long | base.entry_short) & (base.atr < limit)
+        self.assertTrue(blocked.any())
+        self.assertFalse(entries[blocked].any())
+        # Legacy percentile settings from saved sessions still load.
+        self.assertEqual(Settings.from_dict({'atr_window': 500, 'atr_min_pct': 10, 'atr_max_pct': 95}).atr_min, .03)
+        with self.assertRaises(ValueError):
+            Settings(atr_min=-1)
+
     def test_trade_mode_and_validation(self):
         bars = calculate(self.frame, plain(trade_mode='Long Only'), bar_seconds=300)
         self.assertFalse(bars.entry_short.any())
