@@ -4,6 +4,8 @@ import {createPortal} from 'react-dom';
 
 export type IndicatorKind='atr'|'adx'|'rsi';
 export type OverlayKind='supertrend'|'bollinger'|'triplema';
+/** Settings dialogs: chart indicators plus the strategy's Trend SMA line. */
+export type SettingsKind=IndicatorKind|OverlayKind|'trendsma';
 
 export type IndicatorStyle={
   bbBasisColor:string;bbUpperColor:string;bbLowerColor:string;bbWidth:number;
@@ -12,8 +14,9 @@ export type IndicatorStyle={
   rsiColor:string;rsiWidth:number;
   atrColor:string;atrWidth:number;
   adxWidth:number;
+  trendSmaColor:string;trendSmaWidth:number;
 };
-export type IndicatorConfig=IndicatorStyle&{bbLength:number;bbMaType:BollingerConfig['maType'];bbSource:BollingerConfig['source'];bbMultiplier:number;bbOffset:number;supertrendLength:number;supertrendMultiplier:number;atrLength:number;atrThreshold:number;atrSmoothing:'RMA'|'SMA'|'EMA'|'WMA';adxLength:number;diLength:number;showDi:boolean;showStatus:boolean;adxLevels:number[];showAdxLevels:boolean;rsiLength:number;rsiUpper:number;rsiLower:number;maFast:number;maMid:number;maSlow:number;maType:'SMA'|'EMA'};
+export type IndicatorConfig=IndicatorStyle&{bbLength:number;bbMaType:BollingerConfig['maType'];bbSource:BollingerConfig['source'];bbMultiplier:number;bbOffset:number;supertrendLength:number;supertrendMultiplier:number;atrLength:number;atrThreshold:number;atrSmoothing:'RMA'|'SMA'|'EMA'|'WMA';adxLength:number;diLength:number;showDi:boolean;showStatus:boolean;adxLevels:number[];showAdxLevels:boolean;rsiLength:number;rsiUpper:number;rsiLower:number;maFast:number;maMid:number;maSlow:number;maType:'SMA'|'EMA';trendSmaLength:number};
 
 /** TradingView built-in defaults (inputs and plot colors). */
 const defaultStyle:IndicatorStyle={
@@ -23,8 +26,9 @@ const defaultStyle:IndicatorStyle={
   rsiColor:'#7e57c2',rsiWidth:1,
   atrColor:'#b71c1c',atrWidth:1,
   adxWidth:2,
+  trendSmaColor:'#ff9800',trendSmaWidth:1,
 };
-export const defaultIndicators:IndicatorConfig={...defaultStyle,bbLength:defaultBollinger.length,bbMaType:defaultBollinger.maType,bbSource:defaultBollinger.source,bbMultiplier:defaultBollinger.multiplier,bbOffset:defaultBollinger.offset,supertrendLength:10,supertrendMultiplier:3,atrLength:14,atrThreshold:0.03,atrSmoothing:'RMA',adxLength:14,diLength:14,showDi:false,showStatus:true,adxLevels:[20,25,50,75],showAdxLevels:true,rsiLength:14,rsiUpper:70,rsiLower:30,maFast:20,maMid:50,maSlow:100,maType:'SMA'};
+export const defaultIndicators:IndicatorConfig={...defaultStyle,bbLength:defaultBollinger.length,bbMaType:defaultBollinger.maType,bbSource:defaultBollinger.source,bbMultiplier:defaultBollinger.multiplier,bbOffset:defaultBollinger.offset,supertrendLength:10,supertrendMultiplier:3,atrLength:14,atrThreshold:0.03,atrSmoothing:'RMA',adxLength:14,diLength:14,showDi:false,showStatus:true,adxLevels:[20,25,50,75],showAdxLevels:true,rsiLength:14,rsiUpper:70,rsiLower:30,maFast:20,maMid:50,maSlow:100,maType:'SMA',trendSmaLength:30};
 
 const COLOR_KEYS=Object.keys(defaultStyle).filter(key=>key.endsWith('Color')) as (keyof IndicatorStyle)[];
 const WIDTH_KEYS=Object.keys(defaultStyle).filter(key=>key.endsWith('Width')) as (keyof IndicatorStyle)[];
@@ -35,7 +39,7 @@ function validInputs(c:IndicatorConfig){
   return validBollinger({length:c.bbLength,maType:c.bbMaType,source:c.bbSource,multiplier:c.bbMultiplier,offset:c.bbOffset})
     &&Number.isFinite(c.supertrendMultiplier)&&c.supertrendMultiplier>=.01&&c.supertrendMultiplier<=100
     &&Number.isFinite(c.atrThreshold)&&c.atrThreshold>=0
-    &&[c.atrLength,c.adxLength,c.diLength,c.rsiLength,c.supertrendLength,c.maFast,c.maMid,c.maSlow].every(v=>Number.isInteger(v)&&v>=1&&v<=1000)
+    &&[c.atrLength,c.adxLength,c.diLength,c.rsiLength,c.supertrendLength,c.maFast,c.maMid,c.maSlow,c.trendSmaLength].every(v=>Number.isInteger(v)&&v>=1&&v<=1000)
     &&typeof c.showDi==='boolean'&&typeof c.showAdxLevels==='boolean'
     &&Array.isArray(c.adxLevels)&&c.adxLevels.length<=8&&c.adxLevels.every(v=>typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=100)
     &&['RMA','SMA','EMA','WMA'].includes(c.atrSmoothing)&&typeof c.showStatus==='boolean'
@@ -74,8 +78,9 @@ export function useIndicatorSettings(){
 /** Hex color plus alpha, e.g. alpha('#00ff00', .65). */
 export function alpha(hex:string,opacity:number){return `${hex}${Math.round(opacity*255).toString(16).padStart(2,'0')}`;}
 
-const TITLES:Record<IndicatorKind|OverlayKind,string>={bollinger:'BB',supertrend:'Supertrend',triplema:'Triple MA',rsi:'RSI',adx:'ADX Trend Strength',atr:'ATR'};
-const FIELDS:Record<IndicatorKind|OverlayKind,(keyof IndicatorConfig)[]>={
+const TITLES:Record<SettingsKind,string>={trendsma:'Trend SMA',bollinger:'BB',supertrend:'Supertrend',triplema:'Triple MA',rsi:'RSI',adx:'ADX Trend Strength',atr:'ATR'};
+const FIELDS:Record<SettingsKind,(keyof IndicatorConfig)[]>={
+  trendsma:['trendSmaLength','trendSmaColor','trendSmaWidth'],
   bollinger:['bbLength','bbMaType','bbSource','bbMultiplier','bbOffset','bbBasisColor','bbUpperColor','bbLowerColor','bbWidth'],
   supertrend:['supertrendLength','supertrendMultiplier','stUpColor','stDownColor','stWidth'],
   triplema:['maType','maFast','maMid','maSlow','maFastColor','maMidColor','maSlowColor','maWidth'],
@@ -98,7 +103,7 @@ function Row({label,children}:{label:string;children:ReactNode}){
 }
 
 /** TradingView-style indicator dialog: Inputs / Style tabs, live preview, Cancel reverts. */
-export default function IndicatorSettings({kind,value,onApply,onClose}:{kind:IndicatorKind|OverlayKind;value:IndicatorConfig;onApply:(config:IndicatorConfig)=>void;onClose:()=>void}){
+export default function IndicatorSettings({kind,value,onApply,onClose}:{kind:SettingsKind;value:IndicatorConfig;onApply:(config:IndicatorConfig)=>void;onClose:()=>void}){
   const original=useRef(value);
   const [draft,setDraft]=useState(value);
   const [tab,setTab]=useState<'inputs'|'style'>('inputs');
@@ -118,7 +123,11 @@ export default function IndicatorSettings({kind,value,onApply,onClose}:{kind:Ind
     <input type="number" {...props} value={Number.isFinite(draft[key] as number)?draft[key] as number:''} aria-invalid={!Number.isFinite(draft[key] as number)} onChange={e=>set(key,e.target.valueAsNumber as never)}/>;
   const color=(key:keyof IndicatorStyle,label:string)=><Row label={label}><span className="tv-color"><input type="color" value={draft[key] as string} onChange={e=>set(key,e.target.value as never)} aria-label={`${label} color`}/></span></Row>;
   const width=(key:keyof IndicatorStyle)=><Row label="Line thickness"><span className="tv-widths" role="radiogroup" aria-label="Line thickness">{[1,2,3,4].map(w=><button type="button" key={w} role="radio" aria-checked={draft[key]===w} title={`${w}px`} onClick={()=>set(key,w as never)}><i style={{height:w}}/></button>)}</span></Row>;
-  const inputs:Record<IndicatorKind|OverlayKind,ReactNode>={
+  const inputs:Record<SettingsKind,ReactNode>={
+    trendsma:<>
+      <Row label="Length">{num('trendSmaLength',{min:1,max:1000,step:1})}</Row>
+      <Row label="Source"><select disabled value="close"><option value="close">Close</option></select></Row>
+    </>,
     bollinger:<>
       <Row label="Length">{num('bbLength',{min:1,step:1})}</Row>
       <Row label="Basis MA type"><select value={draft.bbMaType} onChange={e=>set('bbMaType',e.target.value as IndicatorConfig['bbMaType'])}>{BB_MA_TYPES.map(type=><option key={type}>{type}</option>)}</select></Row>
@@ -156,7 +165,8 @@ export default function IndicatorSettings({kind,value,onApply,onClose}:{kind:Ind
       <Row label="Threshold">{num('atrThreshold',{min:0,step:'any'})}</Row>
     </>,
   };
-  const style:Record<IndicatorKind|OverlayKind,ReactNode>={
+  const style:Record<SettingsKind,ReactNode>={
+    trendsma:<>{color('trendSmaColor','Plot')}{width('trendSmaWidth')}</>,
     bollinger:<>{color('bbBasisColor','Basis')}{color('bbUpperColor','Upper')}{color('bbLowerColor','Lower')}{width('bbWidth')}</>,
     supertrend:<>{color('stUpColor','Up trend')}{color('stDownColor','Down trend')}{width('stWidth')}</>,
     triplema:<>{color('maFastColor','Fast MA')}{color('maMidColor','Middle MA')}{color('maSlowColor','Slow MA')}{width('maWidth')}</>,

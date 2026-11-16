@@ -10,6 +10,7 @@ import IndicatorSettings, {
   type IndicatorConfig,
   type IndicatorKind,
   type OverlayKind,
+  type SettingsKind,
 } from "./IndicatorSettings";
 import { AdxVisualizer, adxColor, DI_COLORS, levelColor } from "./adxDisplay";
 import { PaneBand } from "./PaneBand";
@@ -113,9 +114,9 @@ export default function PaperPriceChart(props: Props) {
   const update = useRef<(data: Data) => void>(() => {});
   const selectedIndicators = useChartIndicatorSelection();
   const [indicatorConfig, setIndicatorConfig] = useIndicatorSettings();
-  const [settingsOpen, setSettingsOpen] = useState<
-    IndicatorKind | OverlayKind | null
-  >(null);
+  const [settingsOpen, setSettingsOpen] = useState<SettingsKind | null>(
+    null,
+  );
   const drawing = useChartDrawings(props.symbol ?? "XAGUSDT");
   const [hiddenOverlays, setHiddenOverlays] = useState<
     Record<OverlayKind, boolean>
@@ -253,9 +254,9 @@ export default function PaperPriceChart(props: Props) {
           {
             key: "trendSma" as const,
             series: chart.addSeries(LineSeries, {
-              color: TV.orange,
-              lineWidth: 1,
-              title: "Trend SMA",
+              color: configRef.current.trendSmaColor,
+              lineWidth: configRef.current.trendSmaWidth as 1 | 2 | 3 | 4,
+              title: "",
               priceLineVisible: false,
               lastValueVisible: false,
             }),
@@ -276,6 +277,7 @@ export default function PaperPriceChart(props: Props) {
       title: "Open entry",
       priceLineVisible: false,
     });
+    let smaKey = "";
     let oscillatorData: ReturnType<typeof chartOscillators> = [],
       oscillatorKey = "",
       panelConfig = configRef.current;
@@ -382,6 +384,12 @@ export default function PaperPriceChart(props: Props) {
       const viewport = captureViewport(chart, lastTime.current);
       panelConfig = config;
       oscillatorKey = "";
+      smaKey = "";
+      for (const { series } of overlays)
+        series.applyOptions({
+          color: config.trendSmaColor,
+          lineWidth: config.trendSmaWidth as 1 | 2 | 3 | 4,
+        });
       bollingerVisible = selection.bollinger;
       supertrendVisible = selection.supertrend;
       tripleSelected = selection.triplema;
@@ -637,19 +645,22 @@ export default function PaperPriceChart(props: Props) {
         );
       volume.setData(chartVolume(data.candles));
 
-      if (
-        !previous ||
-        data.indicators.at(-1) !== previous.indicators.at(-1) ||
-        data.indicators.length !== previous.indicators.length
-      )
-        for (const { key, series } of overlays)
-          series.setData(
-            data.indicators.map((p) =>
-              p[key] === null
-                ? { time: p.time as UTCTimestamp }
-                : { time: p.time as UTCTimestamp, value: p[key] },
-            ),
-          );
+      // Trend SMA of closes, period from the chart's Trend SMA settings (display only).
+      const smaLast = data.candles.at(-1);
+      const nextSmaKey = `${panelConfig.trendSmaLength}:${data.candles.length}:${data.candles[0]?.time}:${smaLast?.time}:${smaLast?.close}`;
+      if (overlays.length && nextSmaKey !== smaKey) {
+        smaKey = nextSmaKey;
+        const length = panelConfig.trendSmaLength;
+        let sum = 0;
+        const points = data.candles.map((c, index) => {
+          sum += c.close;
+          if (index >= length) sum -= data.candles[index - length].close;
+          return index + 1 >= length
+            ? { time: c.time as UTCTimestamp, value: sum / length }
+            : { time: c.time as UTCTimestamp };
+        });
+        for (const { series } of overlays) series.setData(points);
+      }
       const duration = TIMEFRAMES[props.timeframe as keyof typeof TIMEFRAMES];
       const completed = data.candles.filter(
         (c) => c.time + duration <= data.indicatorClock,
@@ -1039,10 +1050,11 @@ export default function PaperPriceChart(props: Props) {
                   {
                     key: "trend-sma",
                     name: "Trend SMA",
-                    params: "",
-                    color: TV.orange,
+                    params: String(indicatorConfig.trendSmaLength),
+                    color: indicatorConfig.trendSmaColor,
                     hidden: !strategyVisible,
                     onToggleVisible: () => setStrategyVisible((v) => !v),
+                    onSettings: () => setSettingsOpen("trendsma"),
                   },
                 ]
               : []),
