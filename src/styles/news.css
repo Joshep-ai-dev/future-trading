@@ -1063,3 +1063,31 @@
 .just-released ul {
   max-width: 1000px;
 }
+
+/* Filter row: search, date and sentiment buttons share one 34px line. */
+.news-filters {
+  align-items: center;
+}
+
+.news-filters input[type=search],
+.news-filters .news-date {
+  box-sizing: border-box;
+  height: 34px;
+  margin: 0;
+}
+
+.news-filters .news-segment {
+  box-sizing: border-box;
+  flex: none;
+  align-self: center;
+  height: 34px;
+  padding: 3px;
+}
+
+.news-filters .news-segment button {
+  height: 28px;
+  min-height: 0;
+  margin: 0;
+  padding: 0 12px;
+  line-height: 28px;
+}
