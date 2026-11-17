@@ -2,8 +2,9 @@ import {useEffect,useMemo,useState} from 'react';
 import {api} from '../../shared/api/api';
 import {fmt} from '../../shared/types/types';
 import {patternCatalog,type PatternReference} from './patternCatalog';
-import {formatPatternTime} from './patternRange';
-import {rankReferencePatterns,resemblanceLabel,type ReferenceMatch} from './patternSimilarity';
+import {formatPatternTime,type PatternCandle} from './patternRange';
+import {recognizePatterns,type GeometricMatch} from './patternRecognition';
+import PatternGeometryChart from '../../shared/charts/PatternGeometryChart';
 import {aggregateMinutes} from '../../shared/charts/aggregateTimeframe';
 import {mergeHistory} from '../../shared/charts/candleHistory';
 import {TIMEFRAMES} from '../../shared/charts/chartTimeframe';
@@ -25,7 +26,7 @@ function ReferenceCard({pattern,remove}:{pattern:PatternReference;remove:()=>voi
   </article>;
 }
 
-function MatchOverlay({match}:{match:ReferenceMatch}){
+function MatchOverlay({match}:{match:GeometricMatch}){
   const points=(values:number[])=>values.map((value,index)=>`${12+index/(values.length-1)*276},${108-value*92}`).join(' ');
   return <svg className="reference-shape" viewBox="0 0 300 124" role="img" aria-label={`Current price curve overlaid on ${match.pattern.name}`}>
     <polyline points={points(match.reference)} fill="none" stroke="#e9b949" strokeWidth={2} strokeDasharray="5 4"/>
@@ -39,7 +40,7 @@ export default function PatternLibrary({defaultTimeframe='5m'}:{defaultTimeframe
   const [timeframe,setTimeframe]=useState(['5m','15m','30m','1h','4h'].includes(defaultTimeframe)?defaultTimeframe:'5m');
   const [length,setLength]=useState(48),[refresh,setRefresh]=useState(0);
   const [autoRefresh,setAutoRefresh]=useState(true),[feedNote,setFeedNote]=useState('');
-  const [market,setMarket]=useState<{time:number;close:number}[]>([]),[error,setError]=useState(''),[busy,setBusy]=useState(false);
+  const [market,setMarket]=useState<PatternCandle[]>([]),[error,setError]=useState(''),[busy,setBusy]=useState(false);
   useEffect(()=>{
     const abort=new AbortController();let timer:ReturnType<typeof setTimeout>|undefined;
     setMarket([]);setFeedNote('');
@@ -47,7 +48,7 @@ export default function PatternLibrary({defaultTimeframe='5m'}:{defaultTimeframe
       setBusy(true);setError('');
       try{
         const [history,live]=await Promise.allSettled([
-          api<{candles:{time:number;close:number}[]}>('/api/candles',{method:'POST',signal:abort.signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({timeframe,limit:length})}),
+          api<{candles:PatternCandle[]}>('/api/candles',{method:'POST',signal:abort.signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({timeframe,limit:length})}),
           api<{candles:{time:number;open:number;high:number;low:number;close:number}[];checkedAt:number}>('/api/market/live-candles',{signal:abort.signal}),
         ]);
         if(abort.signal.aborted)return;
@@ -65,7 +66,8 @@ export default function PatternLibrary({defaultTimeframe='5m'}:{defaultTimeframe
   },[timeframe,length,refresh,autoRefresh]);
   const duration=TIMEFRAMES[timeframe as keyof typeof TIMEFRAMES];
   const continuous=market.every((row,index)=>!index||row.time-market[index-1].time===duration);
-  const matches=useMemo(()=>continuous?rankReferencePatterns(market.map(row=>row.close),patternCatalog,{mode:'end'}):[],[market,continuous]);
+  const recognition=useMemo(()=>continuous?recognizePatterns(market,patternCatalog):null,[market,continuous]);
+  const matches=recognition?.matches??[];
   const filtered=useMemo(()=>patternCatalog.filter(pattern=>(group==='All'||pattern.group===group)&&(bias==='All'||pattern.bias===bias)&&pattern.name.toLowerCase().includes(search.trim().toLowerCase())),[search,group,bias]);
   function toggle(id:string){setSelected(previous=>previous.includes(id)?previous.filter(value=>value!==id):previous.length<3?[...previous,id]:previous);}
   return <div className="pattern-library">
@@ -86,10 +88,10 @@ export default function PatternLibrary({defaultTimeframe='5m'}:{defaultTimeframe
     </section>
     <section className="reference-matches" aria-label="Closest patterns to current price curve">
       <h3>Closest patterns to the current curve</h3>
-      <p className="pattern-note">Blue: actual completed closes. Dashed gold: reference shape aligned to swing timing. Score: 0 is what a typical random walk reaches on that sketch, 100 an exact match. Confidence: share of random walks whose best match in the catalog is weaker. Neither is a win probability or breakout confirmation. A pattern may fill only the most recent part of the window; "Forming" means everything except the breakout leg matches.</p>
+      <p className="pattern-note">Recognition uses ATR ZigZag swings and geometric rules first, then reference similarity for ranking. Green marks confirmed swings; gold marks fitted boundaries. Pattern quality is not a win probability. The whole selected candle window is analyzed.</p>
       {feedNote&&<p role="status">{feedNote}</p>}
       {!!market.length&&Date.now()/1000-market.at(-1)!.time-duration>duration*2&&<p role="status">Candle data is delayed. These matches describe the displayed snapshot.</p>}
-      {matches.length>0?<><button type="button" className="secondary" onClick={()=>setSelected(matches.slice(0,3).map(match=>match.pattern.id))}>Compare top 3</button><div className="reference-comparison">{matches.slice(0,5).map((match,index)=><article key={match.pattern.id} className="reference-detail"><h4>#{index+1} {match.pattern.name}</h4><strong>{fmt(match.score,0)}/100 vs chance · {resemblanceLabel(match)}</strong><small>{match.stage==='forming'?'Reference without breakout leg':'Reference including breakout leg'} · last {match.length} of {market.length} candles · fit {fmt(match.fit,0)} · confidence {fmt(match.confidence,0)}%</small><MatchOverlay match={match}/><p>{match.pattern.check}</p><button type="button" className="secondary" onClick={()=>setSelected([match.pattern.id])}>Compare this pattern</button></article>)}</div></>:<p role="status">{busy?'Matching completed candles…':error?'Load market candles to find similar patterns.':!continuous?'Missing candles interrupt this window. Choose a shorter window or refresh history.':'No usable curve to match: at least 8 candles with price variation are required.'}</p>}
+      {matches.length>0?<><button type="button" className="secondary" onClick={()=>setSelected(matches.slice(0,3).map(match=>match.pattern.id))}>Compare top 3</button><div className="reference-comparison">{matches.slice(0,5).map((match,index)=><article key={match.pattern.id} className="reference-detail"><h4>#{index+1} {match.pattern.name}</h4><strong>{fmt(match.score,0)}/100 quality</strong><small>{match.assessment.status==='confirmed'?'Closing breakout confirmed':'Structure forming'} / {match.assessment.direction==='undetermined'?'direction pending':match.assessment.direction}</small><PatternGeometryChart candles={market} pivots={match.assessment.pivots} provisional={match.assessment.provisional} boundaries={match.assessment.boundaries} breakout={match.assessment.status==='confirmed'}/><details><summary>Reference comparison</summary><MatchOverlay match={match}/><p>{match.pattern.check}</p></details><button type="button" className="secondary" onClick={()=>setSelected([match.pattern.id])}>Compare this pattern</button></article>)}</div></>:<p role="status">{busy?'Analyzing confirmed swings...':error?'Load market candles to analyze patterns.':!continuous?'Missing candles interrupt this window. Choose a shorter window or refresh history.':'No valid geometric pattern in this window. Select at least 20 complete OHLC candles and include the preceding trend.'}</p>}
     </section>
     <p className="pattern-note">Original schematics show typical geometry. Each reference chart is scaled independently. Confirm swing structure and the actual breakout on your price chart. Some patterns can serve more than one role; context labels are browsing aids. Identical reference drawings share one ranking entry.</p>
     <div className="reference-count" role="status">{filtered.length} of {patternCatalog.length} entries · {selected.length}/3 selected{selected.length===3?' · Remove one to compare another':''}<button type="button" className="text-button" onClick={()=>setSelected([])}>Clear comparison</button></div>

@@ -13,6 +13,7 @@
 .reference-detail dt { font-weight: 600; margin-top: 8px; }
 .reference-detail dd { margin: 2px 0 8px; color: var(--muted); }
 .reference-shape { display: block; width: 100%; height: auto; max-height: 160px; color: #e9b949; }
+.pattern-geometry-chart { display: block; width: 100%; height: auto; color: var(--text, #eee); margin: 14px 0; }
 .reference-shape.bias-bullish { color: #3cce9b; }
 .reference-shape.bias-bearish { color: #f07984; }
 .reference-grid { stroke: var(--border); stroke-dasharray: 3 5; }

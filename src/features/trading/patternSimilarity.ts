@@ -196,3 +196,13 @@ export function rankReferencePatterns(prices:readonly number[],catalog:readonly 
 export function resemblanceLabel(match:Pick<ReferenceMatch,'confidence'>):string{
   return match.confidence>=95?'Distinct resemblance':match.confidence>=80?'Moderate resemblance':'Not distinguishable from noise';
 }
+
+/** Secondary similarity for an already evaluated geometric candidate. This
+ * does not run random-walk calibration or decide whether the structure exists.
+ */
+export function fitReferenceCurve(prices:readonly number[],shape:readonly number[],forming=false):{curve:number[];reference:number[];fit:number}{
+  const curve=normalizeCurve(prices),reference=normalizeCurve(forming&&shape.length>=6?shape.slice(0,-1):shape);
+  if(!curve.length||!reference.length)return {curve:[],reference:[],fit:0};
+  const result=warp(curve,reference,true);
+  return {curve,reference:result.aligned,fit:Math.max(0,Math.min(100,100*(1-result.rmse*2)))};
+}
