@@ -1,0 +1,15 @@
+.pattern-selection-layer { position: absolute; z-index: 70; cursor: crosshair; touch-action: none; background: #62b5ff08; }
+.pattern-selected-band { position: absolute; top: 0; bottom: 0; background: #62b5ff26; border-inline: 1px solid #62b5ff; pointer-events: none; }
+.pattern-selection-help { position: absolute; z-index: 71; left: 52px; top: 40px; right: 80px; padding: 8px 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; background: var(--panel, #171b24); color: var(--text, #eee); border: 1px solid #62b5ff; border-radius: 6px; font-size: 12px; }
+.pattern-analysis-dialog { color: var(--text, #eee); background: var(--panel, #171b24); border: 1px solid var(--border, #404654); border-radius: 12px; width: min(1100px, calc(100vw - 32px)); max-height: calc(100dvh - 40px); box-sizing: border-box; padding: 24px; overflow: auto; }
+.pattern-analysis-dialog::backdrop { background: #000a; }
+.pattern-analysis-dialog > header { display: flex; justify-content: space-between; gap: 18px; align-items: start; }
+.pattern-analysis-dialog h2 { margin: 0; font-size: 20px; overflow-wrap: anywhere; }
+.pattern-analysis-dialog p { font-size: 13px; line-height: 1.6; }
+.pattern-analysis-results { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr)); gap: 14px; margin: 18px 0; }
+.pattern-analysis-results svg { display: block; width: 100%; height: auto; margin: 12px 0; }
+.pattern-analysis-results h3 { font-size: 16px; margin-top: 0; }
+.pattern-analysis-results strong { font-size: 12px; }
+@media(max-width:600px) { .pattern-analysis-dialog { padding: 14px; } .pattern-selection-help { left: 40px; right: 55px; font-size: 11px; } }
+.tv-toolbar .tv-pattern-analyze { display: inline-flex; align-items: center; gap: 6px; flex: none; padding: 0 9px; height: 28px; min-height: 28px; width: auto; border: 1px solid var(--border, #404654); border-radius: 5px; background: transparent; color: var(--text, #eee); font-size: 12px; white-space: nowrap; }
+.tv-toolbar .tv-pattern-analyze[aria-pressed=true] { border-color: #62b5ff; color: #62b5ff; background: #62b5ff18; }

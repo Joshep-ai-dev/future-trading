@@ -20,7 +20,8 @@ export function resizeChart(chart:IChartApi,element:HTMLDivElement,initialView:(
   return ()=>observer.disconnect();
 }
 
-export default function ChartTools({chartRef,valueLabel='Price',horizontalLabel='Time',onFullscreen,fullscreen=false,endLabel='Latest',onLatest,onEarlier,onNavigate,loading=false,hasMore=false,indicators,onToggleIndicator,strategyVisible,onToggleStrategy,follow,onFollowChange,showEarlier=false}: {
+export default function ChartTools({chartRef,valueLabel='Price',horizontalLabel='Time',onFullscreen,fullscreen=false,endLabel='Latest',onLatest,onEarlier,onNavigate,loading=false,hasMore=false,indicators,onToggleIndicator,strategyVisible,onToggleStrategy,follow,onFollowChange,showEarlier=false,onAnalyzePattern,patternSelecting=false}: {
+  onAnalyzePattern?:()=>void;patternSelecting?:boolean;
   chartRef: {current:IChartApi|null}; valueLabel?:string; onLatest?:()=>void;
   endLabel?:string;horizontalLabel?:string;onFullscreen?:()=>void;fullscreen?:boolean;
   onEarlier?:()=>void; loading?:boolean; hasMore?:boolean;
@@ -70,6 +71,7 @@ export default function ChartTools({chartRef,valueLabel='Price',horizontalLabel=
   const needle=query.trim().toLowerCase();
   const matches=(text:string)=>!needle||text.toLowerCase().includes(needle);
   return <div className="chart-actions tv-toolbar">
+    {onAnalyzePattern&&<button type="button" className="tv-pattern-analyze" aria-pressed={patternSelecting} title="Select a candle range and find similar chart patterns" onClick={onAnalyzePattern}><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M2 15l4-7 4 4 4-9 4 5M2 18h16" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg>{patternSelecting?'Cancel selection':'Analyze pattern'}</button>}
     {(overlays||studies)&&<details className="tv-menu" ref={menu} onToggle={event=>{if(!(event.currentTarget as HTMLDetailsElement).open)setQuery('');}}><summary title="Indicators"><svg viewBox="0 0 28 28" aria-hidden="true"><path d="M10.5 22c2 0 2.6-1.6 3-4l1.6-9c.4-2.3 1-4 3.4-4M10 11h8M15.5 15l5 6M20.5 15l-5 6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>Indicators{activeCount>0&&<span className="tv-count">{activeCount}</span>}</summary>
       <div className="tv-menu-popover" role="group" aria-label="Chart overlays and indicators">
         <div className="tv-menu-search"><svg viewBox="0 0 18 18" aria-hidden="true"><circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" strokeWidth="1.4"/><path d="M12 12l4 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg><input type="search" placeholder="Search" aria-label="Search indicators" value={query} onChange={event=>setQuery(event.target.value)}/></div>

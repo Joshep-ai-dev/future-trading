@@ -1,6 +1,7 @@
 import {useCallback,useEffect,useState} from 'react';
 import {api} from '../../shared/api/api';
 import {fmt} from '../../shared/types/types';
+import PatternLibrary from './PatternLibrary';
 
 type NewsSummary={tone:number|null;volumeZ:number|null;macro?:number;macroMax?:number;coverage:number};
 type Match={start:number;end:number;distance:number;correlation:number;futureClosePct:number;futureHighPct:number;futureLowPct:number;path:number[];future:number[];news?:NewsSummary|null};
@@ -56,6 +57,7 @@ function PatternChart({result,highlight}:{result:PatternResult;highlight:number|
 
 /** Find past windows shaped like the latest candles and project the next high and low. */
 export default function PatternPanel({defaultTimeframe='15m',newsControls=false}:{defaultTimeframe?:string;newsControls?:boolean}){
+  const [view,setView]=useState<'library'|'history'>(newsControls?'history':'library');
   const [timeframe,setTimeframe]=useState<string>(TIMEFRAMES.includes(defaultTimeframe as typeof TIMEFRAMES[number])?defaultTimeframe:'15m');
   const [window,setWindow]=useState(48),[horizon,setHorizon]=useState(24),[topK,setTopK]=useState(20);
   const [result,setResult]=useState<PatternResult|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
@@ -77,10 +79,12 @@ export default function PatternPanel({defaultTimeframe='15m',newsControls=false}
     }
     catch(reason){setError(String(reason));}finally{setBusy(false);}
   },[usedTimeframe,window,horizon,topK,newsWeight,model]);
-  useEffect(()=>{void analyze();},[]);// eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(()=>{if(view==='history'&&!result)void analyze();},[view]);// eslint-disable-line react-hooks/exhaustive-deps
   const summary=result?.summary;
   const minutes=result?Math.round(result.horizon*result.stepSeconds/60):0;
   return <div className="pattern-panel">
+    <div className="reference-controls" role="group" aria-label="Pattern workspace"><button type="button" className="secondary" aria-pressed={view==='library'} onClick={()=>setView('library')}>Pattern library</button><button type="button" className="secondary" aria-pressed={view==='history'} onClick={()=>setView('history')}>Similar history</button></div>
+    {view==='library'?<PatternLibrary defaultTimeframe={defaultTimeframe}/>:<>
     <form className="pattern-controls" onSubmit={event=>{event.preventDefault();void analyze();}}>
       <label>Timeframe<select value={usedTimeframe} disabled={!!model} onChange={event=>setTimeframe(event.target.value)}>{[...new Set([...TIMEFRAMES,usedTimeframe])].map(tf=><option key={tf}>{tf}</option>)}</select></label>
       {newsControls&&<label>News weight<select value={newsWeight} onChange={event=>setNewsWeight(Number(event.target.value))}><option value={0}>Price only</option><option value={.25}>25% news</option><option value={.5}>50% news</option><option value={.75}>75% news</option></select></label>}
@@ -116,6 +120,7 @@ export default function PatternPanel({defaultTimeframe='15m',newsControls=false}
       {result.queryNews&&<p className="pattern-note">News now: GDELT tone {tone(result.queryNews.tone)}, volume {tone(result.queryNews.volumeZ)} σ vs. 7 days, US release surprise (24h) {tone(result.queryNews.macro)} ({fmt(result.queryNews.coverage*100,0)}% of the window has news data){result.newsWeight?` · news counts ${fmt(result.newsWeight*100,0)}% of the match distance`:' · ranking uses price only'}.</p>}
       {!!result.forecast?.length&&<p className="pattern-note">Dashed line: the model's forecast for the next {result.forecast.length} candles{straight?' (a straight line to its predicted close; this model has no step path)':''}. Matches had to follow the actual candles and this predicted move.</p>}
       <p className="pattern-note">Shapes are compared after removing price level and volatility. Only past windows whose full future was already known are used. Similar history is not a forecast guarantee.</p>
+    </>}
     </>}
   </div>;
 }

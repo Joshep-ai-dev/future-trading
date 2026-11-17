@@ -76,6 +76,7 @@ import {
 import type { Analysis } from "../types/types";
 import type { PaperTrade, Position } from "../../features/trading/PaperTrading";
 import { chartVolume } from "./chartVolume";
+import PatternRangeAnalyzer from "./PatternRangeAnalyzer";
 
 type Point = {
   time: number;
@@ -112,6 +113,8 @@ type Props = Data & {
 export type ChartFocus = { time: number; label: string; key: number };
 
 export default function PaperPriceChart(props: Props) {
+  const [patternSelecting, setPatternSelecting] = useState(false);
+  const patternCandles = useRef<Analysis['candles']>([]);
   const container = useRef<HTMLDivElement>(null),
     chartRef = useRef<IChartApi | null>(null);
   const update = useRef<(data: Data) => void>(() => {});
@@ -670,6 +673,7 @@ export default function PaperPriceChart(props: Props) {
       latestData = data;
       const viewport = captureViewport(chart, previousTime);
       cached = mergeHistory(cached, data.candles);
+      patternCandles.current = cached;
       indicators = mergeHistory(indicators, data.indicators);
       data = { ...data, candles: cached, indicators };
       byTime = new Map(data.candles.map((c) => [c.time, c]));
@@ -1000,6 +1004,7 @@ export default function PaperPriceChart(props: Props) {
       focusOn.current = async () => {};
       update.current = () => {};
       chartRef.current = null;
+      patternCandles.current = [];
       chart.remove();
     };
   }, [
@@ -1041,6 +1046,8 @@ export default function PaperPriceChart(props: Props) {
   return (
     <>
       <ChartTools
+        onAnalyzePattern={() => { holdView(); setPatternSelecting(value => !value); }}
+        patternSelecting={patternSelecting}
         chartRef={chartRef}
         onLatest={latest}
         onNavigate={holdView}
@@ -1087,6 +1094,7 @@ export default function PaperPriceChart(props: Props) {
         </span>
       </div>
       <div className='chart-resize with-tools'>
+        <PatternRangeAnalyzer active={patternSelecting} onFinish={() => setPatternSelecting(false)} chartRef={chartRef} containerRef={container} getCandles={() => patternCandles.current} timeframe={props.timeframe} symbol={props.symbol ?? 'XAGUSDT'} clock={() => props.indicatorClock}/>
         <DrawingToolbar {...drawing.toolbar} />
         <ChartLegend
           title={`${props.symbol ?? "XAGUSDT"} · ${props.timeframe}`}
