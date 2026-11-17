@@ -80,3 +80,43 @@ assert.throws(()=>selectPatternRange(candles.map((row,index)=>index===5?{...row,
 const huge=Array.from({length:2001},(_,index)=>({time:1000+index*300,close:100}));
 assert.throws(()=>selectPatternRange(huge,1000,1000000,300,1000000),/at most/);
 console.log('Range selection checks passed: reverse drag, inclusive bounds, completed candles, frozen results, gaps and size limits.');
+
+const {formatPatternTime}=load('../src/features/trading/patternRange.ts');
+assert.equal(formatPatternTime(Date.parse('2026-11-16T23:35:00Z')/1000),'2026-11-17 08:35');
+assert.equal(formatPatternTime(Date.parse('2026-11-17T01:40:00Z')/1000),'2026-11-17 10:40');
+assert.equal(formatPatternTime(Date.parse('2026-12-31T20:00:00Z')/1000),'2027-01-01 05:00');
+
+const {assessPatternStructure}=load('../src/features/trading/patternStructure.ts');
+function priceBars(vertices){
+  const closes=vertices.flatMap((value,index)=>index===vertices.length-1?[value]:Array.from({length:6},(_,step)=>value+(vertices[index+1]-value)*step/6));
+  return closes.map((close,index)=>({time:1000+index*300,open:close,high:close+.01,low:close-.01,close}));
+}
+function candidate(rows,id,extra={}){
+  return {...matches[0],pattern:patternCatalog.find(pattern=>pattern.id===id),start:0,length:rows.length,fit:100,confidence:100,...extra};
+}
+const confirmed=priceBars([100,102,106,103,106,103,100]);
+assert.equal(assessPatternStructure(confirmed,candidate(confirmed,'double-top')).status,'confirmed');
+const developing=priceBars([100,102,106,103,106,105,104]);
+const pending=assessPatternStructure(developing,candidate(developing,'double-top'));
+assert.equal(pending.status,'forming','A template stage cannot confirm a breakout absent from actual prices');
+assert.equal(pending.breakout,false);
+assert.ok(pending.checks.some(check=>check.label==='Closing neckline break'&&!check.passed));
+const invertedBars=confirmed.map(row=>({...row,open:200-row.open,close:200-row.close,high:200-row.low,low:200-row.high}));
+assert.equal(assessPatternStructure(invertedBars,candidate(invertedBars,'double-bottom')).status,'confirmed');
+const unequal=priceBars([100,102,106,103,104,102,100]);
+assert.equal(assessPatternStructure(unequal,candidate(unequal,'double-top')).status,'rejected','Unequal peaks cannot be confirmed just because a sketch fits');
+const noTrend=priceBars([106,103,106,103,106,103,100]);
+assert.equal(assessPatternStructure(noTrend,candidate(noTrend,'double-top')).status,'rejected','A top requires a prior rise');
+assert.equal(assessPatternStructure(confirmed,candidate(confirmed,'double-top',{confidence:9})).status,'rejected','Low random-walk percentile cannot become a detected structure');
+assert.equal(assessPatternStructure(confirmed,candidate(confirmed,'double-top',{fit:69})).status,'rejected');
+assert.equal(assessPatternStructure(confirmed.map(({time,close})=>({time,close})),candidate(confirmed,'double-top')).status,'unverified','Close-only data cannot verify OHLC structure');
+assert.equal(assessPatternStructure(confirmed,candidate(confirmed,'butterfly')).status,'unverified','Unsupported ratios must not be called confirmed');
+assert.equal(assessPatternStructure(confirmed.slice(0,12),candidate(confirmed.slice(0,12),'double-top')).status,'unverified');
+const shoulders=priceBars([100,105,110,105,116,105,110,105,100]);
+assert.equal(assessPatternStructure(shoulders,candidate(shoulders,'head-and-shoulders')).status,'confirmed');
+const flag=priceBars([100,104,108,112,110,112,109,111,108,110,107,109,116]);
+assert.equal(assessPatternStructure(flag,candidate(flag,'bullish-flag')).status,'confirmed','Parallel pullback after an impulse and a closing break passes');
+const triangle=priceBars([100,112,103,112,106,112,109,112,116]);
+assert.equal(assessPatternStructure(triangle,candidate(triangle,'ascending-triangle')).status,'confirmed','Flat resistance and rising support must converge');
+assert.equal(assessPatternStructure(triangle,candidate(triangle,'rectangle')).status,'rejected','Rising support is not a rectangle');
+console.log('Structural and time checks passed: UTC+9 rollover, neckline breakout, forming stages, inverse structure, false positives and unsupported families.');

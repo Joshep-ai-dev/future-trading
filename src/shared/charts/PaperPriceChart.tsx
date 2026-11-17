@@ -222,7 +222,7 @@ export default function PaperPriceChart(props: Props) {
     chartRef.current = chart;
     const price = chart.addSeries(CandlestickSeries, {
       ...tvCandleOptions,
-      priceFormat: { type: "price", precision: 3, minMove: 0.001 },
+      priceFormat: { type: "price", precision: 4, minMove: 0.0001 },
     });
     price
       .priceScale()

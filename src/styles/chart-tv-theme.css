@@ -560,21 +560,26 @@
   stroke-linejoin: round;
 }
 
-/* ===== Bar-close countdown under the last price label ================= */
+/* ===== Compact current-price / bar-close countdown badge ============== */
 .tv-countdown {
   position: absolute;
-  right: 0;
   z-index: 3;
-  height: 17px;
-  padding-left: 6px;
+  transform: translateX(100%);
+  width: max-content;
+  padding: 1px 5px;
+  border-radius: 2px;
   box-sizing: border-box;
   color: #fff;
   font-family: var(--tv-font, sans-serif);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
-  line-height: 17px;
+  line-height: 15px;
+  white-space: nowrap;
   pointer-events: none;
 }
+
+.tv-countdown strong, .tv-countdown span { display: block; }
+.tv-countdown strong { font-size: inherit; font-weight: 600; }
 
 @media (max-width: 600px) {
   .chart-resize.with-tools {

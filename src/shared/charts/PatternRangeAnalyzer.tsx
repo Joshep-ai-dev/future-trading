@@ -3,7 +3,8 @@ import {createPortal} from 'react-dom';
 import type {IChartApi} from 'lightweight-charts';
 import {patternCatalog} from '../../features/trading/patternCatalog';
 import {rankReferencePatterns,resemblanceLabel,type ReferenceMatch} from '../../features/trading/patternSimilarity';
-import {selectPatternRange,type PatternCandle} from '../../features/trading/patternRange';
+import {selectPatternRange,formatPatternTime,type PatternCandle} from '../../features/trading/patternRange';
+import {assessPatternStructure} from '../../features/trading/patternStructure';
 import {TIMEFRAMES} from './chartTimeframe';
 import '../../features/trading/patternLibrary.css';
 import './patternRange.css';
@@ -22,7 +23,20 @@ export default function PatternRangeAnalyzer({active,onFinish,chartRef,container
   const snapshot=useRef<PatternCandle[]>([]),anchor=useRef<number|null>(null),dragStart=useRef<number|null>(null);
   const dialog=useRef<HTMLDialogElement>(null),title=useId();
   const seconds=TIMEFRAMES[timeframe as keyof typeof TIMEFRAMES]??300;
-  const matches=useMemo(()=>selection?rankReferencePatterns(selection.map(row=>row.close),patternCatalog).slice(0,5):[],[selection]);
+  const matches=useMemo(()=>selection?rankReferencePatterns(selection.map(row=>row.close),patternCatalog):[],[selection]);
+  const assessed=useMemo(()=>selection?matches.map(match=>({match,assessment:assessPatternStructure(selection,match)})):[],[matches,selection]);
+  const identified=assessed.filter(item=>item.assessment.status==='confirmed'||item.assessment.status==='forming');
+  const references=assessed.filter(item=>item.assessment.status==='rejected'||item.assessment.status==='unverified').slice(0,5);
+  function resultCard({match,assessment}:typeof assessed[number]){
+    return <article key={match.pattern.id} className="reference-detail">
+      <h3>{match.pattern.name}</h3>
+      <strong>{assessment.status==='confirmed'?'Closing breakout passed structural rules':assessment.status==='forming'?'Structure forming — awaiting closing breakout':'Unconfirmed visual reference'}</strong>
+      <small>Geometric fit {Math.round(match.fit)}/100 · Random-walk percentile {Math.round(match.confidence)}%</small>
+      <small>{resemblanceLabel(match)}{assessment.level!==null?` · Boundary ${assessment.level.toFixed(3)}`:''}</small>
+      <Overlay match={match}/>
+      <details open={assessment.status==='rejected'||assessment.status==='unverified'}><summary>Structural checks ({assessment.checks.filter(check=>check.passed).length}/{assessment.checks.length})</summary><ul className="pattern-structure-checks">{assessment.checks.map(check=><li key={check.label} className={check.passed?'passed':'failed'}><b>{check.passed?'Pass':'Fail'}: {check.label}</b><span>{check.detail}</span></li>)}</ul></details>
+    </article>;
+  }
   useEffect(()=>{
     setSelection(null);anchor.current=null;setBand(null);setError('');
   },[timeframe,symbol]);
@@ -75,9 +89,12 @@ export default function PatternRangeAnalyzer({active,onFinish,chartRef,container
       </div>
     </>}
     {selection&&createPortal(<dialog ref={dialog} className="pattern-analysis-dialog" aria-labelledby={title} onCancel={event=>{event.preventDefault();setSelection(null);}} onClick={event=>{if(event.target===event.currentTarget){const rect=event.currentTarget.getBoundingClientRect();if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom)setSelection(null);}}}>
-      <header><div><h2 id={title}>Similar patterns · {symbol} · {timeframe}</h2><p>{selection.length} completed candles · {new Date(selection[0].time*1000).toISOString().slice(0,16).replace('T',' ')} to {new Date((selection.at(-1)!.time+seconds)*1000).toISOString().slice(0,16).replace('T',' ')} UTC</p></div><button type="button" autoFocus onClick={()=>setSelection(null)}>Close</button></header>
-      <p>Blue: your selected price curve. Dashed gold: aligned reference pattern. Score: 0 is what a typical random walk reaches on that sketch, 100 an exact match. Confidence: share of random walks whose best match in the catalog is weaker. Neither is a trade probability or breakout confirmation.</p>
-      {matches.length?<div className="pattern-analysis-results">{matches.map((match,index)=><article key={match.pattern.id} className="reference-detail"><h3>#{index+1} {match.pattern.name}</h3><strong>{Math.round(match.score)}/100 vs chance · {resemblanceLabel(match)}</strong><small>{match.stage==='forming'?'Forming (no breakout yet)':'Complete incl. breakout'} · fit {Math.round(match.fit)} · confidence {Math.round(match.confidence)}%</small><Overlay match={match}/><p>{match.pattern.check}</p><small>{match.pattern.watch}</small></article>)}</div>:<p>The selected curve is flat or has insufficient price variation to match a pattern.</p>}
+      <header><div><h2 id={title}>Pattern analysis · {symbol} · {timeframe}</h2><p>{selection.length} completed candles · {formatPatternTime(selection[0].time)} to {formatPatternTime(selection.at(-1)!.time+seconds)} UTC+9</p></div><button type="button" autoFocus onClick={()=>setSelection(null)}>Close</button></header>
+      <p>Blue: selected completed closes. Dashed gold: aligned reference sketch. Structural checks use candle highs, lows and closing prices. The random-walk percentile measures how unusual the resemblance is under a simulated baseline; it is not a trading probability.</p>
+      <div className="pattern-analysis-verdict" role="status"><strong>{identified.some(item=>item.assessment.status==='confirmed')?'Closing breakout verified by the displayed rules':identified.length?'Structure forming — no closing breakout confirmed':'No confirmed pattern in this selection.'}</strong><p>Identification requires at least 20 candles, a fit of 80/100, a random-walk percentile of 95%, and all geometric rules. These are heuristic checks, not a guarantee. Families without structural rules remain unverified.</p></div>
+      {identified.length>0&&<div className="pattern-analysis-results">{identified.slice(0,5).map(resultCard)}</div>}
+      {references.length>0&&<details><summary>Closest visual references · not confirmed ({references.length})</summary><div className="pattern-analysis-results">{references.map(resultCard)}</div></details>}
+      {!matches.length&&<p>The selected curve is flat or has insufficient price variation to compare.</p>}
       <button type="button" onClick={()=>setSelection(null)}>Close analysis</button>
     </dialog>,document.body)}
   </>;

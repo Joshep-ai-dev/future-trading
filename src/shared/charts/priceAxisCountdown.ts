@@ -20,8 +20,7 @@ export function formatCountdown(seconds: number) {
 
 /**
  * Keeps `--tv-scale-width` on the chart wrapper in sync with the right price
- * scale, and (optionally) draws TradingView's bar-close countdown directly
- * under the last-price label.
+ * scale, and draws a compact, unified current-price/countdown badge.
  */
 export function trackPriceAxis(
   chart: IChartApi,
@@ -31,6 +30,11 @@ export function trackPriceAxis(
 ) {
   const box = document.createElement("div");
   box.className = "tv-countdown";
+  const price = document.createElement("strong");
+  const countdown = document.createElement("span");
+  box.append(price, countdown);
+  const originalLastValueVisible = series.options().lastValueVisible;
+  let nativeLabelVisible = originalLastValueVisible;
   box.hidden = true;
   if (source) wrapper.appendChild(box);
   let frame = 0,
@@ -54,21 +58,29 @@ export function trackPriceAxis(
     const y = info ? series.priceToCoordinate(info.price) : null;
     const paneHeight = chart.panes()[0]?.getHeight() ?? 0;
     const visible = info && y !== null && remaining > 0 && y > 0 && y + 30 < paneHeight;
+    const showNative = visible ? false : originalLastValueVisible;
+    if (showNative !== nativeLabelVisible) {
+      series.applyOptions({lastValueVisible: showNative});
+      nativeLabelVisible = showNative;
+    }
+    const formattedPrice = info ? series.priceFormatter().format(info.price) : '';
     const key = visible
-      ? `${Math.round(y!)}|${formatCountdown(remaining)}|${info!.up}|${scale}`
+      ? `${Math.round(y!)}|${formattedPrice}|${formatCountdown(remaining)}|${info!.up}|${scale}`
       : "hidden";
     if (key === last) return;
     last = key;
     box.hidden = !visible;
     if (!visible) return;
-    box.textContent = formatCountdown(remaining);
-    box.style.top = `${offsetTop() + y! + 10}px`;
-    box.style.width = `${scale}px`;
+    price.textContent = formattedPrice;
+    countdown.textContent = formatCountdown(remaining);
+    box.style.top = `${offsetTop() + y! - 8}px`;
+    box.style.right = `${scale}px`;
     box.style.background = info!.up ? TV.up : TV.down;
   };
   frame = requestAnimationFrame(tick);
   return () => {
     cancelAnimationFrame(frame);
+    if (nativeLabelVisible !== originalLastValueVisible) series.applyOptions({lastValueVisible: originalLastValueVisible});
     box.remove();
   };
 }

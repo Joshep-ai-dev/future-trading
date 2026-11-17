@@ -2,6 +2,7 @@ import {useCallback,useEffect,useState} from 'react';
 import {api} from '../../shared/api/api';
 import {fmt} from '../../shared/types/types';
 import PatternLibrary from './PatternLibrary';
+import {formatPatternTime} from './patternRange';
 
 type NewsSummary={tone:number|null;volumeZ:number|null;macro?:number;macroMax?:number;coverage:number};
 type Match={start:number;end:number;distance:number;correlation:number;futureClosePct:number;futureHighPct:number;futureLowPct:number;path:number[];future:number[];news?:NewsSummary|null};
@@ -21,7 +22,7 @@ function forecastPath(live:LivePrediction):{closes:number[];straight:boolean}{
   const steps=Math.max(1,p.horizon);
   return {closes:Array.from({length:steps},(_,i)=>p.originClose+(p.predictedClose-p.originClose)*(i+1)/steps),straight:true};
 }
-const when=(t:number)=>new Date(t*1000).toISOString().slice(0,16).replace('T',' ');
+const when=formatPatternTime;
 const pct=(value:number)=>`${value>=0?'+':''}${fmt(value,2)}%`;
 const W=900,H=320,PAD={left:8,right:74,top:14,bottom:22};
 
@@ -109,7 +110,7 @@ export default function PatternPanel({defaultTimeframe='15m',newsControls=false}
           <div className="pattern-legend"><span><i className="is-query"/>Current pattern</span><span><i className="is-up"/>Match that rose</span><span><i className="is-down"/>Match that fell</span><span><i className="is-band"/>10–90% high/low range</span><span><i className="is-median"/>Median close</span>{!!result.forecast?.length&&<span><i className="is-forecast"/>Forecast</span>}</div>
         </div>
         <div className="pattern-table" onMouseLeave={()=>setHighlight(null)}>
-          <table><thead><tr><th>#</th><th>Matched window (UTC)</th><th>Similarity</th>{result.queryNews&&<th>News tone</th>}{result.queryNews&&<th>Release surprise</th>}<th>Then high</th><th>Then low</th><th>Then close</th></tr></thead><tbody>
+          <table><thead><tr><th>#</th><th>Matched window (UTC+9)</th><th>Similarity</th>{result.queryNews&&<th>News tone</th>}{result.queryNews&&<th>Release surprise</th>}<th>Then high</th><th>Then low</th><th>Then close</th></tr></thead><tbody>
             {result.matches.map((match,index)=><tr key={match.start} className={highlight===index?'selected-row':''} onMouseEnter={()=>setHighlight(index)}>
               <td>{index+1}</td><td>{when(match.start)} → {when(match.end).slice(11)}</td><td>{fmt(match.correlation,2)}</td>{result.queryNews&&<td className={(match.news?.tone??0)>=0?'positive':'negative'}>{tone(match.news?.tone)}</td>}{result.queryNews&&<td className={(match.news?.macroMax??0)>=0?'positive':'negative'}>{match.news?.macroMax?tone(match.news.macroMax):'—'}</td>}
               <td className="positive">{pct(match.futureHighPct)}</td><td className="negative">{pct(match.futureLowPct)}</td>

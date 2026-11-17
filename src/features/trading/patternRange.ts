@@ -1,4 +1,10 @@
-export type PatternCandle={time:number;close:number};
+export type PatternCandle={time:number;close:number;open?:number;high?:number;low?:number};
+
+export function formatPatternTime(epochSeconds:number):string{
+  const parts=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Tokyo',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date(epochSeconds*1000));
+  const part=(type:string)=>parts.find(value=>value.type===type)?.value??'';
+  return `${part('year')}-${part('month')}-${part('day')} ${part('hour')}:${part('minute')}`;
+}
 
 /** Freeze only completed candles inside the selected time boundaries. */
 export function selectPatternRange(candles:readonly PatternCandle[],first:number,last:number,seconds:number,clock:number):PatternCandle[]{

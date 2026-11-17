@@ -10,6 +10,13 @@
 .pattern-analysis-results svg { display: block; width: 100%; height: auto; margin: 12px 0; }
 .pattern-analysis-results h3 { font-size: 16px; margin-top: 0; }
 .pattern-analysis-results strong { font-size: 12px; }
+.pattern-analysis-results strong, .pattern-analysis-results small { display: block; margin-bottom: 7px; line-height: 1.5; }
+.pattern-analysis-verdict { border: 1px solid var(--border, #404654); border-radius: 8px; padding: 14px; margin: 18px 0; }
+.pattern-structure-checks { padding-left: 16px; font-size: 12px; line-height: 1.5; }
+.pattern-structure-checks li { margin: 10px 0; }
+.pattern-structure-checks span { display: block; color: var(--muted, #aaa); }
+.pattern-structure-checks .passed b { color: #52c9a0; }
+.pattern-structure-checks .failed b { color: #e8ae69; }
 @media(max-width:600px) { .pattern-analysis-dialog { padding: 14px; } .pattern-selection-help { left: 40px; right: 55px; font-size: 11px; } }
 .tv-toolbar .tv-pattern-analyze { display: inline-flex; align-items: center; gap: 6px; flex: none; padding: 0 9px; height: 28px; min-height: 28px; width: auto; border: 1px solid var(--border, #404654); border-radius: 5px; background: transparent; color: var(--text, #eee); font-size: 12px; white-space: nowrap; }
 .tv-toolbar .tv-pattern-analyze[aria-pressed=true] { border-color: #62b5ff; color: #62b5ff; background: #62b5ff18; }
