@@ -24,6 +24,7 @@ import PatternPanel from './PatternPanel';
 import BotSelector from '../strategy/BotSelector';
 import type {SavedSetup} from '../strategy/SetupPicker';
 import type {StrategyState} from '../../shared/api/exchangeTypes';
+import TradingWorkspaceTools from './TradingWorkspaceTools';
 
 export type Position={direction:number;entry_time:number;entry_price:number;quantity:number;stop:number;initial_stop?:number;trailing_active:boolean;stop_history?:StopPoint[]};
 export type PaperTrade=Position&{id:number;exit_time:number;exit_price:number;exit_reason:string;pnl:number};
@@ -81,6 +82,7 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
   const [chartTimeframe,setChartTimeframe]=useState<BacktestSettings['entry_timeframe']>(settings.entry_timeframe);
   const [data,setData]=useState<Response>({session:null,error:null});
   const [error,setError]=useState(''),[busy,setBusy]=useState(false);
+  const [controlsOpen,setControlsOpen]=useState(true);
   const liveMarket=useLiveMarketMinutes(visible&&!data.session);
   const revision=useRef(0);
   const [bottomTab,setBottomTab]=useState<'position'|'history'|'equity'|'sessions'|'patterns'>('position');
@@ -158,13 +160,9 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
         <Metric label="24h low" value={fmt(ticker.low,3)}/>
         <Metric label="24h volume" value={compact(ticker.volume)} unit="Cont."/>
       </div>
-      <div className="ticker-account" aria-label="Paper account">
-        <Metric label="Equity" value={`$${fmt(equity)}`}/>
-        <Metric label="Total P&L" value={`${pnl>=0?'+':''}${fmt(pnl)}`} unit="USDT" tone={pnl>=0?'positive':'negative'}/>
-        <div className="market-stat clock-stat"><small>{s?.mode==='replay'?'Replay clock':'Last candle'}</small><b>{date(s?(s.mode==='replay'?displayClock:s.virtualTime??s.lastProcessed):liveMarket.minutes.at(-1)?.time??preview.at(-1)?.time??null,tradingTimeZone)}</b></div>
-      </div>
+      <TradingWorkspaceTools mode="paper" open={controlsOpen} onToggle={()=>setControlsOpen(value=>!value)} panelId="paper-execution-sidebar"/>
     </div>
-    <div className="terminal-grid"><div className="terminal-main">
+    <div className="terminal-grid" data-controls={controlsOpen?'visible':'hidden'}><div className="terminal-main">
       <section className="terminal-panel price-panel"><TradingChartHeader timeframe={s?chartTimeframe:settings.entry_timeframe} onTimeframeChange={value=>changeChartTimeframe(value as BacktestSettings['entry_timeframe'])} mode={s?s.mode==='replay'?'HISTORICAL REPLAY':'PAPER SESSION':'MARKET PREVIEW'} caption={s?`Bot executes on ${s.settings.entry_timeframe} candles`:'Choose a timeframe to view the market chart'}/><BotChartBadge state={s?.strategyState} running={!!s?.running}/>
         {hasChart?<PaperPriceChart focus={focus} atrLength={(s?.settings??settings).bb_reversal.atr_length} adxLength={(s?.settings??settings).bb_reversal.adx_length} indicatorClock={s?(s.mode==='replay'?displayClock:s.quoteTime??s.virtualTime??0):Date.now()/1000} timeframe={s?chartTimeframe:settings.entry_timeframe} sessionId={s?.startedAt??0} candles={visibleCandles} indicators={visibleIndicators} stops={alternate?[]:chartStops} trades={visibleTrades} position={visiblePosition??null} showSma={settings.strategy!=='none'&&(s?.settings??settings).bb_reversal.use_sma_trend_adjustment!==false}/>:<div className="chart-empty"><span className="empty-chart-icon">⌁</span><h3>{chartView.error||previewError?'Chart unavailable':'Preparing your chart'}</h3><p>{previewError||'Loading downloaded market candles…'}</p></div>}
         {alternate&&chartView.error&&hasChart&&<p className="chart-history-status error" role="alert">{chartView.error}</p>}
@@ -193,7 +191,9 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
         <div id="activity-sessions" role="tabpanel" aria-labelledby="activity-tab-sessions" hidden={bottomTab!=='sessions'}>{bottomTab==='sessions'&&<PaperSessionHistory refreshKey={s?.startedAt}/>}</div>
       </section>
     </div>
-    <aside className="terminal-sidebar"><section className="terminal-panel bot-control"><div className="panel-heading"><h2>Paper bot</h2><span className={`bot-state ${s?.running?'is-running':''}`}><i className="status-dot"/>{status}</span></div>
+    <aside id="paper-execution-sidebar" className="terminal-sidebar" aria-label="Paper trading controls" hidden={!controlsOpen}>
+      <section className="terminal-panel trading-account-summary" aria-label="Paper account summary"><header><h2>Account overview</h2><span>Virtual funds</span></header><div className="account-equity"><span>Equity</span><strong>{fmt(equity,2)} <small>USDT</small></strong></div><div className="account-summary-metrics"><Metric label="Balance" value={fmt(balance,2)} unit="USDT"/><Metric label="Session P&L" value={`${pnl>=0?'+':''}${fmt(pnl,2)}`} unit="USDT" tone={pnl>=0?'positive':'negative'}/></div><div className="account-summary-time"><span>{s?(s.mode==='replay'?'Replay clock':'Session clock'):'Last market candle'}</span><time>{date(s?(s.mode==='replay'?displayClock:s.virtualTime??s.lastProcessed):liveMarket.minutes.at(-1)?.time??preview.at(-1)?.time??null,tradingTimeZone)}</time></div></section>
+      <section className="terminal-panel bot-control"><div className="panel-heading"><h2>Paper bot</h2><span className={`bot-state ${s?.running?'is-running':''}`}><i className="status-dot"/>{status}</span></div>
       {settings.strategy==='none'?<div className="bot-form"><h3>No strategy configured</h3><p>The market chart and account history remain available. Automated paper trading is disabled.</p>{s?.running&&<button type="button" disabled={busy} onClick={()=>void action('pause')}>Pause existing session</button>}</div>:<form className="bot-form" onSubmit={e=>{e.preventDefault();void action('start');}}><fieldset disabled={busy||s?.running}>
         <BotSelector strategy={config.strategy} onStrategyChange={key=>onChange({...settings,strategy:key})} profiles={profiles} onApplySetup={onApplySetup} setupLabel="Saved parameters"/>
         <label>Timeframe<select value={config.entry_timeframe} onChange={e=>onChange({...settings,entry_timeframe:e.target.value as BacktestSettings['entry_timeframe']})}>{['1m','3m','5m','10m','15m','30m','1h','4h','1d'].map(tf=><option key={tf} value={tf}>{tf}</option>)}</select></label>

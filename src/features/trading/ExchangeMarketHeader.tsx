@@ -1,11 +1,11 @@
-import {useEffect,useRef,useState} from 'react';
+import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {EXCHANGES,saveExchangeVenue,type ExchangeVenue} from '../../shared/api/exchangeVenue';
 import {Metric,StatusBadge} from '../../shared/ui/ui';
 import {liveNumber as number,reconnectExchangeStream,useExchangeStream} from '../../shared/api/useExchangeStream';
 import {EXCHANGE_INSTRUMENTS,defaultInstrumentForVenue,instrumentDetails,instrumentSupported,saveExchangeInstrument,useExchangeInstrument,type ExchangeInstrument} from '../../shared/api/exchangeInstrument';
 import {api} from '../../shared/api/api';
 
-export default function ExchangeMarketHeader({venue,botRunning=false}:{venue:ExchangeVenue;botRunning?:boolean}){
+export default function ExchangeMarketHeader({venue,botRunning=false,actions}:{venue:ExchangeVenue;botRunning?:boolean;actions?:ReactNode}){
   const {data,connected,disconnected}=useExchangeStream(venue);
   const instrumentId=useExchangeInstrument(),instrument=instrumentDetails(instrumentId);
   const picker=useRef<HTMLDetailsElement>(null);
@@ -46,5 +46,6 @@ export default function ExchangeMarketHeader({venue,botRunning=false}:{venue:Exc
     <Metric label="24h high / low" value={`${number(market?.high,priceDigits)} / ${number(market?.low,priceDigits)}`}/>
     <Metric label="24h volume" value={number(market?.quoteVolume,0)} unit={collateral}/>
     <StatusBadge dot tone={disconnected?'neutral':live?'positive':'warning'}>{disconnected?'Disconnected':live?'Live market':'Connecting'}</StatusBadge>
+    {actions}
   </div>;
 }

@@ -10,6 +10,7 @@ import TerminalSplitter from '../../shared/ui/TerminalSplitter';
 import BotStatusPanel,{BotChartBadge} from './BotStatusPanel';
 import type {BotStatus} from '../../shared/api/exchangeTypes';
 import type {BacktestSettings} from '../../shared/types/types';
+import TradingWorkspaceTools from './TradingWorkspaceTools';
 
 function PaperSessionNotice(){
   const [running,setRunning]=useState(false);
@@ -48,13 +49,14 @@ function useLiveBot(){
 }
 
 export default function LiveTrading({settings,controls}:{settings:BacktestSettings;controls:ReactNode}){
+  const [controlsOpen,setControlsOpen]=useState(true);
   const venue=useExchangeVenue();
   const bot=useLiveBot(),botHere=!!bot?.running&&bot.venue===venue;
   return <div id="page-paper" role="tabpanel" aria-labelledby="tab-paper">
-    <ExchangeMarketHeader venue={venue} botRunning={!!bot?.running}/>
-    <div className="terminal-grid live-terminal-grid">
+    <ExchangeMarketHeader venue={venue} botRunning={!!bot?.running} actions={<TradingWorkspaceTools mode="live" open={controlsOpen} onToggle={()=>setControlsOpen(value=>!value)} panelId="live-execution-sidebar"/>}/>
+    <div className="terminal-grid live-terminal-grid" data-controls={controlsOpen?'visible':'hidden'}>
       <div className="terminal-main"><LiveMarketChart key={venue} venue={venue} settings={settings} overlay={<BotChartBadge state={botHere?bot?.strategyState:null} running={botHere}/>}/><TerminalSplitter/><ExchangeOverview venue={venue}/></div>
-      <aside className="terminal-sidebar" aria-label="Live execution"><PaperSessionNotice/><Panel className="live-terminal-controls">{controls}</Panel><BotStatusPanel state={botHere?bot?.strategyState:null} running={botHere} timeLabel={botHere&&bot?.strategyState?.timestamp?new Date(bot.strategyState.timestamp*1000).toISOString().slice(0,16).replace('T',' ')+' UTC':undefined} emptyHint={bot?.running?`The strategy is running on ${bot.venue?.toUpperCase()}. Switch to that exchange to see its status.`:settings.strategy==='none'?'No automated strategy is configured. The market chart and manual order ticket are available.':'Start the strategy in the Bots tab to see live buy and sell readiness.'}/><LiveAssets venue={venue}/></aside>
+      <aside id="live-execution-sidebar" className="terminal-sidebar" aria-label="Live execution" hidden={!controlsOpen}><PaperSessionNotice/><Panel className="live-terminal-controls">{controls}</Panel><BotStatusPanel state={botHere?bot?.strategyState:null} running={botHere} timeLabel={botHere&&bot?.strategyState?.timestamp?new Date(bot.strategyState.timestamp*1000).toISOString().slice(0,16).replace('T',' ')+' UTC':undefined} emptyHint={bot?.running?`The strategy is running on ${bot.venue?.toUpperCase()}. Switch to that exchange to see its status.`:settings.strategy==='none'?'No automated strategy is configured. The market chart and manual order ticket are available.':'Start the strategy in the Bots tab to see live buy and sell readiness.'}/><LiveAssets venue={venue}/></aside>
     </div>
   </div>;
 }
