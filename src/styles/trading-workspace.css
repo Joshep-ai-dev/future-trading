@@ -701,3 +701,10 @@ button.chart-date-trigger.is-open { color: #a9c2ff; background: #223251; border-
 .app-shell[data-page=paper] .terminal-sidebar * { scrollbar-width: none; }
 .app-shell[data-page=paper] .terminal-sidebar::-webkit-scrollbar,
 .app-shell[data-page=paper] .terminal-sidebar *::-webkit-scrollbar { display: none; }
+
+/* Sidebar scrolls with the page (no sticky inner scroller); no visible page scrollbar. */
+@media(min-width:1100px) {
+  .app-shell[data-page=paper] .terminal-sidebar { position: static; top: auto; max-height: none; overflow: visible; padding-right: 0; }
+}
+html { scrollbar-width: none; }
+html::-webkit-scrollbar,body::-webkit-scrollbar { display: none; }
