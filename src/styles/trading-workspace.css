@@ -36,7 +36,7 @@ button.workspace-sidebar-arrow { display: inline-flex; align-items: center; just
 button.workspace-sidebar-arrow:hover { background: #222a37; border-color: #6386c3; }
 button.workspace-sidebar-arrow:focus-visible { outline: 2px solid #9ebeff; outline-offset: 2px; }
 .app-shell[data-page=paper] .terminal-grid { position: relative; }
-.workspace-sidebar-reopen { position: absolute; right: 12px; top: 22px; z-index: 5; }
+.workspace-sidebar-reopen { position: absolute; right: 12px; top: 22px; z-index: 7; }
 .app-shell[data-page=paper] .terminal-grid[data-controls=hidden] .price-panel > .tv-header { padding-right: 56px; }
 button.workspace-focus-toggle:hover { border-color: #6386c3; background: #222a37; }
 button.workspace-focus-toggle[aria-expanded=false] { color: #9ebeff; border-color: #496da7; background: #18253a; }
@@ -225,3 +225,52 @@ button.chart-date-trigger.is-open { color: #a9c2ff; background: #223251; border-
 .chart-navigation-tools .chart-date-inline select { height: var(--date-control-size); min-height: var(--date-control-size); margin: 0; padding-top: 0; padding-bottom: 0; line-height: normal; align-self: center; }
 .chart-navigation-tools .chart-date-inline input::-webkit-datetime-edit { padding: 0; }
 .chart-navigation-tools .chart-date-inline input::-webkit-calendar-picker-indicator { margin-top: 0; margin-bottom: 0; padding-top: 0; padding-bottom: 0; }
+/* Symbol, timeframes, and tools share the same toolbar row. */
+.chart-toolbar-heading { flex: 0 0 auto; min-width: 0; }
+.app-shell[data-page=paper] .chart-toolbar-heading > .tv-header { display: flex; align-items: center; min-height: 30px; height: 30px; padding: 0; border: 0; background: transparent !important; }
+.app-shell[data-page=paper] .chart-toolbar-heading .chart-title { display: flex; align-items: center; flex-wrap: nowrap; gap: 8px; }
+.app-shell[data-page=paper] .chart-toolbar-heading .chart-title > strong { font-size: 12px; }
+.app-shell[data-page=paper] .chart-toolbar-heading .chart-mode,.chart-toolbar-heading .trading-chart-heading-meta { display: none; }
+.app-shell[data-page=paper] .chart-toolbar-heading .tv-timeframes { flex: 0 0 auto; order: 0; }
+.app-shell[data-page=paper] .terminal-grid[data-controls=hidden] .price-panel > .tv-toolbar { padding-right: 52px; }
+@media(max-width:700px) { .chart-toolbar-heading { flex-basis: 100%; } .app-shell[data-page=paper] .chart-toolbar-heading .chart-title > strong { display: inline; } }
+/* Compact timeframe tabs with an underline selection. */
+.app-shell[data-page=paper] .chart-toolbar-heading .tv-timeframes { gap: 0; overflow: visible; }
+.app-shell[data-page=paper] .chart-toolbar-heading .tv-timeframes button { position: relative; min-width: 30px; height: 30px; min-height: 30px; padding: 0 7px; border: 0; border-radius: 0; background: transparent !important; color: #c4cad4; font-size: 11px; }
+.app-shell[data-page=paper] .chart-toolbar-heading .tv-timeframes button[aria-checked=true] { color: #8eb4ff !important; background: transparent !important; }
+.app-shell[data-page=paper] .chart-toolbar-heading .tv-timeframes button[aria-checked=true]::after { content: ''; position: absolute; left: 7px; right: 7px; bottom: 0; height: 2px; border-radius: 1px; background: #6395ff; }
+.app-shell[data-page=paper] .chart-toolbar-heading .tv-timeframes button:hover { color: #fff; background: #ffffff08 !important; }
+.chart-toolbar-end { display: flex; align-items: center; align-self: center; flex: 0 0 auto; margin-left: 12px; }
+.app-shell[data-page=paper] .terminal-grid[data-controls=hidden] .price-panel > .tv-toolbar { padding-right: 10px; }
+.tv-timeframe-primary { display: flex; align-items: center; }
+.tv-timeframes select.tv-timeframe-more { box-sizing: border-box; width: auto; min-width: 60px; height: 30px; margin: 0 0 0 4px; padding: 0 5px; border: 0; border-radius: 0; background: transparent; color: #c4cad4; color-scheme: dark; font: inherit; font-size: 11px; cursor: pointer; }
+.tv-timeframes select.tv-timeframe-more[data-active=true] { color: #8eb4ff; box-shadow: inset 0 -2px #6395ff; }
+.tv-timeframes select.tv-timeframe-more:focus-visible { outline: 2px solid #83aaff; outline-offset: 1px; }
+.tv-timeframes:has(.tv-timeframe-menu) { overflow: visible; }
+.tv-timeframe-menu { position: relative; margin-left: 4px; flex: none; }
+.tv-timeframe-menu > summary { display: flex; align-items: center; justify-content: center; gap: 5px; height: 30px; padding: 0 7px; border-radius: 4px; color: #c4cad4; font-size: 11px; cursor: pointer; list-style: none; }
+.tv-timeframe-menu > summary::-webkit-details-marker { display: none; }
+.tv-timeframe-menu > summary svg,.tv-timeframe-options button svg { width: 14px; height: 14px; }
+.tv-timeframe-menu > summary[data-active=true] { color: #8eb4ff; box-shadow: inset 0 -2px #6395ff; }
+.tv-timeframe-menu[open] > summary,.tv-timeframe-menu > summary:hover { background: #222833; }
+.tv-timeframe-options { position: absolute; top: calc(100% + 8px); left: 0; z-index: 30; display: grid; width: 116px; padding: 5px; border: 1px solid #303640; border-radius: 7px; background: #15181e; box-shadow: 0 8px 24px #0008; }
+.app-shell[data-page=paper] .chart-toolbar-heading .tv-timeframes .tv-timeframe-options button,.tv-timeframe-options button { display: flex; align-items: center; justify-content: space-between; width: 100%; height: 32px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent !important; color: #c4cad4; text-align: left; font-size: 12px; }
+.app-shell[data-page=paper] .chart-toolbar-heading .tv-timeframes .tv-timeframe-options button:hover,.tv-timeframe-options button:hover { background: #252c38 !important; color: #fff; }
+.app-shell[data-page=paper] .chart-toolbar-heading .tv-timeframes .tv-timeframe-options button[aria-pressed=true],.tv-timeframe-options button[aria-pressed=true] { color: #8eb4ff; background: #1b2b45 !important; }
+.tv-timeframe-menu :focus-visible { outline: 2px solid #83aaff; outline-offset: 1px; }
+.tv-group .chart-pattern-divider { display: block; flex: 0 0 1px; width: 1px; height: 20px; margin: 0 8px; align-self: center; background: #343942; }
+/* Align the complete heading with the icon row, with clear group boundaries. */
+.app-shell[data-page=paper] .chart-toolbar-heading { display: flex; align-items: center; align-self: center; height: 30px; margin: 0; padding: 0 10px 0 0; border-right: 1px solid #343942; }
+.app-shell[data-page=paper] .chart-toolbar-heading > .tv-header { height: 30px; min-height: 30px; margin: 0; padding: 0; line-height: 1; }
+.app-shell[data-page=paper] .chart-toolbar-heading .chart-title { height: 30px; margin: 0; padding: 0; line-height: 1; }
+.app-shell[data-page=paper] .chart-toolbar-heading .chart-title > strong { display: flex; align-items: center; height: 20px; padding-right: 10px; border-right: 1px solid #343942; line-height: 1; }
+.app-shell[data-page=paper] .chart-toolbar-heading .tv-timeframes,.tv-timeframe-primary { display: flex; align-items: center; height: 30px; margin-top: 0; margin-bottom: 0; }
+.app-shell[data-page=paper] .chart-toolbar-heading .tv-timeframe-primary > button { display: inline-flex; align-items: center; justify-content: center; margin: 0; line-height: 1; }
+.app-shell[data-page=paper] .chart-toolbar-heading .tv-timeframe-menu { align-self: center; height: 30px; margin-top: 0; margin-bottom: 0; }
+.app-shell[data-page=paper] .chart-toolbar-heading .tv-timeframe-menu > summary { height: 30px; margin: 0; line-height: 1; }
+.app-shell[data-page=paper] .tv-toolbar .tv-pattern-analyze svg { display: block; width: 18px; height: 18px; }
+.app-shell[data-page=paper] .chart-toolbar-heading .tv-timeframe-menu { display: flex; align-items: center; }
+.app-shell[data-page=paper] .chart-toolbar-heading .tv-timeframes button.tv-timeframe-trigger { display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 30px; margin: 0; padding: 0 7px; line-height: 1; border-radius: 4px; font-weight: 400; }
+.tv-timeframe-trigger svg { display: block; width: 12px; height: 12px; flex: none; }
+.app-shell[data-page=paper] .chart-toolbar-heading .tv-timeframes button.tv-timeframe-trigger[aria-expanded=true] { background: #222833 !important; }
+.app-shell[data-page=paper] .chart-toolbar-heading .tv-timeframes button.tv-timeframe-trigger[data-active=true] { color: #8eb4ff; box-shadow: none; }

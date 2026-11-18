@@ -49,7 +49,7 @@ import {
   captureViewport,
   restoreViewport,
 } from "./chartViewport";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   CandlestickSeries,
   createChart,
@@ -99,6 +99,8 @@ type Data = {
 };
 type HistoryPage = { candles: Analysis["candles"]; hasMore: boolean };
 type Props = Data & {
+  header?: ReactNode;
+  toolbarEnd?: ReactNode;
   sessionId: number;
   showSma: boolean;
   timeframe: string;
@@ -1052,6 +1054,8 @@ export default function PaperPriceChart(props: Props) {
     <>
 
       <ChartTools
+        header={props.header}
+        endActions={props.toolbarEnd}
         actions={<ChartTimeNavigator timeZone={timeZone} getLatest={()=>props.candles.at(-1)?.time??Date.now()/1000} onSelect={selection=>void focusOn.current(selection)} onCancel={()=>{clearFocus.current();latest();}} busy={loading}/>}
         onAnalyzePattern={() => { holdView(); setPatternSelecting(value => !value); }}
         patternSelecting={patternSelecting}
