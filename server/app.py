@@ -73,6 +73,8 @@ async def lifespan(app):
         news_service.shutdown()
         orderflow_service.shutdown()
         await workspaces.shutdown()
+        from server.market.okx_public_stream import okx_public_stream
+        await okx_public_stream.close()
         history_backfill.shutdown()
         refresh_service.shutdown()
 
@@ -818,6 +820,14 @@ def public_market_order_book(part: Literal['book', 'trades'] = 'book'):
         return public_order_book(part)
     except (OSError, ValueError, KeyError, IndexError) as error:
         raise HTTPException(status_code=503, detail='Order book is unavailable. Retrying automatically.') from error
+
+
+@app.get('/api/market/realtime')
+async def public_market_realtime(kind: Literal['ticker', 'orderBook', 'trades']):
+    """Real-time public OKX XAG ticker, order book or trades (display only), streamed while the browser listens."""
+    from server.market.okx_public_stream import okx_public_stream
+    return StreamingResponse(okx_public_stream.events(kind), media_type='text/event-stream',
+                             headers={'Cache-Control':'no-cache', 'X-Accel-Buffering':'no'})
 
 
 @app.get('/api/forecast/quote')

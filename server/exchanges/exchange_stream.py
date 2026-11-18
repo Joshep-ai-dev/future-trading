@@ -60,6 +60,16 @@ def trade_view(trade: dict, contract_size: float) -> dict:
 
 
 DEPTH_SECTIONS = ('orderBook', 'trades')
+def apply_bbo(view: dict, bid: list | None, ask: list | None, timestamp=None) -> dict:
+    """Refresh the top of a slower full-book snapshot from a fast best bid/offer update."""
+    bids, asks = list(view.get('bids') or []), list(view.get('asks') or [])
+    if bid:
+        bids = [bid] + [level for level in bids if level[0] < bid[0]]
+    if ask:
+        asks = [ask] + [level for level in asks if level[0] > ask[0]]
+    return dict(bids=bids, asks=asks, timestamp=timestamp or view.get('timestamp'))
+
+
 RECONCILE_SECONDS = 5
 POSITION_RECONCILE_SECONDS = 2
 
@@ -151,6 +161,40 @@ class ExchangeFeed:
     def start_depth(self, section: str) -> None:
         if self.ready.is_set() and section not in self.depth_tasks:
             self.depth_tasks[section] = asyncio.create_task(self.watch(section))
+            # Hyperliquid pushes full books only every few seconds but best bid/offer on every change.
+            if section == 'orderBook' and self.venue == 'hyperliquid':
+                self.depth_tasks['orderBookBbo'] = asyncio.create_task(self.hyperliquid_bbo())
+
+    async def hyperliquid_bbo(self) -> None:
+        url = self.client.urls['api']['ws']['public']
+        coin = self.market.get('baseName') or self.market.get('base')
+        size = float(self.market.get('contractSize') or 1)
+        delay = 1
+        while True:
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.ws_connect(url, heartbeat=30, receive_timeout=60) as socket:
+                        await socket.send_json({'method': 'subscribe', 'subscription': {'type': 'bbo', 'coin': coin}})
+                        async for packet in socket:
+                            if packet.type != aiohttp.WSMsgType.TEXT:
+                                break
+                            message = json.loads(packet.data)
+                            if message.get('channel') != 'bbo':
+                                continue
+                            delay = 1
+                            data = message.get('data') or {}
+                            levels = data.get('bbo') or [None, None]
+                            bid, ask = ([float(level['px']), float(level['sz']) * size] if level else None
+                                        for level in (levels + [None, None])[:2])
+                            current = self.depth.get('orderBook')
+                            if current:
+                                self.update('orderBook', apply_bbo(current, bid, ask, data.get('time')))
+                        raise ConnectionError('Hyperliquid bbo stream closed')
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, 30)
 
     def add_depth(self, section: str, queue: asyncio.Queue) -> None:
         self.depth_queues[section].add(queue)
@@ -159,9 +203,10 @@ class ExchangeFeed:
     def remove_depth(self, section: str, queue: asyncio.Queue) -> None:
         self.depth_queues[section].discard(queue)
         if not self.depth_queues[section]:
-            task = self.depth_tasks.pop(section, None)
-            if task:
-                task.cancel()
+            for key in (section, section + 'Bbo'):
+                task = self.depth_tasks.pop(key, None)
+                if task:
+                    task.cancel()
             self.depth.pop(section, None)
 
     async def watch(self, section: str) -> None:

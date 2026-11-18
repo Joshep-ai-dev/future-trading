@@ -4,7 +4,7 @@ import unittest
 import ccxt
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from server.exchanges.exchange_stream import book_view, trade_view, ExchangeFeed, ExchangeStreams, classic_auth
+from server.exchanges.exchange_stream import apply_bbo, book_view, trade_view, ExchangeFeed, ExchangeStreams, classic_auth
 from server.exchanges.htx_account import classic_balance, classic_positions, rejection_reason, normalize_htx_balance, classic_conditional_orders
 from server.exchanges.live_exchange import LiveExchange
 
@@ -220,6 +220,7 @@ class ExchangeStreamTests(unittest.IsolatedAsyncioTestCase):
 class DepthDemandTests(unittest.IsolatedAsyncioTestCase):
     async def test_depth_is_watched_only_while_a_panel_subscribes(self) -> None:
         feed = ExchangeFeed.__new__(ExchangeFeed)
+        feed.venue = 'okx'
         feed.depth, feed.depth_tasks = {}, {}
         feed.depth_queues = {'orderBook': set(), 'trades': set()}
         feed.ready = asyncio.Event()
@@ -244,6 +245,19 @@ class DepthDemandTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(task.cancelled())
         self.assertEqual(feed.depth_tasks, {})
         self.assertNotIn('orderBook', feed.depth)
+
+
+class BboMergeTests(unittest.TestCase):
+    def test_best_levels_replace_crossed_and_equal_levels(self) -> None:
+        view = {'bids': [[30.0, 1], [29.9, 2]], 'asks': [[30.1, 3], [30.2, 4]], 'timestamp': 1}
+        merged = apply_bbo(view, [29.9, 5], [30.05, 6], 2)
+        self.assertEqual(merged['bids'], [[29.9, 5]])
+        self.assertEqual(merged['asks'], [[30.05, 6], [30.1, 3], [30.2, 4]])
+        self.assertEqual(merged['timestamp'], 2)
+
+    def test_missing_side_keeps_snapshot(self) -> None:
+        view = {'bids': [[30.0, 1]], 'asks': [[30.1, 3]], 'timestamp': 1}
+        self.assertEqual(apply_bbo(view, None, None)['bids'], [[30.0, 1]])
 
 
 class BookViewTests(unittest.TestCase):

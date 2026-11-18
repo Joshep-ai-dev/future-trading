@@ -1,6 +1,5 @@
 import {useEffect,useMemo,useRef,useState} from 'react';
 import {useExchangeStream,type LiveTrade,type OrderBookSnapshot} from '../../shared/api/useExchangeStream';
-import {api} from '../../shared/api/api';
 import {instrumentDetails,useExchangeInstrument} from '../../shared/api/exchangeInstrument';
 import type {ExchangeVenue} from '../../shared/api/exchangeVenue';
 
@@ -35,16 +34,16 @@ const amount=(value:number)=>value.toLocaleString(undefined,{minimumFractionDigi
 type Tab='book'|'trades';
 type PanelData={symbol?:string;book:OrderBookSnapshot|null;trades:LiveTrade[]|null};
 
-/** Latest value of one exchange depth stream (order book or trades); open only while enabled. */
-function useDepthStream<T>(venue:ExchangeVenue,kind:'orderBook'|'trades',enabled:boolean){
+/** Latest value of a server-sent event stream; the stream is open only while ``url`` is set. */
+function useEventStream<T>(url:string|null){
   const [value,setValue]=useState<T|null>(null);
   useEffect(()=>{
     setValue(null);
-    if(!enabled)return;
-    const source=new EventSource(`/api/exchange/depth?venue=${venue}&kind=${kind}`);
+    if(!url)return;
+    const source=new EventSource(url);
     source.onmessage=event=>{try{setValue(JSON.parse(event.data) as T);}catch{/* Ignore malformed frames. */}};
     return()=>source.close();
-  },[venue,kind,enabled]);
+  },[url]);
   return value;
 }
 
@@ -53,38 +52,21 @@ export default function OrderBook({venue}:{venue:ExchangeVenue}){
   const {data,connected}=useExchangeStream(venue);
   const base=instrumentDetails(useExchangeInstrument()).base;
   const [tab,setTab]=useState<Tab>('book');
-  const book=useDepthStream<OrderBookSnapshot>(venue,'orderBook',connected&&tab==='book');
-  const trades=useDepthStream<LiveTrade[]>(venue,'trades',connected&&tab==='trades');
+  const book=useEventStream<OrderBookSnapshot>(connected&&tab==='book'?`/api/exchange/depth?venue=${venue}&kind=orderBook`:null);
+  const trades=useEventStream<LiveTrade[]>(connected&&tab==='trades'?`/api/exchange/depth?venue=${venue}&kind=trades`:null);
   return <OrderBookPanel id="live-order-book" tab={tab} onTab={setTab} data={{symbol:data?.symbol,book,trades}} base={base} resetKey={`${venue}-${base}`}
     emptyBook={connected?'Waiting for the order book...':'Connect an exchange to stream the order book.'}
     emptyTrades={connected?'Waiting for trades...':'Connect an exchange to stream trades.'}/>;
 }
 
-/** Paper page: public OKX XAG book or trades (selected tab only), polled while shown. */
+/** Paper page: real-time public OKX XAG book or trades (selected tab only), streamed while shown. */
 export function PublicOrderBook({active,base,unavailable}:{active:boolean;base:string;unavailable?:string}){
   const [tab,setTab]=useState<Tab>('book');
-  const [book,setBook]=useState<OrderBookSnapshot|null>(null),[trades,setTrades]=useState<LiveTrade[]|null>(null);
-  const [symbol,setSymbol]=useState<string>(),[error,setError]=useState('');
-  useEffect(()=>{
-    setError('');
-    if(!active||unavailable){setBook(null);setTrades(null);return;}
-    let alive=true,timer:ReturnType<typeof setTimeout>;
-    const abort=new AbortController();
-    async function poll(){
-      try{
-        const next=await api<{symbol:string;orderBook?:OrderBookSnapshot;trades?:LiveTrade[]}>(`/api/market/orderbook?part=${tab==='book'?'book':'trades'}`,{signal:abort.signal});
-        if(!alive)return;
-        setSymbol(next.symbol);setError('');
-        if(tab==='book')setBook(next.orderBook??null);else setTrades(next.trades??null);
-      }catch(reason){if(alive)setError(String(reason));}
-      finally{if(alive)timer=setTimeout(poll,500);}
-    }
-    void poll();
-    return()=>{alive=false;abort.abort();clearTimeout(timer);};
-  },[active,unavailable,tab]);
-  return <OrderBookPanel id="paper-order-book" tab={tab} onTab={setTab} data={{symbol,book:unavailable?null:book,trades:unavailable?null:trades}} base={base} resetKey={base}
-    emptyBook={unavailable??(error?'Order book is unavailable. Retrying automatically.':'Loading order book...')}
-    emptyTrades={unavailable??(error?'Trades are unavailable. Retrying automatically.':'Loading trades...')}/>;
+  const live=active&&!unavailable;
+  const book=useEventStream<OrderBookSnapshot>(live&&tab==='book'?'/api/market/realtime?kind=orderBook':null);
+  const trades=useEventStream<LiveTrade[]>(live&&tab==='trades'?'/api/market/realtime?kind=trades':null);
+  return <OrderBookPanel id="paper-order-book" tab={tab} onTab={setTab} data={{symbol:'XAG/USDT:USDT',book,trades}} base={base} resetKey={base}
+    emptyBook={unavailable??'Loading order book...'} emptyTrades={unavailable??'Loading trades...'}/>;
 }
 
 function OrderBookPanel({id,tab,onTab,data,base,resetKey,emptyBook,emptyTrades}:{id:string;tab:Tab;onTab:(tab:Tab)=>void;data:PanelData;base:string;resetKey:string;emptyBook:string;emptyTrades:string}){
