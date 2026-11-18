@@ -857,3 +857,11 @@ html::-webkit-scrollbar,body::-webkit-scrollbar { display: none; }
 .live-method-section .execution-tabs-row > .live-execution-mode-tabs [role=tab][aria-selected=true]::after { left: 0; right: 0; bottom: 0; height: 2px; border-radius: 0; background: #76a9ef; }
 .live-method-section .execution-tabs-row > .live-execution-mode-tabs [role=tab]:hover { color: #eef4ff; }
 .live-method-section .ticket-connection { justify-content: flex-end; padding-top: 10px; }
+
+/* The price panel must not clip (toolbar menus overflow it), so round the
+   chart area and toolbar row themselves to keep 10px panel corners. */
+.price-panel > .tv-toolbar,
+.price-panel > .tv-header:first-child,
+.app-shell[data-page=paper] .price-panel > .tv-toolbar { border-radius: 10px 10px 0 0 !important; }
+.price-panel .chart-resize { border-radius: 0 0 10px 10px; overflow: hidden; }
+.price-panel > .chart-resize:first-child { border-radius: 10px; }
