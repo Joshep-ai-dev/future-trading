@@ -1,6 +1,6 @@
 import {useEffect,useRef,useState,type ReactNode} from 'react';
 import type {IChartApi} from 'lightweight-charts';
-import type {ChartIndicatorSelection} from './chartIndicatorSelection';
+import type {StudyKind} from './chartStudies';
 
 export const chartInteraction = {
   handleScale: {mouseWheel:true,pinch:true,axisPressedMouseMove:{time:true,price:true},axisDoubleClickReset:{time:true,price:true}},
@@ -20,14 +20,14 @@ export function resizeChart(chart:IChartApi,element:HTMLDivElement,initialView:(
   return ()=>observer.disconnect();
 }
 
-export default function ChartTools({chartRef,valueLabel='Price',horizontalLabel='Time',onFullscreen,fullscreen=false,endLabel='Latest',onLatest,onEarlier,onNavigate,loading=false,hasMore=false,indicators,onToggleIndicator,strategyVisible,onToggleStrategy,follow,onFollowChange,showEarlier=false,onAnalyzePattern,patternSelecting=false,actions,header,endActions,patternActions}: {
+export default function ChartTools({chartRef,valueLabel='Price',horizontalLabel='Time',onFullscreen,fullscreen=false,endLabel='Latest',onLatest,onEarlier,onNavigate,loading=false,hasMore=false,onAddStudy,follow,onFollowChange,showEarlier=false,onAnalyzePattern,patternSelecting=false,actions,header,endActions,patternActions}: {
   patternActions?:ReactNode;endActions?:ReactNode;header?:ReactNode;actions?:ReactNode;onAnalyzePattern?:()=>void;patternSelecting?:boolean;
   chartRef: {current:IChartApi|null}; valueLabel?:string; onLatest?:()=>void;
   endLabel?:string;horizontalLabel?:string;onFullscreen?:()=>void;fullscreen?:boolean;
   onEarlier?:()=>void; loading?:boolean; hasMore?:boolean;
   onNavigate?:()=>void;
-  indicators?:ChartIndicatorSelection;onToggleIndicator?:(key:keyof ChartIndicatorSelection)=>void;
-  strategyVisible?:boolean;onToggleStrategy?:()=>void;
+  /** Adds another instance of an indicator; the same indicator can be added repeatedly. */
+  onAddStudy?:(kind:StudyKind)=>void;
   follow?:boolean;onFollowChange?:(value:boolean)=>void;showEarlier?:boolean;
 }) {
   const menu=useRef<HTMLDetailsElement>(null);
@@ -65,23 +65,20 @@ export default function ChartTools({chartRef,valueLabel='Price',horizontalLabel=
     chartRef.current?.priceScale('right').setAutoScale(true);
     chartRef.current?.timeScale().fitContent();
   }
-  const overlays=strategyVisible!==undefined&&onToggleStrategy,studies=indicators&&onToggleIndicator;
-  const activeCount=(overlays&&strategyVisible?1:0)+(studies?(['triplema','bollinger','supertrend','rsi','adx','atr'] as const).filter(key=>indicators[key]).length:0);
-  const studyList=(['triplema','bollinger','supertrend','rsi','adx','atr'] as const).map(key=>({key,name:STUDY_NAMES[key][0],description:STUDY_NAMES[key][1]}));
+  const studyList=(['ma','triplema','bollinger','supertrend','rsi','adx','atr'] as const).map(key=>({key,name:STUDY_NAMES[key][0],description:STUDY_NAMES[key][1]}));
   const needle=query.trim().toLowerCase();
   const matches=(text:string)=>!needle||text.toLowerCase().includes(needle);
   return <div className="chart-actions tv-toolbar compact-chart-toolbar">
     {header&&<div className="chart-toolbar-heading">{header}</div>}
 
-    {(overlays||studies)&&<details className="tv-menu" ref={menu} onToggle={event=>{if(!(event.currentTarget as HTMLDetailsElement).open)setQuery('');}}><summary className="tv-indicators-trigger" title="Indicators" aria-label="Indicators"><svg viewBox="0 0 28 28" aria-hidden="true"><path d="M10.5 22c2 0 2.6-1.6 3-4l1.6-9c.4-2.3 1-4 3.4-4M10 11h8M15.5 15l5 6M20.5 15l-5 6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>{activeCount>0&&<span className="tv-count">{activeCount}</span>}</summary>
+    {onAddStudy&&<details className="tv-menu" ref={menu} onToggle={event=>{if(!(event.currentTarget as HTMLDetailsElement).open)setQuery('');}}><summary className="tv-indicators-trigger" title="Indicators" aria-label="Indicators"><svg viewBox="0 0 28 28" aria-hidden="true"><path d="M10.5 22c2 0 2.6-1.6 3-4l1.6-9c.4-2.3 1-4 3.4-4M10 11h8M15.5 15l5 6M20.5 15l-5 6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg></summary>
       <div className="tv-menu-popover" role="group" aria-label="Chart overlays and indicators">
         <div className="tv-menu-search"><svg viewBox="0 0 18 18" aria-hidden="true"><circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" strokeWidth="1.4"/><path d="M12 12l4 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg><input type="search" placeholder="Search" aria-label="Search indicators" value={query} onChange={event=>setQuery(event.target.value)}/></div>
         <p className="tv-menu-section">Script name</p>
-        {overlays&&matches('MA simple moving average SMA')&&<label><input type="checkbox" checked={strategyVisible} onChange={onToggleStrategy}/><span>MA<small>Simple moving average</small></span></label>}
-        {studies&&studyList.filter(study=>matches(`${study.name} ${study.description}`)).map(study=><label key={study.key}><input type="checkbox" checked={indicators[study.key]} onChange={()=>onToggleIndicator(study.key)}/><span>{study.name}<small>{study.description}</small></span></label>)}
+        {studyList.filter(study=>matches(`${study.name} ${study.description}`)).map(study=><button type="button" key={study.key} className="tv-menu-item" title={`Add ${study.name}`} onClick={()=>onAddStudy(study.key)}><span>{study.name}<small>{study.description}</small></span></button>)}
       </div>
     </details>}
-    {(overlays||studies)&&<i className="tv-divider" aria-hidden="true"/>}
+    {onAddStudy&&<i className="tv-divider" aria-hidden="true"/>}
     <div className="tv-group" role="group" aria-label={`${valueLabel} chart controls`}>
       <button type="button" className="tv-icon" title={`Zoom out ${horizontalLabel.toLowerCase()} (show more candles)`} aria-label={`Zoom out ${horizontalLabel.toLowerCase()}`} onClick={()=>zoomTime(2)}><svg viewBox="0 0 28 28" aria-hidden="true"><circle cx="12.5" cy="12.5" r="6.5" fill="none" stroke="currentColor" strokeWidth="1.4"/><path d="M9.5 12.5h6M17.5 17.5l5 5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg></button>
       <button type="button" className="tv-icon" title={`Zoom in ${horizontalLabel.toLowerCase()}`} aria-label={`Zoom in ${horizontalLabel.toLowerCase()}`} onClick={()=>zoomTime(.5)}><svg viewBox="0 0 28 28" aria-hidden="true"><circle cx="12.5" cy="12.5" r="6.5" fill="none" stroke="currentColor" strokeWidth="1.4"/><path d="M9.5 12.5h6M12.5 9.5v6M17.5 17.5l5 5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg></button>
@@ -102,7 +99,7 @@ export default function ChartTools({chartRef,valueLabel='Price',horizontalLabel=
   </div>;
 }
 
-const STUDY_NAMES={triplema:['Triple MA','Three moving averages · 20 / 50 / 100'],atr:['Average True Range','ATR · volatility'],adx:['Average Directional Index','ADX · trend strength'],rsi:['Relative Strength Index','RSI · momentum oscillator'],supertrend:['Supertrend','ATR trend overlay'],bollinger:['Bollinger Bands','BB · moving average and standard-deviation bands']} as const;
+const STUDY_NAMES={ma:['MA','Simple moving average'],triplema:['Triple MA','Three moving averages · 20 / 50 / 100'],atr:['Average True Range','ATR · volatility'],adx:['Average Directional Index','ADX · trend strength'],rsi:['Relative Strength Index','RSI · momentum oscillator'],supertrend:['Supertrend','ATR trend overlay'],bollinger:['Bollinger Bands','BB · moving average and standard-deviation bands']} as const;
 
 /** Small round button over the chart, like TradingView's "scroll to realtime". */
 export function ScrollToLatest({onClick}:{onClick:()=>void}){

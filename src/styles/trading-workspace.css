@@ -787,3 +787,13 @@ html::-webkit-scrollbar,body::-webkit-scrollbar { display: none; }
   .market-header .live-header-stats { flex: 0 1 auto; }
   .market-header .live-header-stats > .ui-metric { flex: none; min-width: 128px; }
 }
+
+/* Indicator menu: plain rows (no checkboxes); each click adds another instance. */
+.tv-menu-popover button.tv-menu-item {
+  display: flex; align-items: center; width: calc(100% - 12px); margin: 0 6px; padding: 7px 10px;
+  border: 0; border-radius: 4px; background: transparent; color: var(--tv-text, #d1d4dc);
+  font: inherit; font-size: 14px; text-align: left; cursor: pointer;
+}
+.tv-menu-popover button.tv-menu-item:hover,
+.tv-menu-popover button.tv-menu-item:focus-visible { background: var(--tv-hover, #2a2e39); outline: none; }
+.tv-menu-popover button.tv-menu-item small { display: block; margin-top: 2px; }

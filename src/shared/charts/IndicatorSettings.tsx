@@ -57,6 +57,13 @@ function sanitizeStyle(c:IndicatorConfig):IndicatorConfig{
   for(const key of WIDTH_KEYS)if(!Number.isInteger(next[key])||(next[key] as number)<1||(next[key] as number)>4)next[key]=defaultStyle[key];
   return next as IndicatorConfig;
 }
+/** Validate a stored per-indicator config, falling back to defaults like the saved settings do. */
+export function normalizeIndicatorConfig(raw:unknown):IndicatorConfig{
+  try{
+    const c=sanitizeStyle({...defaultIndicators,...(raw&&typeof raw==='object'?raw:{})} as IndicatorConfig);
+    return validInputs(c)?c:defaultIndicators;
+  }catch{return defaultIndicators;}
+}
 export function readIndicatorSettings():IndicatorConfig{
   try{
     const c=sanitizeStyle({...defaultIndicators,...JSON.parse(localStorage.getItem(storageKey)??'{}')});

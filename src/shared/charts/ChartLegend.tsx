@@ -1,40 +1,5 @@
 import { TV } from "./tvTheme";
 import { useState } from "react";
-import type { IndicatorConfig, OverlayKind } from "./IndicatorSettings";
-
-export type OverlayHidden = Partial<Record<OverlayKind | "trend", boolean>>;
-
-/** Legend rows for the price-pane overlay studies (Triple MA, Bollinger Bands, Supertrend). */
-export function overlayLegends(
-  selection: { bollinger: boolean; supertrend: boolean; triplema: boolean },
-  config: IndicatorConfig,
-  hidden: OverlayHidden,
-  onSettings: (kind: OverlayKind) => void,
-  onToggle: (kind: OverlayKind) => void,
-  onToggleHidden: (kind: OverlayKind) => void,
-): LegendOverlay[] {
-  const row = (kind: OverlayKind, name: string, params: string, color: string): LegendOverlay => ({
-    key: kind,
-    name,
-    params,
-    color,
-    hidden: !!hidden[kind],
-    onToggleVisible: () => onToggleHidden(kind),
-    onSettings: () => onSettings(kind),
-    onRemove: () => onToggle(kind),
-  });
-  return [
-    ...(selection.triplema
-      ? [row("triplema", "Triple MA", `${config.maFast} ${config.maMid} ${config.maSlow}${config.maType === "EMA" ? " EMA" : ""}`, config.maFastColor)]
-      : []),
-    ...(selection.bollinger
-      ? [row("bollinger", "BB", `${config.bbLength} ${config.bbMaType} ${config.bbSource} ${config.bbMultiplier}${config.bbOffset ? ` ${config.bbOffset}` : ""}`, config.bbBasisColor)]
-      : []),
-    ...(selection.supertrend
-      ? [row("supertrend", "Supertrend", `${config.supertrendLength} ${config.supertrendMultiplier}`, config.stUpColor)]
-      : []),
-  ];
-}
 
 export type LegendCandle = {
   open: number;

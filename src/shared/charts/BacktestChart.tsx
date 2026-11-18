@@ -1,8 +1,4 @@
 import {displaySymbol} from './displaySymbol';
-import { BollingerOverlay } from "./BollingerOverlay";
-import { chartBollingerBands } from "./bollingerBands";
-import { SupertrendOverlay } from "./SupertrendOverlay";
-import { chartSupertrend } from "./supertrend";
 import { StopOverlay } from "./StopOverlay";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -31,17 +27,9 @@ import {
   readChartTimeZone,
   useChartTimeZone,
 } from "./chartTimeZone";
-import { chartOscillators } from "./chartOscillators";
-import IndicatorSettings, {
-  alpha,
-  useIndicatorSettings,
-  type IndicatorKind,
-  type OverlayKind,
-} from "./IndicatorSettings";
-import {
-  useChartIndicatorSelection,
-  toggleChartIndicator,
-} from "./chartIndicatorSelection";
+import IndicatorSettings from "./IndicatorSettings";
+import { isPaneStudy, settingsKind, useChartStudies, addChartStudy, removeChartStudy, updateChartStudy } from "./chartStudies";
+import { StudyRenderer, studyLegends, type PaneValue } from "./studyRenderer";
 import {
   fmt,
   type Analysis,
@@ -51,25 +39,14 @@ import {
   type BacktestSettings,
 } from "../types/types";
 import { chartVolume } from "./chartVolume";
-import { indicatorColor } from "./indicatorColors";
-import { AdxVisualizer, adxColor, adxLevels, diColors, levelColor } from "./adxDisplay";
-import { PaneBand } from "./PaneBand";
 import ChartLegend, {
   legendData,
-  overlayLegends,
   type LegendData,
   type LegendOverlay,
-  type StudyValue,
 } from "./ChartLegend";
 import DrawingToolbar from "./DrawingToolbar";
 import { useChartDrawings } from "./drawings";
 import { trackPriceAxis } from "./priceAxisCountdown";
-import {
-  chartTripleMa,
-  TRIPLE_MA_OPACITY,
-  tripleMaColors,
-} from "./tripleMa";
-import type { ChartIndicatorSelection } from "./chartIndicatorSelection";
 import {
   TV,
   tvCandleOptions,
@@ -242,36 +219,13 @@ export default function BacktestChart({
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
   const [legend, setLegend] = useState<LegendData | null>(null);
-  const selectedIndicators = useChartIndicatorSelection();
+  const studies = useChartStudies();
   const [follow, setFollow] = useState(true);
   const [strategyVisible, setStrategyVisible] = useState(true);
-  const [indicatorConfig, setIndicatorConfig] = useIndicatorSettings();
-  const [settingsOpen, setSettingsOpen] = useState<
-    IndicatorKind | OverlayKind | null
-  >(null);
+  const [settingsOpen, setSettingsOpen] = useState<string | null>(null);
   const drawing = useChartDrawings(symbol);
-  const [hiddenOverlays, setHiddenOverlays] = useState<
-    Record<OverlayKind, boolean>
-  >({ bollinger: false, supertrend: false, triplema: false });
-  const [paneHeaders, setPaneHeaders] = useState<
-    { kind: IndicatorKind; top: number }[]
-  >([]);
-  const [paneValues, setPaneValues] = useState<
-    Record<IndicatorKind, number | null>
-  >({ atr: null, adx: null, rsi: null });
-  const [hiddenIndicators, setHiddenIndicators] = useState<
-    Record<IndicatorKind, boolean>
-  >({ atr: false, adx: false, rsi: false });
-  const [diValues, setDiValues] = useState<{
-    pdi: number | null;
-    mdi: number | null;
-  }>({ pdi: null, mdi: null });
-  const indicatorSeries = useRef(new Map<IndicatorKind, ISeriesApi<"Line">>());
-  function toggleIndicator(key: keyof ChartIndicatorSelection) {
-    if (key === "bollinger" || key === "supertrend" || key === "triplema")
-      setHiddenOverlays((old) => ({ ...old, [key]: false }));
-    toggleChartIndicator(key);
-  }
+  const [paneHeaders, setPaneHeaders] = useState<{ id: string; top: number }[]>([]);
+  const [paneValues, setPaneValues] = useState<Record<string, PaneValue>>({});
   function latest() {
     setFollow(true);
     chartRef.current
@@ -330,279 +284,20 @@ export default function BacktestChart({
     volume.setData(chartVolume(view));
     const detachDrawings = drawing.attach(chart, price, ref.current);
     drawing.setCandles(view, barSeconds);
-    const studyValues = new Map<number, Record<string, StudyValue[]>>();
-    const addStudy = (time: number, key: string, values: StudyValue[]) => {
-      const row = studyValues.get(time) ?? {};
-      row[key] = values;
-      studyValues.set(time, row);
-    };
-    if (selectedIndicators.bollinger) {
-      const bollingerOverlay = new BollingerOverlay();
-      price.attachPrimitive(bollingerOverlay);
-      const bands = chartBollingerBands(view, {
-        length: indicatorConfig.bbLength,
-        maType: indicatorConfig.bbMaType,
-        source: indicatorConfig.bbSource,
-        multiplier: indicatorConfig.bbMultiplier,
-        offset: indicatorConfig.bbOffset,
-      });
-      bollingerOverlay.setStyle({
-        basis: indicatorConfig.bbBasisColor,
-        upper: indicatorConfig.bbUpperColor,
-        lower: indicatorConfig.bbLowerColor,
-        width: indicatorConfig.bbWidth,
-      });
-      bollingerOverlay.setData(bands, indicatorConfig.bbOffset);
-      bollingerOverlay.setVisible(!hiddenOverlays.bollinger);
-      for (const point of bands)
-        if (point.basis !== null)
-          addStudy(point.time, "bollinger", [
-            { text: point.basis.toFixed(3), color: indicatorConfig.bbBasisColor },
-            { text: point.upper!.toFixed(3), color: indicatorConfig.bbUpperColor },
-            { text: point.lower!.toFixed(3), color: indicatorConfig.bbLowerColor },
-          ]);
-    }
-    if (selectedIndicators.supertrend) {
-      const supertrendOverlay = new SupertrendOverlay();
-      price.attachPrimitive(supertrendOverlay);
-      const trend = chartSupertrend(
-        view,
-        barSeconds,
-        indicatorConfig.supertrendLength,
-        indicatorConfig.supertrendMultiplier,
-      );
-      supertrendOverlay.setStyle({
-        up: indicatorConfig.stUpColor,
-        down: indicatorConfig.stDownColor,
-        width: indicatorConfig.stWidth,
-      });
-      supertrendOverlay.setData(trend);
-      supertrendOverlay.setVisible(!hiddenOverlays.supertrend);
-      for (const point of trend)
-        if (point.value !== null)
-          addStudy(point.time, "supertrend", [
-            {
-              text: point.value.toFixed(3),
-              color:
-                point.direction === "down"
-                  ? indicatorConfig.stDownColor
-                  : indicatorConfig.stUpColor,
-            },
-          ]);
-    }
-    if (selectedIndicators.triplema) {
-      const averages = chartTripleMa(
-        view,
-        [indicatorConfig.maFast, indicatorConfig.maMid, indicatorConfig.maSlow],
-        indicatorConfig.maType,
-      );
-      tripleMaColors(indicatorConfig).forEach((color, index) =>
-        chart
-          .addSeries(LineSeries, {
-            color: alpha(color, TRIPLE_MA_OPACITY),
-            lineWidth: indicatorConfig.maWidth as 1 | 2 | 3 | 4,
-            priceLineVisible: false,
-            lastValueVisible: true,
-            crosshairMarkerVisible: false,
-            visible: !hiddenOverlays.triplema,
-            priceFormat: { type: "price", precision: 3, minMove: 0.001 },
-          })
-          .setData(
-            averages.map((point) =>
-              point.values[index] === null
-                ? { time: point.time as UTCTimestamp }
-                : {
-                    time: point.time as UTCTimestamp,
-                    value: point.values[index]!,
-                  },
-            ),
-          ),
-      );
-      for (const point of averages)
-        addStudy(
-          point.time,
-          "triplema",
-          point.values.map((value, index) => ({
-            text: value === null ? "∅" : value.toFixed(3),
-            color: tripleMaColors(indicatorConfig)[index],
-          })),
-        );
-    }
-    const oscillatorData = chartOscillators(
-      view,
-      barSeconds,
-      indicatorConfig.atrLength,
-      indicatorConfig.adxLength,
-      indicatorConfig.atrSmoothing,
-      indicatorConfig.rsiLength,
-      indicatorConfig.diLength,
-    );
-    const lastOscillator = oscillatorData.at(-1);
-    setPaneValues({
-      atr: lastOscillator?.atr ?? null,
-      adx: lastOscillator?.adx ?? null,
-      rsi: lastOscillator?.rsi ?? null,
-    });
-    setDiValues({
-      pdi: lastOscillator?.pdi ?? null,
-      mdi: lastOscillator?.mdi ?? null,
-    });
-    const oscillatorKinds = (["atr", "adx", "rsi"] as const).filter(
-      (key) => selectedIndicators[key],
-    );
-    indicatorSeries.current.clear();
-    for (const [index, key] of oscillatorKinds.entries()) {
-      const colors = {
-        atr: indicatorConfig.atrColor,
-        rsi: indicatorConfig.rsiColor,
-        adx: adxColor(null, indicatorConfig),
-      };
-      const widths = {
-        atr: indicatorConfig.atrWidth,
-        rsi: indicatorConfig.rsiWidth,
-        adx: indicatorConfig.adxWidth,
-      };
-      const series = chart.addSeries(
-        LineSeries,
-        {
-          color: colors[key],
-          lineWidth: widths[key] as 1 | 2 | 3 | 4,
-          title: "",
-          priceLineVisible: false,
-          priceFormat: {
-            type: "price",
-            precision: key === "atr" ? 3 : 2,
-            minMove: key === "atr" ? 0.001 : 0.01,
-          },
-          ...(key === "rsi"
-            ? {
-                autoscaleInfoProvider: () => ({
-                  priceRange: { minValue: 0, maxValue: 100 },
-                  margins: { above: 2, below: 2 },
-                }),
-              }
-            : {}),
-        },
-        index + 1,
-      );
-      series
-        .priceScale()
-        .applyOptions({
-              scaleMargins:
-                key === "rsi"
-                  ? { top: 0.04, bottom: 0.04 }
-                  : { top: 0.12, bottom: 0.08 },
-            });
-      series.applyOptions({ visible: !hiddenIndicators[key] });
-      indicatorSeries.current.set(key, series);
-      if (key === "adx") {
-        // Threshold values (default 20 / 25 / 50 / 75) with their price-scale labels.
-        if (indicatorConfig.showAdxLevels)
-          for (const value of adxLevels(indicatorConfig))
-            series.createPriceLine({
-              price: value,
-              color: levelColor(value, indicatorConfig),
-              lineWidth: 1,
-              lineStyle: LineStyle.Dotted,
-              axisLabelVisible: true,
-              title: "",
-            });
-        series.setData(
-          oscillatorData.map((point) =>
-            point.adx === null
-              ? { time: point.time as UTCTimestamp }
-              : {
-                  time: point.time as UTCTimestamp,
-                  value: point.adx,
-                  color: adxColor(point.adx, indicatorConfig),
-                },
-          ),
-        );
-        if (indicatorConfig.showDi && !hiddenIndicators.adx)
-          (["pdi", "mdi"] as const).forEach((field) =>
-            chart
-              .addSeries(
-                LineSeries,
-                {
-                  color: field === "pdi" ? indicatorConfig.diPlusColor : indicatorConfig.diMinusColor,
-                  lineWidth: 1,
-                  title: "",
-                  priceLineVisible: false,
-                  priceFormat: { type: "price", precision: 2, minMove: 0.01 },
-                },
-                index + 1,
-              )
-              .setData(
-                oscillatorData.map((point) =>
-                  point[field] === null
-                    ? { time: point.time as UTCTimestamp }
-                    : { time: point.time as UTCTimestamp, value: point[field]! },
-                ),
-              ),
-          );
-        const visualizer = new AdxVisualizer(indicatorConfig.showStatus, indicatorConfig);
-        visualizer.setVisible(!hiddenIndicators.adx);
-        visualizer.setData(oscillatorData);
-        series.attachPrimitive(visualizer);
-      } else
-        series.setData(
-          oscillatorData.map((point) =>
-            point[key] === null
-              ? { time: point.time as UTCTimestamp }
-              : {
-                  time: point.time as UTCTimestamp,
-                  value: point[key],
-                  color: indicatorColor(key, point[key], indicatorConfig),
-                },
-          ),
-        );
-      if (key === "rsi") {
-        if (!hiddenIndicators.rsi)
-          series.attachPrimitive(
-            new PaneBand(
-              indicatorConfig.rsiLower,
-              indicatorConfig.rsiUpper,
-              "rgba(126,87,194,0.1)",
-            ),
-          );
-        for (const [value, color, style] of [
-          [indicatorConfig.rsiUpper, TV.muted, LineStyle.Dashed],
-          [50, "rgba(156,156,156,0.5)", LineStyle.Dotted],
-          [indicatorConfig.rsiLower, TV.muted, LineStyle.Dashed],
-        ] as const)
-          series.createPriceLine({
-            price: value,
-            color,
-            title: "",
-            lineStyle: style,
-            lineWidth: 1,
-            axisLabelVisible: false,
-          });
-      }
-      if (key === "atr")
-        series.createPriceLine({
-          price: indicatorConfig.atrThreshold,
-          color: TV.orange,
-          title: "",
-          lineStyle: LineStyle.Dashed,
-          lineWidth: 1,
-          axisLabelVisible: false,
-        });
-    }
-    if (oscillatorKinds.length)
-      chart
-        .panes()
-        .forEach((pane, index) => pane.setStretchFactor(index === 0 ? 3 : 1));
+    const renderer = new StudyRenderer(chart, price);
+    renderer.setStudies(studies);
+    const studyValues = renderer.paint({ all: view, current: view, completed: view, duration: barSeconds });
+    setPaneValues(renderer.paneValues(null));
     let paneResize: ResizeObserver | null = null,
       paneFrame = 0;
     const measurePanes = () => {
       const root = ref.current;
       if (!root) return;
       const base = root.getBoundingClientRect().top;
-      const headers = [...indicatorSeries.current].flatMap(([kind, series]) => {
+      const headers = renderer.panes().flatMap(({ id, series }) => {
         const element = series.getPane().getHTMLElement();
         return element
-          ? [{ kind, top: element.getBoundingClientRect().top - base + 6 }]
+          ? [{ id, top: element.getBoundingClientRect().top - base + 6 }]
           : [];
       });
       setPaneHeaders((old) =>
@@ -613,7 +308,7 @@ export default function BacktestChart({
       measurePanes();
       paneResize = new ResizeObserver(measurePanes);
       if (ref.current) paneResize.observe(ref.current);
-      for (const series of indicatorSeries.current.values()) {
+      for (const { series } of renderer.panes()) {
         const element = series.getPane().getHTMLElement();
         if (element) paneResize.observe(element);
       }
@@ -696,7 +391,7 @@ export default function BacktestChart({
               priceRange: { minValue: 0, maxValue: 100 },
             }),
           },
-          1,
+          chart.panes().length,
         );
         rsi.setData(
           indicators.map((p) =>
@@ -713,8 +408,7 @@ export default function BacktestChart({
           axisLabelVisible: true,
           title: String(indicatorSettings.rsi_threshold),
         });
-        chart.panes()[0].setStretchFactor(3);
-        chart.panes()[1].setStretchFactor(1);
+        chart.panes().forEach((pane, index) => pane.setStretchFactor(index === 0 ? 3 : 1));
         rsi
           .priceScale()
           .applyOptions({ scaleMargins: { top: 0.1, bottom: 0.1 } });
@@ -944,16 +638,8 @@ export default function BacktestChart({
     );
     chart.subscribeCrosshairMove((p) => {
       const c = typeof p.time === "number" ? byTime.get(p.time) : undefined;
-      const oscillator = c
-        ? (oscillatorData.find((point) => point.time === c.time) ??
-          lastOscillator)
-        : lastOscillator;
-      setPaneValues({
-        atr: oscillator?.atr ?? null,
-        adx: oscillator?.adx ?? null,
-        rsi: oscillator?.rsi ?? null,
-      });
-      setDiValues({ pdi: oscillator?.pdi ?? null, mdi: oscillator?.mdi ?? null });
+      const hovered = c ? c.time : null;
+      setPaneValues(renderer.paneValues(hovered));
       const time = c ? c.time : view.at(-1)!.time;
       setLegend(
         legendData(
@@ -1007,7 +693,6 @@ export default function BacktestChart({
       };
       paneResize?.disconnect();
       cancelAnimationFrame(paneFrame);
-      indicatorSeries.current.clear();
       setPaneHeaders([]);
       stopResize();
       stopAxis();
@@ -1022,10 +707,7 @@ export default function BacktestChart({
     indicators,
     barSeconds,
     indicatorSettings,
-    selectedIndicators,
-    indicatorConfig,
-    hiddenIndicators,
-    hiddenOverlays,
+    studies,
     strategyVisible,
   ]);
   useEffect(() => {
@@ -1035,6 +717,7 @@ export default function BacktestChart({
       timeScale: options.timeScale,
     });
   }, [timeZone]);
+  const settingsStudy = studies.find((study) => study.id === settingsOpen);
   const trendOverlayName =
     indicatorSettings.strategy === "ml_directional"
       ? "EMA 200"
@@ -1052,19 +735,16 @@ export default function BacktestChart({
         onLatest={latest}
         onNavigate={holdView}
         showEarlier
-        indicators={selectedIndicators}
-        onToggleIndicator={toggleIndicator}
-        strategyVisible={strategyVisible}
-        onToggleStrategy={() => setStrategyVisible((value) => !value)}
+        onAddStudy={addChartStudy}
         follow={follow}
         onFollowChange={setFollow}
       />
-      {settingsOpen && (
+      {settingsStudy && (
         <IndicatorSettings
-          key={settingsOpen}
-          kind={settingsOpen}
-          value={indicatorConfig}
-          onApply={setIndicatorConfig}
+          key={settingsStudy.id}
+          kind={settingsKind(settingsStudy.kind)}
+          value={settingsStudy.config}
+          onApply={(config) => updateChartStudy(settingsStudy.id, { config })}
           onClose={() => setSettingsOpen(null)}
         />
       )}
@@ -1090,44 +770,36 @@ export default function BacktestChart({
                   } satisfies LegendOverlay,
                 ]
               : []),
-            ...overlayLegends(
-              selectedIndicators,
-              indicatorConfig,
-              hiddenOverlays,
-              (kind) => setSettingsOpen(kind),
-              toggleIndicator,
-              (kind) =>
-                setHiddenOverlays((old) => ({ ...old, [kind]: !old[kind] })),
-            ),
+            ...studyLegends(studies, {
+              onSettings: setSettingsOpen,
+              onToggleHidden: (id) =>
+                updateChartStudy(id, {
+                  hidden: !studies.find((study) => study.id === id)?.hidden,
+                }),
+              onRemove: removeChartStudy,
+            }),
           ]}
         />
         {!follow && <ScrollToLatest onClick={latest} />}
-        {paneHeaders.map(({ kind, top }) => (
-          <IndicatorHeader
-            key={kind}
-            kind={kind}
-            top={top}
-            config={indicatorConfig}
-            value={paneValues[kind]}
-            extra={
-              kind === "adx" && indicatorConfig.showDi
-                ? [
-                    { value: diValues.pdi, color: diColors(indicatorConfig).plus },
-                    { value: diValues.mdi, color: diColors(indicatorConfig).minus },
-                  ]
-                : undefined
-            }
-            hidden={hiddenIndicators[kind]}
-            onSettings={() => setSettingsOpen(kind)}
-            onVisibility={() =>
-              setHiddenIndicators((old) => ({ ...old, [kind]: !old[kind] }))
-            }
-            onRemove={() => {
-              setHiddenIndicators((old) => ({ ...old, [kind]: false }));
-              toggleIndicator(kind);
-            }}
-          />
-        ))}
+        {paneHeaders.map(({ id, top }) => {
+          const study = studies.find((item) => item.id === id);
+          if (!study || !isPaneStudy(study.kind)) return null;
+          const value = paneValues[id];
+          return (
+            <IndicatorHeader
+              key={id}
+              kind={study.kind}
+              top={top}
+              config={study.config}
+              value={value?.value ?? null}
+              extra={value?.extra}
+              hidden={study.hidden}
+              onSettings={() => setSettingsOpen(id)}
+              onVisibility={() => updateChartStudy(id, { hidden: !study.hidden })}
+              onRemove={() => removeChartStudy(id)}
+            />
+          );
+        })}
         <div
           ref={ref}
           className='chart-container position-chart'
