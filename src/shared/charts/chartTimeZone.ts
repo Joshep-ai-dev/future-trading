@@ -59,7 +59,7 @@ function timestamp(time:Time|number):number{
 function zone(value:ChartTimeZone):string{return value;}
 
 export function formatChartTime(time:Time|number,value:ChartTimeZone,locale?:string){
-  return new Intl.DateTimeFormat(locale,{timeZone:zone(value),weekday:'short',year:'numeric',month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23',timeZoneName:'short'}).format(new Date(timestamp(time)*1000));
+  return new Intl.DateTimeFormat(locale,{timeZone:zone(value),weekday:'short',year:'numeric',month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).format(new Date(timestamp(time)*1000));
 }
 
 export function chartTimeOptions(value:ChartTimeZone):{timeScale:Pick<TimeScaleOptions,'tickMarkFormatter'>;localization:Pick<LocalizationOptions<Time>,'timeFormatter'>}{
