@@ -130,7 +130,7 @@ class ExchangeFeed:
                 **credentials, enableRateLimit=True, options=dict(self.source.options), newUpdates=True))
             # Share market metadata, never the synchronous client's network session.
             self.client.set_markets(self.source.markets, self.source.currencies)
-            self.tasks = [asyncio.create_task(self.watch(section)) for section in ('market', 'candle')]
+            self.tasks = [asyncio.create_task(self.watch(section)) for section in ('market', 'candle', 'lastTrade')]
             if self.venue == 'htx' and self.source.options.get('localAccountApi') == 'classic':
                 self.tasks.append(asyncio.create_task(self.classic_private()))
             else:
@@ -210,7 +210,7 @@ class ExchangeFeed:
             self.depth.pop(section, None)
 
     async def watch(self, section: str) -> None:
-        methods = dict(market='watchTicker', candle='watchOHLCV', orderBook='watchOrderBook', trades='watchTrades',
+        methods = dict(market='watchTicker', candle='watchOHLCV', orderBook='watchOrderBook', trades='watchTrades', lastTrade='watchTrades',
                        balance='watchBalance', positions='watchPositions', orders='watchOrders')
         # HTX implements watch_positions but omits its capability flag in some releases.
         supported = self.client.has.get(methods[section]) or (self.venue == 'htx' and section == 'positions')
@@ -228,13 +228,29 @@ class ExchangeFeed:
                 if section == 'market':
                     ticker = await self.client.watch_ticker(symbol)
                     values = dict(self.state['market'] or {})
-                    values.update({key: ticker[key] for key in ('last', 'bid', 'ask', 'high', 'low', 'percentage', 'quoteVolume', 'timestamp') if ticker.get(key) is not None})
+                    fields = {key: ticker[key] for key in ('last', 'bid', 'ask', 'high', 'low', 'percentage', 'quoteVolume', 'timestamp') if ticker.get(key) is not None}
+                    if (fields.get('timestamp') or 0) < (values.get('timestamp') or 0):
+                        # A newer trade already set the last price; keep it.
+                        fields.pop('last', None)
+                        fields.pop('timestamp', None)
+                    values.update(fields)
                     self.update('market', values)
                     self.stream_status('market', 'live')
                 elif section == 'candle':
                     candles = await self.client.watch_ohlcv(symbol, '1m')
                     if candles:
                         self.update('candle', candles[-1][:6])
+                elif section == 'lastTrade':
+                    # Every trade moves the chart's last price immediately; tickers can lag (HTX ~1/10 s).
+                    updates = await self.client.watch_trades(symbol)
+                    latest = max((t for t in updates if t.get('price') is not None),
+                                 key=lambda t: t.get('timestamp') or 0, default=None)
+                    if latest is not None:
+                        values = dict(self.state['market'] or {})
+                        if latest.get('timestamp') and latest['timestamp'] >= (values.get('timestamp') or 0):
+                            values.update(last=float(latest['price']), timestamp=latest['timestamp'])
+                            self.update('market', values)
+                            self.stream_status('market', 'live')
                 elif section == 'orderBook':
                     book = await self.client.watch_order_book(symbol)
                     self.update('orderBook', book_view(book, size))
@@ -288,7 +304,7 @@ class ExchangeFeed:
                 raise
             except Exception:
                 self.state['errors'][section + 'Stream'] = f'{section.capitalize()} stream interrupted; reconnecting automatically.'
-                self.stream_status('market' if section in ('market', 'candle', 'orderBook', 'trades') else 'account', 'reconnecting')
+                self.stream_status('market' if section in ('market', 'candle', 'orderBook', 'trades', 'lastTrade') else 'account', 'reconnecting')
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, 30)
 

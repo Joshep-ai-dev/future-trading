@@ -95,7 +95,9 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
   const [error,setError]=useState(''),[busy,setBusy]=useState(false);
   const [panels,togglePanel]=useWorkspacePanels('silver.paper.panels');
   const controlsOpen=panels.order;
-  const liveMarket=useLiveMarketMinutes(visible&&!showingSession&&settings.market==='xag');
+  // Public real-time XAG feed: the preview chart, and the display of a running live XAG session.
+  const liveSession=showingSession&&data.session?.mode==='live'&&data.session.settings.market==='xag';
+  const liveMarket=useLiveMarketMinutes(visible&&settings.market==='xag'&&(!showingSession||liveSession));
   const revision=useRef(0);
   const [bottomTab,setBottomTab]=useState<'position'|'history'|'equity'|'sessions'|'patterns'>('position');
   const [preview,setPreview]=useState<Analysis['candles']>([]),[previewError,setPreviewError]=useState('');
@@ -131,13 +133,18 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
   const durations=TIMEFRAMES;
   const duration=durations[s?.settings.entry_timeframe??settings.entry_timeframe];
   const displayClock=useReplayAnimation(visible&&s?.mode==='replay',s?.startedAt??0,s?.virtualTime??0);
-  const animated=s?.mode==='replay'&&s.animationMinutes?.length?candleAt(s.animationMinutes,displayClock,duration):s?.formingCandle;
+  // Display only: a live session's forming candle follows the real-time ticker between session polls.
+  const tick=liveSession?liveMarket.minutes.at(-1):undefined;
+  const sessionForming=s?.formingCandle&&tick&&tick.time>=s.formingCandle.time&&tick.time<s.formingCandle.time+duration
+    ?{...s.formingCandle,close:tick.close,high:Math.max(s.formingCandle.high,tick.close),low:Math.min(s.formingCandle.low,tick.close)}
+    :s?.formingCandle;
+  const animated=s?.mode==='replay'&&s.animationMinutes?.length?candleAt(s.animationMinutes,displayClock,duration):sessionForming;
   const chartCandles=s?[...(s.chartCandles??[]).filter(c=>(s.mode!=='replay'||c.time+duration<=displayClock)&&(!animated||c.time<animated.time)),...(animated?[animated]:[])]:[];
   const chartIndicators=(s?.chartIndicators??[]).filter(row=>s?.mode!=='replay'||row.time+duration<=displayClock);
   const chartStops=(s?.chartStops??[]).filter(row=>s?.mode!=='replay'||row.time+duration<=displayClock);
   useEffect(()=>{if(s)setChartTimeframe(s.settings.entry_timeframe);},[s?.startedAt]);
   const config=s?.running?s.settings:settings;
-  const price=s?(s.mode==='replay'?(animated?.close??chartCandles.at(-1)?.close??null):(s.displayPrice??s.latestPrice)):(settings.market==='xag'?liveMarket.minutes.at(-1)?.close:undefined)??preview.at(-1)?.close??null;
+  const price=s?(s.mode==='replay'?(animated?.close??chartCandles.at(-1)?.close??null):(tick&&sessionForming!==s.formingCandle?tick.close:(s.displayPrice??s.latestPrice))):(settings.market==='xag'?liveMarket.minutes.at(-1)?.close:undefined)??preview.at(-1)?.close??null;
 
   const replay=s?.mode==='replay'?accountAt(s.trades,s.openPosition,s.settings.capital,displayClock,duration,price,chartStops):null;
   const p=replay?.open??(replay?null:s?.openPosition??null);
