@@ -3,7 +3,9 @@ import type {ExchangeVenue} from './exchangeVenue';
 
 export type LivePosition={side:string;quantity:number;entryPrice:number|null;markPrice:number|null;unrealizedPnl:number|null;leverage:number|null;liquidationPrice:number|null;marginMode:string|null;initialMargin:number|null;percentage:number|null};
 export type LiveOrder={id:string;side:string;type:string;price:number|null;triggerPrice:number|null;quantity:number|null;filled:number|null;status:string;marginMode?:string|null};
-export type ExchangeSnapshot={executionError?:string|null;symbol:string;updatedAt:number;market:Record<string,number|null>|null;balance:Record<string,number|null>|null;positions:LivePosition[]|null;orders:LiveOrder[]|null;conditionalOrders?:LiveOrder[]|null;candle:number[]|null;errors:Record<string,string>;streams:{market:string;account:string};sectionTimes:Record<string,number>};
+export type OrderBookSnapshot={bids:[number,number][];asks:[number,number][];timestamp:number|null};
+export type LiveTrade={id:string|null;side:string|null;price:number|null;quantity:number|null;timestamp:number|null};
+export type ExchangeSnapshot={orderBook?:OrderBookSnapshot|null;trades?:LiveTrade[]|null;executionError?:string|null;symbol:string;updatedAt:number;market:Record<string,number|null>|null;balance:Record<string,number|null>|null;positions:LivePosition[]|null;orders:LiveOrder[]|null;conditionalOrders?:LiveOrder[]|null;candle:number[]|null;errors:Record<string,string>;streams:{market:string;account:string};sectionTimes:Record<string,number>};
 type State={data:ExchangeSnapshot|null;connected:boolean;disconnected:boolean;error:string};
 type Store={state:State;listeners:Set<()=>void>;source:EventSource|null;closeTimer:ReturnType<typeof setTimeout>|null};
 const stores=new Map<ExchangeVenue,Store>();

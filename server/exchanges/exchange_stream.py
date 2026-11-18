@@ -40,6 +40,25 @@ def order_view(order: dict, contract_size: float) -> dict:
                 status=order.get('status'))
 
 
+BOOK_DEPTH = 20
+TRADE_HISTORY = 40
+
+
+def book_view(book: dict, contract_size: float, depth: int = BOOK_DEPTH) -> dict:
+    """Top price levels per side as [price, base quantity]; contracts converted to base units."""
+    def side(levels):
+        return [[float(level[0]), float(level[1]) * contract_size]
+                for level in (levels or [])[:depth]
+                if level and level[0] is not None and level[1] is not None]
+    return dict(bids=side(book.get('bids')), asks=side(book.get('asks')), timestamp=book.get('timestamp'))
+
+
+def trade_view(trade: dict, contract_size: float) -> dict:
+    return dict(id=trade.get('id'), side=trade.get('side'), price=trade.get('price'),
+                quantity=None if trade.get('amount') is None else float(trade['amount']) * contract_size,
+                timestamp=trade.get('timestamp'))
+
+
 RECONCILE_SECONDS = 5
 POSITION_RECONCILE_SECONDS = 2
 
@@ -49,7 +68,7 @@ class ExchangeFeed:
         self.service, self.venue = service, venue
         self.source, self.market = service._get(venue)
         self.state = dict(venue=venue, symbol=self.market['symbol'], market=None, balance=None,
-                          positions=None, orders=None, conditionalOrders=None, candle=None, errors={},
+                          positions=None, orders=None, conditionalOrders=None, candle=None, orderBook=None, trades=None, errors={},
                           streams={'market': 'connecting', 'account': 'connecting'}, sectionTimes={})
         self.changed = asyncio.Event()
         self.account_changed = asyncio.Event()
@@ -87,7 +106,7 @@ class ExchangeFeed:
                 **credentials, enableRateLimit=True, options=dict(self.source.options), newUpdates=True))
             # Share market metadata, never the synchronous client's network session.
             self.client.set_markets(self.source.markets, self.source.currencies)
-            self.tasks = [asyncio.create_task(self.watch(section)) for section in ('market', 'candle')]
+            self.tasks = [asyncio.create_task(self.watch(section)) for section in ('market', 'candle', 'orderBook', 'trades')]
             if self.venue == 'htx' and self.source.options.get('localAccountApi') == 'classic':
                 self.tasks.append(asyncio.create_task(self.classic_private()))
             else:
@@ -110,7 +129,7 @@ class ExchangeFeed:
                 await self.client.close()
 
     async def watch(self, section: str) -> None:
-        methods = dict(market='watchTicker', candle='watchOHLCV',
+        methods = dict(market='watchTicker', candle='watchOHLCV', orderBook='watchOrderBook', trades='watchTrades',
                        balance='watchBalance', positions='watchPositions', orders='watchOrders')
         # HTX implements watch_positions but omits its capability flag in some releases.
         supported = self.client.has.get(methods[section]) or (self.venue == 'htx' and section == 'positions')
@@ -135,6 +154,13 @@ class ExchangeFeed:
                     candles = await self.client.watch_ohlcv(symbol, '1m')
                     if candles:
                         self.update('candle', candles[-1][:6])
+                elif section == 'orderBook':
+                    book = await self.client.watch_order_book(symbol)
+                    self.update('orderBook', book_view(book, size))
+                elif section == 'trades':
+                    updates = await self.client.watch_trades(symbol)
+                    fresh = [trade_view(trade, size) for trade in sorted(updates, key=lambda t: t.get('timestamp') or 0, reverse=True)]
+                    self.update('trades', (fresh + list(self.state.get('trades') or []))[:TRADE_HISTORY])
                 elif section == 'balance':
                     balance = await self.client.watch_balance({'type': 'swap', 'subType': 'linear'})
                     if self.venue == 'htx':
@@ -181,7 +207,7 @@ class ExchangeFeed:
                 raise
             except Exception:
                 self.state['errors'][section + 'Stream'] = f'{section.capitalize()} stream interrupted; reconnecting automatically.'
-                self.stream_status('market' if section in ('market', 'candle') else 'account', 'reconnecting')
+                self.stream_status('market' if section in ('market', 'candle', 'orderBook', 'trades') else 'account', 'reconnecting')
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, 30)
 

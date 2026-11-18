@@ -797,3 +797,44 @@ html::-webkit-scrollbar,body::-webkit-scrollbar { display: none; }
 .tv-menu-popover button.tv-menu-item:hover,
 .tv-menu-popover button.tv-menu-item:focus-visible { background: var(--tv-hover, #2a2e39); outline: none; }
 .tv-menu-popover button.tv-menu-item small { display: block; margin-top: 2px; }
+
+/* Order book (live page): a column beside the market header and chart, as on
+   exchange terminals; the account activity spans both columns underneath. */
+.order-book-panel { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--app-panel); font-size: 12px; font-variant-numeric: tabular-nums; }
+.order-book-tabs { display: flex; flex: none; border-bottom: 1px solid #23272f; }
+.order-book-tabs button { flex: 1; height: 38px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: #8b93a1; font: inherit; font-size: 12px; cursor: pointer; }
+.order-book-tabs button[aria-selected=true] { color: #e6ebf2; border-bottom-color: #4fd1c5; }
+.order-book-controls { display: flex; flex: none; justify-content: space-between; gap: 8px; padding: 6px 10px; }
+.order-book-controls select { min-width: 0; height: 26px; padding: 0 4px; border: 0; border-radius: 4px; background: transparent; color: #d8dee8; font: inherit; font-size: 12px; color-scheme: dark; cursor: pointer; }
+.order-book-controls select:hover,.order-book-controls select:focus-visible { background: #1b2028; outline: none; }
+.order-book-table { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow: hidden; }
+.order-book-side { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
+.order-book-side.is-asks { justify-content: flex-end; }
+.order-book-row { position: relative; display: grid; grid-template-columns: 1fr 1fr 1fr; align-items: center; flex: none; height: 24px; padding: 0 10px; color: #d8dee8; }
+.order-book-row > span { position: relative; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.order-book-row > span:first-of-type { text-align: left; }
+.order-book-row.is-head { height: 26px; color: #8b93a1; font-size: 11px; }
+.order-book-row.is-ask .order-book-price { color: #f0616d; }
+.order-book-row.is-bid .order-book-price { color: #1fbf9f; }
+.order-book-depth { position: absolute; top: 1px; bottom: 1px; left: 0; pointer-events: none; }
+.order-book-row.is-ask .order-book-depth { background: rgba(240,97,109,.16); }
+.order-book-row.is-bid .order-book-depth { background: rgba(31,191,159,.16); }
+.order-book-spread { display: grid; grid-template-columns: 1fr 1fr 1fr; align-items: center; flex: none; height: 26px; padding: 0 10px; background: #1a1e25; color: #d8dee8; }
+.order-book-spread > span { text-align: center; }
+.order-trades { overflow-y: auto; scrollbar-width: none; }
+.order-trades::-webkit-scrollbar { display: none; }
+.order-book-empty { margin: 12px 10px; color: #8b93a1; font-size: 11px; }
+@media(min-width:1100px) {
+  .app-shell[data-page=paper] .terminal-main.has-order-book { grid-template-columns: minmax(0,1fr) 270px; column-gap: 6px; }
+  .terminal-main.has-order-book > .exchange-market-header { grid-column: 1; grid-row: 1; }
+  .terminal-main.has-order-book > .price-panel { grid-column: 1; grid-row: 2; }
+  .terminal-main.has-order-book > .order-book-panel { grid-column: 2; grid-row: 1 / 3; border-radius: 10px; }
+  .terminal-main.has-order-book > .terminal-splitter,
+  .terminal-main.has-order-book > .exchange-activity { grid-column: 1 / -1; }
+}
+@media(min-width:1100px) and (max-width:1399px) {
+  .app-shell[data-page=paper] .terminal-main.has-order-book { grid-template-columns: minmax(0,1fr) 230px; }
+}
+@media(max-width:1099px) {
+  .terminal-main.has-order-book > .order-book-panel { order: 1; height: 420px; border-radius: 10px; }
+}

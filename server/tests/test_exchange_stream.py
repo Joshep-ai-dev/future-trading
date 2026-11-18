@@ -4,7 +4,7 @@ import unittest
 import ccxt
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from server.exchanges.exchange_stream import ExchangeFeed, ExchangeStreams, classic_auth
+from server.exchanges.exchange_stream import book_view, trade_view, ExchangeFeed, ExchangeStreams, classic_auth
 from server.exchanges.htx_account import classic_balance, classic_positions, rejection_reason, normalize_htx_balance, classic_conditional_orders
 from server.exchanges.live_exchange import LiveExchange
 
@@ -202,7 +202,8 @@ class ExchangeStreamTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(payload['market']['last'], 32)
                 self.assertEqual(payload['streams']['market'], 'live')
                 self.assertNotIn('private-secret', event)
-                self.assertNotIn('book', payload)
+                # Venues without order book / trade streams leave those sections empty.
+                self.assertIsNone(payload['orderBook'])
                 client.watch_order_book.assert_not_called()
                 factory.assert_called_once()
                 await first.aclose()
@@ -213,3 +214,17 @@ class ExchangeStreamTests(unittest.IsolatedAsyncioTestCase):
                 await streams.close()
             client.close.assert_awaited_once()
             self.assertEqual(streams.feeds, {})
+
+
+class BookViewTests(unittest.TestCase):
+    def test_book_levels_are_limited_and_converted_to_base_units(self) -> None:
+        book = {'bids': [[30.0, 10, 0]] * 30, 'asks': [[30.1, 5], [30.2, None]], 'timestamp': 1}
+        view = book_view(book, 0.1, depth=20)
+        self.assertEqual(len(view['bids']), 20)
+        self.assertEqual(view['bids'][0], [30.0, 1.0])
+        self.assertEqual(view['asks'], [[30.1, 0.5]])
+        self.assertEqual(view['timestamp'], 1)
+
+    def test_trade_quantity_uses_contract_size(self) -> None:
+        trade = trade_view({'id': '7', 'side': 'sell', 'price': 30.5, 'amount': 20, 'timestamp': 5, 'info': {}}, 0.1)
+        self.assertEqual(trade, {'id': '7', 'side': 'sell', 'price': 30.5, 'quantity': 2.0, 'timestamp': 5})
