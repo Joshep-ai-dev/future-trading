@@ -1,3 +1,4 @@
+import {useMarketTitle} from '../../shared/ui/useDocumentTitle';
 import MarketSymbolLabel from '../../shared/ui/MarketSymbolLabel';
 import {useMarketQuotes,type MarketQuote} from '../../shared/api/useMarketQuotes';
 import {useEffect,useRef,useState,type ReactNode} from 'react';
@@ -39,6 +40,7 @@ export default function ExchangeMarketHeader({venue,botRunning=false,actions}:{v
   const priceDigits=instrument.id==='stable'?5:3;
   const collateral=venue==='hyperliquid'?'USDC':'USDT';
   const market=data?.market;
+  useMarketTitle(true,number(market?.last,priceDigits),`${instrument.base}/${collateral}`);
   useEffect(()=>{
     const close=(event:PointerEvent)=>{if(picker.current&&!picker.current.contains(event.target as Node))picker.current.open=false;};
     const escape=(event:KeyboardEvent)=>{if(event.key==='Escape'&&picker.current){picker.current.open=false;picker.current.querySelector('summary')?.focus();}};

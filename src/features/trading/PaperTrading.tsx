@@ -1,3 +1,4 @@
+import {useMarketTitle} from '../../shared/ui/useDocumentTitle';
 import {MarketSyncContext} from '../../shared/api/useMarketSync';
 import MarketDataInfo from '../../shared/ui/MarketDataInfo';
 import MarketHeader from '../../shared/ui/MarketHeader';
@@ -167,6 +168,7 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
   const ticker=useMemo(()=>tickerStats(visibleCandles,chartDuration,price),[visibleCandles,chartDuration,price]);
   function changeChartTimeframe(value:BacktestSettings['entry_timeframe']){setChartTimeframe(value);if(!s){onChange({...settings,entry_timeframe:value});}}
   const chartHeader=<TradingChartHeader symbol={paperSymbol} timeframe={s?chartTimeframe:settings.entry_timeframe} onTimeframeChange={value=>changeChartTimeframe(value as BacktestSettings['entry_timeframe'])} mode={s?s.mode==='replay'?'HISTORICAL REPLAY':'PAPER SESSION':'MARKET PREVIEW'} caption={s?`Bot executes on ${s.settings.entry_timeframe} candles`:'Choose a timeframe to view the market chart'}/>;
+  useMarketTitle(visible,price==null?null:fmt(price,3),`${paperBase}/${paperQuote}`);
   const panelToggles=<PanelToggles panels={panels} onToggle={togglePanel} bookId="paper-order-book" actionId="paper-execution-sidebar"/>;
   return <div id="page-paper" role="tabpanel" aria-labelledby="tab-paper" hidden={!visible}>
     <div className="terminal-grid" data-controls={controlsOpen?'visible':'hidden'}><div className={panels.book?"terminal-main has-order-book":"terminal-main"}>
