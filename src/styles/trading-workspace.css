@@ -762,3 +762,11 @@ html::-webkit-scrollbar,body::-webkit-scrollbar { display: none; }
 .price-panel > .tv-toolbar,
 .price-panel > .compact-chart-toolbar,
 .app-shell[data-page=paper] .price-panel > .compact-chart-toolbar { border-bottom: 1px solid #23272f !important; }
+
+/* Rounded corners on every trading panel, including the chart. */
+.terminal-panel,
+.price-panel,
+.live-price-panel,
+.activity-panel,
+.exchange-activity,
+.app-shell[data-page=paper] .terminal-panel.price-panel { border-radius: 10px !important; overflow: hidden; }
