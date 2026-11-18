@@ -730,7 +730,7 @@ html::-webkit-scrollbar,body::-webkit-scrollbar { display: none; }
 .balance-chart-shell > .tv-toolbar,
 .balance-chart-shell .chart-resize,
 .price-panel .chart-resize { border: 0 !important; box-shadow: none !important; }
-.tv-drawing-toolbar { border-right: 0 !important; }
+.tv-drawing-toolbar { border-right: 1px solid #23272f !important; }
 
 /* Same panel look as the trading page on Backtest, Bot settings, Forecast and
    News: lighter fill on the black page, no gray frame, rounded corners. */
