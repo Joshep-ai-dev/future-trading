@@ -40,7 +40,7 @@ def order_view(order: dict, contract_size: float) -> dict:
                 status=order.get('status'))
 
 
-BOOK_DEPTH = 20
+BOOK_DEPTH = 50
 TRADE_HISTORY = 40
 
 

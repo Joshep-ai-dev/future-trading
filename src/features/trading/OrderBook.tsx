@@ -4,7 +4,7 @@ import {api} from '../../shared/api/api';
 import {instrumentDetails,useExchangeInstrument} from '../../shared/api/exchangeInstrument';
 import type {ExchangeVenue} from '../../shared/api/exchangeVenue';
 
-const LEVELS=11;
+const ROW_HEIGHT=24,MIN_LEVELS=5,MAX_LEVELS=50;
 type Level={price:number;size:number;total:number};
 
 /** Smallest positive gap between listed prices: the book's effective tick size. */
@@ -19,14 +19,14 @@ function tickOf(book:OrderBookSnapshot|null|undefined){
 const digitsOf=(step:number)=>Math.min(8,Math.max(0,Math.ceil(-Math.log10(step)-1e-9)));
 
 /** Group one side into price buckets (asks round up, bids down) and accumulate totals from the spread outward. */
-function group(levels:[number,number][],step:number,side:'ask'|'bid',quote:boolean):Level[]{
+function group(levels:[number,number][],step:number,side:'ask'|'bid',quote:boolean,limit:number):Level[]{
   const buckets=new Map<number,number>();
   for(const [price,size] of levels){
     const bucket=(side==='ask'?Math.ceil(price/step-1e-9):Math.floor(price/step+1e-9))*step;
     const key=Number(bucket.toFixed(10));
     buckets.set(key,(buckets.get(key)??0)+(quote?size*price:size));
   }
-  const sorted=[...buckets].sort((a,b)=>side==='ask'?a[0]-b[0]:b[0]-a[0]).slice(0,LEVELS);
+  const sorted=[...buckets].sort((a,b)=>side==='ask'?a[0]-b[0]:b[0]-a[0]).slice(0,limit);
   let total=0;
   return sorted.map(([price,size])=>{total+=size;return {price,size,total};});
 }
@@ -68,6 +68,19 @@ function OrderBookPanel({id,data,base,resetKey,emptyBook,emptyTrades}:{id:string
   const [multiplier,setMultiplier]=useState(1);
   const [quote,setQuote]=useState(false);
   const book=data?.orderBook;
+  // Show as many levels per side as fit the panel height (head + spread rows excluded).
+  const table=useRef<HTMLDivElement>(null);
+  const [levels,setLevels]=useState(11);
+  useEffect(()=>{
+    const element=table.current;if(!element)return;
+    const measure=()=>{
+      const free=element.clientHeight-26-26;
+      const next=Math.min(MAX_LEVELS,Math.max(MIN_LEVELS,Math.floor(free/2/ROW_HEIGHT)));
+      setLevels(old=>old===next?old:next);
+    };
+    measure();const observer=new ResizeObserver(measure);observer.observe(element);
+    return()=>observer.disconnect();
+  },[tab]);
   const tickRef=useRef<number|null>(null);
   const detected=tickOf(book);
   if(detected!==null&&(tickRef.current===null||detected<tickRef.current))tickRef.current=detected;
@@ -77,9 +90,9 @@ function OrderBookPanel({id,data,base,resetKey,emptyBook,emptyTrades}:{id:string
   const unit=quote?quoteName:base;
   const {asks,bids,max}=useMemo(()=>{
     if(!book||step===null)return {asks:[] as Level[],bids:[] as Level[],max:0};
-    const asks=group(book.asks,step,'ask',quote),bids=group(book.bids,step,'bid',quote);
+    const asks=group(book.asks,step,'ask',quote,levels),bids=group(book.bids,step,'bid',quote,levels);
     return {asks,bids,max:Math.max(asks.at(-1)?.total??0,bids.at(-1)?.total??0)};
-  },[book,step,quote]);
+  },[book,step,quote,levels]);
   const bestAsk=book?.asks[0]?.[0],bestBid=book?.bids[0]?.[0];
   const spread=bestAsk!==undefined&&bestBid!==undefined?bestAsk-bestBid:null;
   const spreadPct=spread!==null&&bestAsk&&bestBid?spread/((bestAsk+bestBid)/2)*100:null;
@@ -105,7 +118,7 @@ function OrderBookPanel({id,data,base,resetKey,emptyBook,emptyTrades}:{id:string
           <option value="base">{base}</option><option value="quote">{quoteName}</option>
         </select>
       </div>
-      <div className="order-book-table" role="table" aria-label={`${base} order book`}>
+      <div ref={table} className="order-book-table" role="table" aria-label={`${base} order book`}>
         <div className="order-book-row is-head" role="row"><span role="columnheader">Price</span><span role="columnheader">Size ({unit})</span><span role="columnheader">Total ({unit})</span></div>
         <div className="order-book-side is-asks">{[...asks].reverse().map(level=>row(level,'ask'))}</div>
         <div className="order-book-spread" role="row"><span>Spread</span><span>{spread===null?'—':spread.toFixed(priceDigits)}</span><span>{spreadPct===null?'—':`${spreadPct.toFixed(3)}%`}</span></div>
