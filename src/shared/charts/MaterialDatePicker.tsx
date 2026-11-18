@@ -12,7 +12,9 @@ import {LocalizationProvider} from '@mui/x-date-pickers/LocalizationProvider';
 import {AdapterDayjs} from '@mui/x-date-pickers/AdapterDayjs';
 import dayjs from 'dayjs';
 
-const theme=createTheme({palette:{mode:'dark',primary:{main:'#86b5ff'},background:{paper:'#19212d',default:'#10151d'},text:{primary:'#e3ecf9',secondary:'#99abc3'}},typography:{fontFamily:'Inter, Arial, sans-serif',fontSize:13},shape:{borderRadius:8}});
+const theme=createTheme({palette:{mode:'dark',primary:{main:'#86b5ff'},background:{paper:'#1b1e25',default:'#101114'},text:{primary:'#e3ecf9',secondary:'#99abc3'}},typography:{fontFamily:'Inter, Arial, sans-serif',fontSize:13},shape:{borderRadius:8},
+  // Material dark mode lightens raised surfaces with a white overlay; keep the app's panel color instead.
+  components:{MuiPaper:{styleOverrides:{root:{backgroundImage:'none'}}}}});
 
 /** Borderless toolbar button that opens a themed Material popup. */
 function PickerField({label,text,disabled,className,children}:{label:string;text:string;disabled:boolean;className:string;children:(close:()=>void)=>ReactNode}){
@@ -24,7 +26,7 @@ function PickerField({label,text,disabled,className,children}:{label:string;text
       <div className="material-chart-date-field">
         <Button ref={anchor} type="button" className={`material-date-trigger ${className}`} aria-label={label} aria-haspopup="dialog" aria-expanded={open} disabled={disabled} disableRipple onClick={()=>setOpen(previous=>!previous)} onKeyDown={event=>{if(event.key==='ArrowDown'){event.preventDefault();setOpen(true);}}}>{text}</Button>
         <Popper open={open} anchorEl={anchor.current} placement="bottom-end" modifiers={[{name:'offset',options:{offset:[0,8]}},{name:'preventOverflow',options:{padding:8}}]} sx={{zIndex:1500}}>
-          <Paper elevation={12} role="dialog" aria-label={label} className="material-chart-calendar" onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();close();}}} sx={{overflow:'hidden',bgcolor:'background.paper',borderRadius:2,border:'1px solid #2e3a4c'}}>
+          <Paper elevation={12} role="dialog" aria-label={label} className="material-chart-calendar" onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();close();}}} sx={{overflow:'hidden',bgcolor:'background.paper',borderRadius:1,border:'1px solid #2a2f39',boxShadow:'0 12px 32px rgba(0,0,0,.6)'}}>
             {children(close)}
           </Paper>
         </Popper>
@@ -36,7 +38,7 @@ function PickerField({label,text,disabled,className,children}:{label:string;text
 type DateProps={value:string;minimum:string;maximum:string;disabled?:boolean;onChange:(value:string)=>void};
 export default function MaterialDatePicker({value,minimum,maximum,disabled=false,onChange}:DateProps){
   return <PickerField label="Choose chart date" text={dayjs(value).format('MM/DD/YYYY')} disabled={disabled} className="is-date">
-    {close=><DateCalendar value={dayjs(value)} minDate={dayjs(minimum)} maxDate={dayjs(maximum)} disabled={disabled} showDaysOutsideCurrentMonth onChange={selected=>{if(selected?.isValid()){onChange(selected.format('YYYY-MM-DD'));close();}}} sx={{width:300,maxWidth:'calc(100vw - 16px)',height:320,'& .MuiPickersCalendarHeader-root':{marginTop:1.5},'& .MuiPickersDay-root':{fontSize:12}}}/>}
+    {close=><DateCalendar defaultValue={dayjs(value)} minDate={dayjs(minimum)} maxDate={dayjs(maximum)} disabled={disabled} views={['year','month','day']} openTo="day" showDaysOutsideCurrentMonth onChange={(selected,state)=>{if(state!=='finish'||!selected?.isValid())return;onChange(selected.format('YYYY-MM-DD'));close();}} sx={{width:300,maxWidth:'calc(100vw - 16px)',height:320,'& .MuiPickersCalendarHeader-root':{marginTop:1.5},'& .MuiPickersDay-root':{fontSize:12}}}/>}
   </PickerField>;
 }
 
