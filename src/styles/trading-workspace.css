@@ -676,15 +676,19 @@ button.chart-date-trigger.is-open { color: #a9c2ff; background: #223251; border-
 
 /* Material calendar, with a borderless date button in the fixed-height toolbar. */
 .material-chart-date-field { display: inline-flex; align-items: center; flex: none; height: 30px; }
-.chart-navigation-tools .chart-date-header-fields .material-date-trigger {
-  width: 120px; min-width: 120px; height: 30px; min-height: 30px;
+.chart-navigation-tools .chart-date-header-fields .material-date-trigger,
+.app-shell[data-page=paper] .tv-toolbar .chart-navigation-tools .chart-date-header-fields button.material-date-trigger {
+  display: inline-flex; align-items: center; flex: 0 0 auto;
+  width: auto; min-width: 0; height: 30px; min-height: 30px;
   padding: 0 8px; border: 0; outline: none; box-shadow: none;
   border-radius: 4px; background: transparent; color: #dce8f9;
   font-size: 12px; font-weight: 500; font-family: inherit; line-height: 30px;
-  text-transform: none; justify-content: flex-start; white-space: nowrap;
+  text-transform: none; justify-content: center; white-space: nowrap;
+  letter-spacing: 0; font-variant-numeric: tabular-nums;
 }
 .chart-navigation-tools .chart-date-header-fields .material-date-trigger:hover,
 .chart-navigation-tools .chart-date-header-fields .material-date-trigger:focus-visible,
 .chart-navigation-tools .chart-date-header-fields .material-date-trigger[aria-expanded=true] { background: #202d41; }
+.chart-navigation-tools .chart-date-header-fields .material-date-trigger:disabled { color: #dce8f9; opacity: .6; }
 .material-chart-calendar { color-scheme: dark; }
 .material-chart-calendar button { font-family: inherit; }
