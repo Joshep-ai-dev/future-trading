@@ -875,3 +875,6 @@ html::-webkit-scrollbar,body::-webkit-scrollbar { display: none; }
 .app-shell[data-page=paper] .tv-toolbar button.live-panel-toggle { color: #6f7a8a; border: 0; background: transparent; border-radius: 4px; }
 .app-shell[data-page=paper] .tv-toolbar button.live-panel-toggle[aria-pressed=true] { color: #76a9ef; }
 .app-shell[data-page=paper] .tv-toolbar button.live-panel-toggle:hover { color: #dceaff; background: #1b2028; }
+/* No floating reopen arrow any more: keep the toolbar's normal right padding. */
+.app-shell[data-page=paper] .terminal-grid[data-controls=hidden] .price-panel > .tv-toolbar { padding-right: 8px; }
+.app-shell[data-page=paper] .terminal-grid[data-controls=hidden] .price-panel > .tv-header { padding-right: 14px; }

@@ -797,6 +797,16 @@ def live_chart_candles():
         raise HTTPException(status_code=503, detail='Live chart candles are unavailable. Displaying existing history and retrying.') from error
 
 
+@app.get('/api/market/orderbook')
+def public_market_order_book():
+    """Public OKX XAG order book and recent trades for the paper terminal (display only)."""
+    from server.market.public_book import public_order_book
+    try:
+        return public_order_book()
+    except (OSError, ValueError, KeyError, IndexError) as error:
+        raise HTTPException(status_code=503, detail='Order book is unavailable. Retrying automatically.') from error
+
+
 @app.get('/api/forecast/quote')
 def forecast_quote():
     try:

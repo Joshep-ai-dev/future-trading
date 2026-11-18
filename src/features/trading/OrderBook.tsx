@@ -1,5 +1,6 @@
 import {useEffect,useMemo,useRef,useState} from 'react';
-import {useExchangeStream,type OrderBookSnapshot} from '../../shared/api/useExchangeStream';
+import {useExchangeStream,type LiveTrade,type OrderBookSnapshot} from '../../shared/api/useExchangeStream';
+import {api} from '../../shared/api/api';
 import {instrumentDetails,useExchangeInstrument} from '../../shared/api/exchangeInstrument';
 import type {ExchangeVenue} from '../../shared/api/exchangeVenue';
 
@@ -31,10 +32,38 @@ function group(levels:[number,number][],step:number,side:'ask'|'bid',quote:boole
 }
 const amount=(value:number)=>value.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
 
+type BookData={symbol?:string;orderBook?:OrderBookSnapshot|null;trades?:LiveTrade[]|null};
+
+/** Live page: order book and trades from the connected exchange's stream. */
 export default function OrderBook({venue}:{venue:ExchangeVenue}){
   const {data,connected}=useExchangeStream(venue);
   const base=instrumentDetails(useExchangeInstrument()).base;
-  const quoteName=data?.symbol?.split('/')[1]?.split(':')[0]??'USDC';
+  return <OrderBookPanel id="live-order-book" data={data} base={base} resetKey={`${venue}-${base}`}
+    emptyBook={connected?'Order book is not available for this exchange.':'Connect an exchange to stream the order book.'}
+    emptyTrades={connected?'Waiting for trades...':'Connect an exchange to stream trades.'}/>;
+}
+
+/** Paper page: public OKX XAG order book, polled about once per second while shown. */
+export function PublicOrderBook({active,base,unavailable}:{active:boolean;base:string;unavailable?:string}){
+  const [data,setData]=useState<BookData|null>(null),[error,setError]=useState('');
+  useEffect(()=>{
+    if(!active||unavailable){setData(null);return;}
+    let alive=true,timer:ReturnType<typeof setTimeout>;
+    const abort=new AbortController();
+    async function poll(){
+      try{const next=await api<BookData>('/api/market/orderbook',{signal:abort.signal});if(alive){setData(next);setError('');}}
+      catch(reason){if(alive)setError(String(reason));}
+      finally{if(alive)timer=setTimeout(poll,1000);}
+    }
+    void poll();
+    return()=>{alive=false;abort.abort();clearTimeout(timer);};
+  },[active,unavailable]);
+  const message=unavailable??(error?'Order book is unavailable. Retrying automatically.':'Loading order book...');
+  return <OrderBookPanel id="paper-order-book" data={unavailable?null:data} base={base} resetKey={base} emptyBook={message} emptyTrades={unavailable??(error?'Trades are unavailable. Retrying automatically.':'Loading trades...')}/>;
+}
+
+function OrderBookPanel({id,data,base,resetKey,emptyBook,emptyTrades}:{id:string;data:BookData|null;base:string;resetKey:string;emptyBook:string;emptyTrades:string}){
+  const quoteName=data?.symbol?.split('/')[1]?.split(':')[0]??'USDT';
   const [tab,setTab]=useState<'book'|'trades'>('book');
   const [multiplier,setMultiplier]=useState(1);
   const [quote,setQuote]=useState(false);
@@ -42,7 +71,7 @@ export default function OrderBook({venue}:{venue:ExchangeVenue}){
   const tickRef=useRef<number|null>(null);
   const detected=tickOf(book);
   if(detected!==null&&(tickRef.current===null||detected<tickRef.current))tickRef.current=detected;
-  useEffect(()=>{tickRef.current=null;setMultiplier(1);},[venue,base]);
+  useEffect(()=>{tickRef.current=null;setMultiplier(1);},[resetKey]);
   const tick=tickRef.current;
   const step=tick===null?null:tick*multiplier;
   const unit=quote?quoteName:base;
@@ -62,7 +91,7 @@ export default function OrderBook({venue}:{venue:ExchangeVenue}){
     <span role="cell">{amount(level.total)}</span>
   </div>;
   const trades=data?.trades??[];
-  return <section id="live-order-book" className="terminal-panel order-book-panel" aria-label="Order book and recent trades">
+  return <section id={id} className="terminal-panel order-book-panel" aria-label="Order book and recent trades">
     <div className="order-book-tabs" role="tablist" aria-label="Market depth">
       <button type="button" role="tab" aria-selected={tab==='book'} onClick={()=>setTab('book')}>Order Book</button>
       <button type="button" role="tab" aria-selected={tab==='trades'} onClick={()=>setTab('trades')}>Trades</button>
@@ -81,7 +110,7 @@ export default function OrderBook({venue}:{venue:ExchangeVenue}){
         <div className="order-book-side is-asks">{[...asks].reverse().map(level=>row(level,'ask'))}</div>
         <div className="order-book-spread" role="row"><span>Spread</span><span>{spread===null?'—':spread.toFixed(priceDigits)}</span><span>{spreadPct===null?'—':`${spreadPct.toFixed(3)}%`}</span></div>
         <div className="order-book-side is-bids">{bids.map(level=>row(level,'bid'))}</div>
-        {!book&&<p className="order-book-empty" role="status">{connected?'Order book is not available for this exchange.':'Connect an exchange to stream the order book.'}</p>}
+        {!book&&<p className="order-book-empty" role="status">{emptyBook}</p>}
       </div>
     </>:<div className="order-book-table order-trades" role="table" aria-label={`${base} recent trades`}>
       <div className="order-book-row is-head" role="row"><span role="columnheader">Price</span><span role="columnheader">Size ({base})</span><span role="columnheader">Time</span></div>
@@ -90,7 +119,7 @@ export default function OrderBook({venue}:{venue:ExchangeVenue}){
         <span role="cell">{trade.quantity==null?'—':amount(trade.quantity)}</span>
         <span role="cell">{trade.timestamp==null?'—':new Date(trade.timestamp).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})}</span>
       </div>)}
-      {!trades.length&&<p className="order-book-empty" role="status">{connected?'Waiting for trades...':'Connect an exchange to stream trades.'}</p>}
+      {!trades.length&&<p className="order-book-empty" role="status">{emptyTrades}</p>}
     </div>}
   </section>;
 }

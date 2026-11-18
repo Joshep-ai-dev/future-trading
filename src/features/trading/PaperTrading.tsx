@@ -29,7 +29,8 @@ import PatternPanel from './PatternPanel';
 import BotSelector from '../strategy/BotSelector';
 import type {SavedSetup} from '../strategy/SetupPicker';
 import type {StrategyState} from '../../shared/api/exchangeTypes';
-import TradingWorkspaceTools,{SidebarArrow} from './TradingWorkspaceTools';
+import TradingWorkspaceTools,{PanelToggles,useWorkspacePanels} from './TradingWorkspaceTools';
+import {PublicOrderBook} from './OrderBook';
 
 export type Position={direction:number;entry_time:number;entry_price:number;quantity:number;stop:number;initial_stop?:number;trailing_active:boolean;stop_history?:StopPoint[]};
 export type PaperTrade=Position&{id:number;exit_time:number;exit_price:number;exit_reason:string;pnl:number};
@@ -91,7 +92,8 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
   const [data,setData]=useState<Response>({session:null,error:null});
   const showingSession=!!data.session&&(data.session.running||data.session.settings.market===settings.market);
   const [error,setError]=useState(''),[busy,setBusy]=useState(false);
-  const [controlsOpen,setControlsOpen]=useState(true);
+  const [panels,togglePanel]=useWorkspacePanels('silver.paper.panels');
+  const controlsOpen=panels.order;
   const liveMarket=useLiveMarketMinutes(visible&&!showingSession&&settings.market==='xag');
   const revision=useRef(0);
   const [bottomTab,setBottomTab]=useState<'position'|'history'|'equity'|'sessions'|'patterns'>('position');
@@ -165,8 +167,9 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
   const ticker=useMemo(()=>tickerStats(visibleCandles,chartDuration,price),[visibleCandles,chartDuration,price]);
   function changeChartTimeframe(value:BacktestSettings['entry_timeframe']){setChartTimeframe(value);if(!s){onChange({...settings,entry_timeframe:value});}}
   const chartHeader=<TradingChartHeader symbol={paperSymbol} timeframe={s?chartTimeframe:settings.entry_timeframe} onTimeframeChange={value=>changeChartTimeframe(value as BacktestSettings['entry_timeframe'])} mode={s?s.mode==='replay'?'HISTORICAL REPLAY':'PAPER SESSION':'MARKET PREVIEW'} caption={s?`Bot executes on ${s.settings.entry_timeframe} candles`:'Choose a timeframe to view the market chart'}/>;
+  const panelToggles=<PanelToggles panels={panels} onToggle={togglePanel} bookId="paper-order-book" actionId="paper-execution-sidebar"/>;
   return <div id="page-paper" role="tabpanel" aria-labelledby="tab-paper" hidden={!visible}>
-    <div className="terminal-grid" data-controls={controlsOpen?'visible':'hidden'}>{!controlsOpen&&!hasChart&&<div className="workspace-sidebar-reopen"><SidebarArrow open={false} onToggle={()=>setControlsOpen(true)} panelId="paper-execution-sidebar"/></div>}<div className="terminal-main">
+    <div className="terminal-grid" data-controls={controlsOpen?'visible':'hidden'}><div className={panels.book?"terminal-main has-order-book":"terminal-main"}>
     <MarketHeader
       icon={paperBase==='XAG'?'Ag':paperBase.slice(0,2)}
       selector={<PaperMarketPicker symbol={paperSymbol} market={activeMarket} datasets={datasets} disabled={busy||!!data.session?.running} onChange={market=>onChange({...settings,market})}/>}
@@ -179,14 +182,15 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
         {label:'24h high / low',value:`${fmt(ticker.high,3)} / ${fmt(ticker.low,3)}`},
         {label:'24h volume',value:compact(ticker.volume),unit:'Cont.'},
       ]}
-      actions={<TradingWorkspaceTools mode="paper" open={controlsOpen} onToggle={()=>setControlsOpen(value=>!value)} panelId="paper-execution-sidebar"/>}
+      actions={<TradingWorkspaceTools mode="paper" open={controlsOpen} onToggle={()=>togglePanel('order')} panelId="paper-execution-sidebar"/>}
     />
-      <section className="terminal-panel price-panel">{!hasChart&&<div className="chart-actions tv-toolbar compact-chart-toolbar chart-loading-toolbar"><div className="chart-toolbar-heading">{chartHeader}</div></div>}<BotChartBadge state={s?.strategyState} running={!!s?.running}/>
-        {hasChart?<PaperPriceChart key={`${activeMarket}-${s?.startedAt??0}`} market={activeMarket} symbol={paperSymbol} toolbarEnd={!controlsOpen?<SidebarArrow open={false} onToggle={()=>setControlsOpen(true)} panelId="paper-execution-sidebar"/>:undefined} header={chartHeader} focus={focus} atrLength={(s?.settings??settings).bb_reversal.atr_length} adxLength={(s?.settings??settings).bb_reversal.adx_length} indicatorClock={s?(s.mode==='replay'?displayClock:s.quoteTime??s.virtualTime??0):Date.now()/1000} timeframe={s?chartTimeframe:settings.entry_timeframe} sessionId={s?.startedAt??0} candles={visibleCandles} indicators={visibleIndicators} stops={alternate?[]:chartStops} trades={visibleTrades} position={visiblePosition??null} showSma={settings.strategy!=='none'&&(s?.settings??settings).bb_reversal.use_sma_trend_adjustment!==false}/>:<div className="chart-empty"><span className="empty-chart-icon">⌁</span><h3>{chartView.error||previewError?'Chart unavailable':'Preparing your chart'}</h3><p>{previewError||'Loading downloaded market candles…'}</p></div>}
+      <section className="terminal-panel price-panel">{!hasChart&&<div className="chart-actions tv-toolbar compact-chart-toolbar chart-loading-toolbar"><div className="chart-toolbar-heading">{chartHeader}</div><div className="chart-toolbar-end">{panelToggles}</div></div>}<BotChartBadge state={s?.strategyState} running={!!s?.running}/>
+        {hasChart?<PaperPriceChart key={`${activeMarket}-${s?.startedAt??0}`} market={activeMarket} symbol={paperSymbol} toolbarEnd={panelToggles} header={chartHeader} focus={focus} atrLength={(s?.settings??settings).bb_reversal.atr_length} adxLength={(s?.settings??settings).bb_reversal.adx_length} indicatorClock={s?(s.mode==='replay'?displayClock:s.quoteTime??s.virtualTime??0):Date.now()/1000} timeframe={s?chartTimeframe:settings.entry_timeframe} sessionId={s?.startedAt??0} candles={visibleCandles} indicators={visibleIndicators} stops={alternate?[]:chartStops} trades={visibleTrades} position={visiblePosition??null} showSma={settings.strategy!=='none'&&(s?.settings??settings).bb_reversal.use_sma_trend_adjustment!==false}/>:<div className="chart-empty"><span className="empty-chart-icon">⌁</span><h3>{chartView.error||previewError?'Chart unavailable':'Preparing your chart'}</h3><p>{previewError||'Loading downloaded market candles…'}</p></div>}
         {alternate&&chartView.error&&hasChart&&<p className="chart-history-status error" role="alert">{chartView.error}</p>}
         <div className="chart-legend"><span><b style={{color:FILL_COLORS.buy}}>↑</b> Buy / close short</span><span><b style={{color:FILL_COLORS.sell}}>↓</b> Sell / close long</span><span><i className="legend-line" style={{borderColor:STOP_COLORS.initial}}/> Stop loss</span><span><i className="legend-line" style={{borderColor:STOP_COLORS.trailing}}/> Trailing stop / TRAIL activation</span></div>
         {!s&&settings.market==='xag'&&(liveMarket.error||liveMarket.stale)&&<p className="chart-history-status" role="status">{liveMarket.error||'Waiting for fresh public market candles. Existing history remains visible.'}</p>}
       </section>
+      {panels.book&&<PublicOrderBook active={visible} base={paperBase} unavailable={settings.market!=='xag'||s?.mode==='replay'?'The order book is available for live XAG paper trading only.':undefined}/>}
       <TerminalSplitter/>
       <section className="terminal-panel activity-panel exchange-activity">
         <TabBar items={[
@@ -210,7 +214,7 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
       </section>
     </div>
     <aside id="paper-execution-sidebar" className="terminal-sidebar" aria-label="Paper trading controls" hidden={!controlsOpen}>
-      <section className="terminal-panel trading-account-summary" aria-label="Paper account summary"><header><div className="account-summary-heading"><SidebarArrow open={controlsOpen} onToggle={()=>setControlsOpen(value=>!value)} panelId="paper-execution-sidebar"/><h2>Account overview</h2></div><span>Virtual funds</span></header><div className="account-equity"><span>Equity</span><strong>{fmt(equity,2)} <small>{paperQuote}</small></strong></div><div className="account-summary-metrics"><Metric label="Balance" value={fmt(balance,2)} unit={paperQuote}/><Metric label="Session P&L" value={`${pnl>=0?'+':''}${fmt(pnl,2)}`} unit={paperQuote} tone={pnl>=0?'positive':'negative'}/></div><div className="account-summary-time"><span>{s?(s.mode==='replay'?'Replay clock':'Session clock'):'Last market candle'}</span><time>{date(s?(s.mode==='replay'?displayClock:s.virtualTime??s.lastProcessed):liveMarket.minutes.at(-1)?.time??preview.at(-1)?.time??null,tradingTimeZone)}</time></div></section>
+      <section className="terminal-panel trading-account-summary" aria-label="Paper account summary"><header><div className="account-summary-heading"><h2>Account overview</h2></div><span>Virtual funds</span></header><div className="account-equity"><span>Equity</span><strong>{fmt(equity,2)} <small>{paperQuote}</small></strong></div><div className="account-summary-metrics"><Metric label="Balance" value={fmt(balance,2)} unit={paperQuote}/><Metric label="Session P&L" value={`${pnl>=0?'+':''}${fmt(pnl,2)}`} unit={paperQuote} tone={pnl>=0?'positive':'negative'}/></div><div className="account-summary-time"><span>{s?(s.mode==='replay'?'Replay clock':'Session clock'):'Last market candle'}</span><time>{date(s?(s.mode==='replay'?displayClock:s.virtualTime??s.lastProcessed):liveMarket.minutes.at(-1)?.time??preview.at(-1)?.time??null,tradingTimeZone)}</time></div></section>
       <section className="terminal-panel bot-control"><div className="panel-heading"><h2>Paper bot</h2><span className={`bot-state ${s?.running?'is-running':''}`}><i className="status-dot"/>{status}</span></div>
       {settings.strategy==='none'?<div className="bot-form"><h3>No strategy configured</h3><p>The market chart and account history remain available. Automated paper trading is disabled.</p>{s?.running&&<button type="button" disabled={busy} onClick={()=>void action('pause')}>Pause existing session</button>}</div>:<form className="bot-form" onSubmit={e=>{e.preventDefault();void action('start');}}><fieldset disabled={busy||s?.running}>
         <BotSelector strategy={config.strategy} onStrategyChange={key=>onChange({...settings,strategy:key})} profiles={profiles} onApplySetup={onApplySetup} setupLabel="Saved parameters"/>
