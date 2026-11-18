@@ -274,3 +274,9 @@ button.chart-date-trigger.is-open { color: #a9c2ff; background: #223251; border-
 .tv-timeframe-trigger svg { display: block; width: 12px; height: 12px; flex: none; }
 .app-shell[data-page=paper] .chart-toolbar-heading .tv-timeframes button.tv-timeframe-trigger[aria-expanded=true] { background: #222833 !important; }
 .app-shell[data-page=paper] .chart-toolbar-heading .tv-timeframes button.tv-timeframe-trigger[data-active=true] { color: #8eb4ff; box-shadow: none; }
+.position-chart canvas { cursor: crosshair !important; }
+.chart-navigation-tools .chart-date-inline { position: relative; }
+.chart-navigation-tools .chart-date-inline .chart-date-error { position: absolute; top: calc(100% + 8px); right: 0; z-index: 20; width: max-content; max-width: min(320px,80vw); margin: 0; padding: 8px 10px; border: 1px solid #60472d; border-radius: 5px; background: #201a13; color: #f0ad74; font-size: 11px; line-height: 1.4; box-shadow: 0 4px 12px #0005; }
+/* Preserve the panel outline where the merged toolbar meets the top corners. */
+.app-shell[data-page=paper] .terminal-panel.price-panel { border: 1px solid #363b45; border-radius: 10px; }
+.app-shell[data-page=paper] .price-panel > .tv-toolbar { border-radius: 9px 9px 0 0; border-bottom: 1px solid #363b45; }
