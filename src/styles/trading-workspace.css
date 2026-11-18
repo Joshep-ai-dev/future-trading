@@ -731,3 +731,20 @@ html::-webkit-scrollbar,body::-webkit-scrollbar { display: none; }
 .balance-chart-shell .chart-resize,
 .price-panel .chart-resize { border: 0 !important; box-shadow: none !important; }
 .tv-drawing-toolbar { border-right: 0 !important; }
+
+/* Same panel look as the trading page on Backtest, Bot settings, Forecast and
+   News: lighter fill on the black page, no gray frame, rounded corners. */
+:root { --app-panel: #101114; }
+.terminal-panel,.ui-panel,.settings-section,.settings-profiles,.settings-navigation,.fine-tune-panel,
+.configuration-runbar,.execution-notes,.run-context,.strategy-navigation,.analysis-empty-panel,
+.metrics article,.result-scorecards article,.result-answer,.model-kpis,
+.setup-card,.setup-summary,.compute-status,
+.fc-topbar,.fc-models,.fc-summary,.fc-kpis,.fc-panel,.forecast-sequential-comparison,.forecast-quote-header,.forecast-terminal-chart,
+.news-head,.news-mood,.news-panel,.release-chart,.econ-card,
+.pattern-chart,.pattern-table,
+#page-strategy>form>fieldset>.settings-grid {
+  background: var(--app-panel) !important;
+  border-color: transparent !important;
+  border-radius: 10px;
+  box-shadow: none !important;
+}
