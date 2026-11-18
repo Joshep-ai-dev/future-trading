@@ -722,3 +722,12 @@ html::-webkit-scrollbar,body::-webkit-scrollbar { display: none; }
 @media(min-width:1100px) {
   .app-shell[data-page=paper] .terminal-main { grid-template-rows: auto var(--terminal-chart,clamp(500px,65dvh,860px)) 6px auto; }
 }
+
+/* Chart (TradingView-style) panes: no frame, toolbar rules or tool-rail border. */
+.price-panel,
+.price-panel > .tv-header,
+.price-panel > .tv-toolbar,
+.balance-chart-shell > .tv-toolbar,
+.balance-chart-shell .chart-resize,
+.price-panel .chart-resize { border: 0 !important; box-shadow: none !important; }
+.tv-drawing-toolbar { border-right: 0 !important; }

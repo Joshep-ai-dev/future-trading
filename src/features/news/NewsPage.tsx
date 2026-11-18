@@ -97,8 +97,8 @@ function TimelineChart({ buckets }: { buckets: Bucket[] }) {
       autoSize: true,
       localization: chartTimeOptions(zone).localization,
       timeScale: { ...tvTimeScaleOptions, timeVisible: true, ...chartTimeOptions(zone).timeScale },
-      leftPriceScale: { visible: true, borderColor: TV.border, scaleMargins: { top: 0.55, bottom: 0 } },
-      rightPriceScale: { borderColor: TV.border, scaleMargins: { top: 0.08, bottom: 0.5 } },
+      leftPriceScale: { visible: true, borderVisible: false, scaleMargins: { top: 0.55, bottom: 0 } },
+      rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.08, bottom: 0.5 } },
       handleScroll: false,
       handleScale: false,
     });

@@ -97,7 +97,7 @@ export default function ForecastPriceChart({
       autoSize: true,
       ...tvChartOptions,
       rightPriceScale: {
-        borderColor: TV.border,
+        borderVisible: false,
         scaleMargins: { top: 0.12, bottom: 0.12 },
       },
       timeScale: {

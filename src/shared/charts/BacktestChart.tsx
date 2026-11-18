@@ -133,7 +133,7 @@ export function EquityChart({
       ...tvChartOptions,
       rightPriceScale: {
         scaleMargins: { top: 0.16, bottom: 0.16 },
-        borderColor: TV.border,
+        borderVisible: false,
       },
       timeScale: {
         ...tvTimeScaleOptions,

@@ -72,11 +72,11 @@ export const tvChartOptions = {
   layout: tvLayout,
   grid: tvGrid,
   crosshair: tvCrosshair,
-  rightPriceScale: { borderColor: TV.border },
-  leftPriceScale: { borderColor: TV.border },
+  rightPriceScale: { borderVisible: false },
+  leftPriceScale: { borderVisible: false },
 };
 
-export const tvTimeScaleOptions = { borderColor: TV.border };
+export const tvTimeScaleOptions = { borderVisible: false };
 
 export const tvCandleOptions = {
   upColor: TV.up,
