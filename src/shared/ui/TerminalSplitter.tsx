@@ -20,17 +20,28 @@ export default function TerminalSplitter(){
     try{saved=Number(localStorage.getItem(storageKey));}catch{/* Use the stylesheet default. */}
     if(Number.isFinite(saved)&&saved>0)apply(main,saved);
   },[]);
-  const chartHeight=(main:HTMLElement)=>main.firstElementChild?.getBoundingClientRect().height??640;
+  // The chart is the price panel, not simply the first child (the market header may precede it).
+  const chartOf=(main:HTMLElement)=>main.querySelector<HTMLElement>(':scope > .price-panel')??main.firstElementChild as HTMLElement|null;
+  const chartHeight=(main:HTMLElement)=>chartOf(main)?.getBoundingClientRect().height??640;
   function start(event:React.PointerEvent<HTMLDivElement>){
-    const main=ref.current?.parentElement,chart=main?.firstElementChild;
-    if(!main||!chart)return;
+    const main=ref.current?.parentElement;
+    if(!main||!chartOf(main)||event.button!==0)return;
     event.preventDefault();
     const handle=event.currentTarget;handle.setPointerCapture(event.pointerId);
     document.body.classList.add('is-resizing-terminal');
-    const move=(e:PointerEvent)=>apply(main,e.clientY-chart.getBoundingClientRect().top);
+    // Resize by the drag distance from the press point, so pressing alone never changes the height.
+    const startY=event.clientY,startHeight=chartHeight(main);
+    let frame=0,latestY=startY;
+    const move=(e:PointerEvent)=>{
+      latestY=e.clientY;
+      if(frame)return;
+      frame=requestAnimationFrame(()=>{frame=0;apply(main,startHeight+latestY-startY);});
+    };
     const end=()=>{
       handle.removeEventListener('pointermove',move);handle.removeEventListener('pointerup',end);handle.removeEventListener('pointercancel',end);
-      document.body.classList.remove('is-resizing-terminal');save(chartHeight(main));
+      if(frame){cancelAnimationFrame(frame);frame=0;}
+      if(latestY!==startY){apply(main,startHeight+latestY-startY);save(chartHeight(main));}
+      document.body.classList.remove('is-resizing-terminal');
     };
     handle.addEventListener('pointermove',move);handle.addEventListener('pointerup',end);handle.addEventListener('pointercancel',end);
   }
