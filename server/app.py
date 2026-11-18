@@ -422,6 +422,19 @@ def exchange_trade_history(venue: Literal['okx','htx','mexc','binance','hyperliq
         raise HTTPException(status_code=502, detail='Closed trade history is unavailable from the exchange.') from error
 
 
+@app.get('/api/exchange/depth')
+async def exchange_depth_stream(venue: Literal['okx','htx','mexc','binance','hyperliquid'],
+                                kind: Literal['orderBook','trades'], request: Request):
+    """Order book or recent trades for one visible panel; the exchange is watched only while it is open."""
+    ws = workspace(request)
+    try:
+        ws.exchange._get(venue)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return StreamingResponse(ws.streams.depth_events(venue, kind), media_type='text/event-stream',
+                             headers={'Cache-Control':'no-cache', 'X-Accel-Buffering':'no'})
+
+
 @app.get('/api/exchange/stream')
 async def exchange_stream(venue: Literal['okx','htx','mexc','binance','hyperliquid'], request: Request):
     ws = workspace(request)
@@ -798,11 +811,11 @@ def live_chart_candles():
 
 
 @app.get('/api/market/orderbook')
-def public_market_order_book():
+def public_market_order_book(part: Literal['book', 'trades'] = 'book'):
     """Public OKX XAG order book and recent trades for the paper terminal (display only)."""
     from server.market.public_book import public_order_book
     try:
-        return public_order_book()
+        return public_order_book(part)
     except (OSError, ValueError, KeyError, IndexError) as error:
         raise HTTPException(status_code=503, detail='Order book is unavailable. Retrying automatically.') from error
 

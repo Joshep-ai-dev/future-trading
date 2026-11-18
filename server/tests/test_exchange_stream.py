@@ -202,8 +202,9 @@ class ExchangeStreamTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(payload['market']['last'], 32)
                 self.assertEqual(payload['streams']['market'], 'live')
                 self.assertNotIn('private-secret', event)
-                # Venues without order book / trade streams leave those sections empty.
-                self.assertIsNone(payload['orderBook'])
+                # Order book and trades are streamed only on demand, never in the account payload.
+                self.assertNotIn('orderBook', payload)
+                self.assertNotIn('trades', payload)
                 client.watch_order_book.assert_not_called()
                 factory.assert_called_once()
                 await first.aclose()
@@ -214,6 +215,35 @@ class ExchangeStreamTests(unittest.IsolatedAsyncioTestCase):
                 await streams.close()
             client.close.assert_awaited_once()
             self.assertEqual(streams.feeds, {})
+
+
+class DepthDemandTests(unittest.IsolatedAsyncioTestCase):
+    async def test_depth_is_watched_only_while_a_panel_subscribes(self) -> None:
+        feed = ExchangeFeed.__new__(ExchangeFeed)
+        feed.depth, feed.depth_tasks = {}, {}
+        feed.depth_queues = {'orderBook': set(), 'trades': set()}
+        feed.ready = asyncio.Event()
+        feed.ready.set()
+        started = []
+
+        async def watch(section):
+            started.append(section)
+            await asyncio.Future()
+
+        feed.watch = watch
+        queue = asyncio.Queue(maxsize=1)
+        feed.add_depth('orderBook', queue)
+        await asyncio.sleep(0)
+        self.assertEqual(started, ['orderBook'])
+        self.assertNotIn('trades', feed.depth_tasks)
+        feed.update('orderBook', {'bids': [], 'asks': []})
+        self.assertEqual(json.loads(queue.get_nowait()), {'bids': [], 'asks': []})
+        task = feed.depth_tasks['orderBook']
+        feed.remove_depth('orderBook', queue)
+        await asyncio.gather(task, return_exceptions=True)
+        self.assertTrue(task.cancelled())
+        self.assertEqual(feed.depth_tasks, {})
+        self.assertNotIn('orderBook', feed.depth)
 
 
 class BookViewTests(unittest.TestCase):

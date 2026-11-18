@@ -885,3 +885,16 @@ html::-webkit-scrollbar,body::-webkit-scrollbar { display: none; }
   .terminal-main.has-order-book > .order-book-panel { contain: size; height: auto; align-self: stretch; }
 }
 .order-book-panel .order-trades { flex: 1; min-height: 0; overflow-y: auto; }
+
+/* Order ticket info rows (Available margin, Market price) share one style. */
+.ticket-available,
+.ticket-market-price {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  min-height: 38px; margin: 0 0 8px; padding: 10px 12px;
+  border-radius: 6px; background: var(--field); color: var(--muted); font-size: 11px;
+}
+.ticket-available strong,
+.ticket-market-price strong { color: var(--text); font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.ticket-available small,
+.ticket-market-price small { color: var(--muted); font-size: 9px; font-weight: 400; }
+.ticket-market-price { margin-bottom: 12px; }

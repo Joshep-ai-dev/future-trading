@@ -1,7 +1,7 @@
 """Public OKX XAG-USDT-SWAP order book and recent trades for paper trading.
 
 No credentials. One cached snapshot is shared by every user and refreshed at
-most once per second; sizes are converted from contracts to XAG.
+most every 0.4 s per part; sizes are converted from contracts to XAG.
 """
 import json
 import threading
@@ -13,10 +13,11 @@ from server.exchanges.exchange_stream import BOOK_DEPTH, TRADE_HISTORY, book_vie
 
 INSTRUMENT = 'XAG-USDT-SWAP'
 BASE_URL = 'https://www.okx.com'
-CACHE_SECONDS = 1.0
+CACHE_SECONDS = 0.4
+SYMBOL = 'XAG/USDT:USDT'
 
 _lock = threading.Lock()
-_cache: tuple[float, dict] | None = None
+_cache: dict[str, tuple[float, dict]] = {}
 _contract_value: float | None = None
 
 
@@ -46,17 +47,22 @@ def snapshot(books: list, trades: list, size: float) -> dict:
     recent = [trade_view(dict(id=row.get('tradeId'), side=row.get('side'), price=float(row['px']),
                               amount=float(row['sz']), timestamp=int(row['ts'])), size)
               for row in trades[:TRADE_HISTORY]]
-    return dict(symbol='XAG/USDT:USDT', orderBook=view, trades=recent)
+    return dict(symbol=SYMBOL, orderBook=view, trades=recent)
 
 
-def public_order_book() -> dict:
-    global _cache
+def public_order_book(part: str = 'book') -> dict:
+    """Only the requested part is fetched: 'book' (order book) or 'trades'."""
     with _lock:
-        if _cache and time.monotonic() - _cache[0] < CACHE_SECONDS:
-            return _cache[1]
+        cached = _cache.get(part)
+        if cached and time.monotonic() - cached[0] < CACHE_SECONDS:
+            return cached[1]
         size = contract_value()
-        books = _get('/api/v5/market/books', dict(instId=INSTRUMENT, sz=str(BOOK_DEPTH)))
-        trades = _get('/api/v5/market/trades', dict(instId=INSTRUMENT, limit=str(TRADE_HISTORY)))
-        result = dict(snapshot(books, trades, size), updatedAt=int(time.time() * 1000))
-        _cache = (time.monotonic(), result)
+        if part == 'trades':
+            rows = _get('/api/v5/market/trades', dict(instId=INSTRUMENT, limit=str(TRADE_HISTORY)))
+            result = dict(symbol=SYMBOL, trades=snapshot([], rows, size)['trades'])
+        else:
+            rows = _get('/api/v5/market/books', dict(instId=INSTRUMENT, sz=str(BOOK_DEPTH)))
+            result = dict(symbol=SYMBOL, orderBook=snapshot(rows, [], size)['orderBook'])
+        result['updatedAt'] = int(time.time() * 1000)
+        _cache[part] = (time.monotonic(), result)
         return result

@@ -59,6 +59,7 @@ def trade_view(trade: dict, contract_size: float) -> dict:
                 timestamp=trade.get('timestamp'))
 
 
+DEPTH_SECTIONS = ('orderBook', 'trades')
 RECONCILE_SECONDS = 5
 POSITION_RECONCILE_SECONDS = 2
 
@@ -68,7 +69,7 @@ class ExchangeFeed:
         self.service, self.venue = service, venue
         self.source, self.market = service._get(venue)
         self.state = dict(venue=venue, symbol=self.market['symbol'], market=None, balance=None,
-                          positions=None, orders=None, conditionalOrders=None, candle=None, orderBook=None, trades=None, errors={},
+                          positions=None, orders=None, conditionalOrders=None, candle=None, errors={},
                           streams={'market': 'connecting', 'account': 'connecting'}, sectionTimes={})
         self.changed = asyncio.Event()
         self.account_changed = asyncio.Event()
@@ -76,11 +77,24 @@ class ExchangeFeed:
         self.position_burst_until = 0.0
         self.loop = asyncio.get_running_loop()
         self.queues: set[asyncio.Queue] = set()
+        # Order book / trades are watched only while a browser panel shows them.
+        self.depth: dict[str, object] = {}
+        self.depth_queues: dict[str, set[asyncio.Queue]] = {'orderBook': set(), 'trades': set()}
+        self.depth_tasks: dict[str, asyncio.Task] = {}
+        self.ready = asyncio.Event()
         self.client = None
         self.tasks: list[asyncio.Task] = []
         self.runner = asyncio.create_task(self.run())
 
     def update(self, section: str, value) -> None:
+        if section in DEPTH_SECTIONS:
+            self.depth[section] = value
+            payload = json.dumps(value, allow_nan=False)
+            for queue in tuple(self.depth_queues[section]):
+                if queue.full():
+                    queue.get_nowait()
+                queue.put_nowait(payload)
+            return
         self.state[section] = value
         self.state['errors'].pop(section, None)
         self.state['sectionTimes'][section] = time.time() * 1000
@@ -106,7 +120,7 @@ class ExchangeFeed:
                 **credentials, enableRateLimit=True, options=dict(self.source.options), newUpdates=True))
             # Share market metadata, never the synchronous client's network session.
             self.client.set_markets(self.source.markets, self.source.currencies)
-            self.tasks = [asyncio.create_task(self.watch(section)) for section in ('market', 'candle', 'orderBook', 'trades')]
+            self.tasks = [asyncio.create_task(self.watch(section)) for section in ('market', 'candle')]
             if self.venue == 'htx' and self.source.options.get('localAccountApi') == 'classic':
                 self.tasks.append(asyncio.create_task(self.classic_private()))
             else:
@@ -114,6 +128,10 @@ class ExchangeFeed:
             self.tasks.append(asyncio.create_task(self.reconcile()))
             self.tasks.append(asyncio.create_task(self.reconcile_positions()))
             self.account_changed.set()
+            self.ready.set()
+            for section, queues in self.depth_queues.items():
+                if queues:
+                    self.start_depth(section)
             await self.publish()
         except asyncio.CancelledError:
             raise
@@ -122,11 +140,29 @@ class ExchangeFeed:
             self.changed.set()
             await self.publish()
         finally:
-            for task in self.tasks:
+            depth = list(self.depth_tasks.values())
+            self.depth_tasks.clear()
+            for task in self.tasks + depth:
                 task.cancel()
-            await asyncio.gather(*self.tasks, return_exceptions=True)
+            await asyncio.gather(*self.tasks, *depth, return_exceptions=True)
             if self.client is not None:
                 await self.client.close()
+
+    def start_depth(self, section: str) -> None:
+        if self.ready.is_set() and section not in self.depth_tasks:
+            self.depth_tasks[section] = asyncio.create_task(self.watch(section))
+
+    def add_depth(self, section: str, queue: asyncio.Queue) -> None:
+        self.depth_queues[section].add(queue)
+        self.start_depth(section)
+
+    def remove_depth(self, section: str, queue: asyncio.Queue) -> None:
+        self.depth_queues[section].discard(queue)
+        if not self.depth_queues[section]:
+            task = self.depth_tasks.pop(section, None)
+            if task:
+                task.cancel()
+            self.depth.pop(section, None)
 
     async def watch(self, section: str) -> None:
         methods = dict(market='watchTicker', candle='watchOHLCV', orderBook='watchOrderBook', trades='watchTrades',
@@ -160,7 +196,7 @@ class ExchangeFeed:
                 elif section == 'trades':
                     updates = await self.client.watch_trades(symbol)
                     fresh = [trade_view(trade, size) for trade in sorted(updates, key=lambda t: t.get('timestamp') or 0, reverse=True)]
-                    self.update('trades', (fresh + list(self.state.get('trades') or []))[:TRADE_HISTORY])
+                    self.update('trades', (fresh + list(self.depth.get('trades') or []))[:TRADE_HISTORY])
                 elif section == 'balance':
                     balance = await self.client.watch_balance({'type': 'swap', 'subType': 'linear'})
                     if self.venue == 'htx':
@@ -320,12 +356,47 @@ class ExchangeStreams:
         self.feeds: dict[str, ExchangeFeed] = {}
         self.service.on_execution = self.refresh
 
-    async def events(self, venue: str):
+    def _feed(self, venue: str) -> ExchangeFeed:
         source, _ = self.service._get(venue)
         feed = self.feeds.get(venue)
         if feed is None or feed.source is not source:
             feed = ExchangeFeed(self.service, venue)
             self.feeds[venue] = feed
+        return feed
+
+    async def _release(self, venue: str, feed: ExchangeFeed) -> None:
+        if not feed.queues and not any(feed.depth_queues.values()):
+            feed.runner.cancel()
+            await asyncio.gather(feed.runner, return_exceptions=True)
+            if self.feeds.get(venue) is feed:
+                self.feeds.pop(venue, None)
+
+    async def depth_events(self, venue: str, section: str):
+        """Order book or trades only, and only while this subscriber is connected."""
+        feed = self._feed(venue)
+        source = feed.source
+        queue = asyncio.Queue(maxsize=1)
+        feed.add_depth(section, queue)
+        try:
+            yield 'retry: 2000\n\n'
+            if section in feed.depth:
+                yield 'data: ' + json.dumps(feed.depth[section], allow_nan=False) + '\n\n'
+            while True:
+                try:
+                    payload = await asyncio.wait_for(queue.get(), timeout=15)
+                except asyncio.TimeoutError:
+                    yield ': keep-alive\n\n'
+                else:
+                    yield 'data: ' + payload + '\n\n'
+                if self.service.clients.get(venue) is not source:
+                    return
+        finally:
+            feed.remove_depth(section, queue)
+            await self._release(venue, feed)
+
+    async def events(self, venue: str):
+        feed = self._feed(venue)
+        source = feed.source
         queue = asyncio.Queue(maxsize=1)
         feed.queues.add(queue)
         feed.changed.set()
@@ -340,11 +411,7 @@ class ExchangeStreams:
                     return
         finally:
             feed.queues.discard(queue)
-            if not feed.queues:
-                feed.runner.cancel()
-                await asyncio.gather(feed.runner, return_exceptions=True)
-                if self.feeds.get(venue) is feed:
-                    self.feeds.pop(venue, None)
+            await self._release(venue, feed)
 
     def refresh(self, venue: str) -> None:
         """Wake account refresh and briefly accelerate position polling after execution."""

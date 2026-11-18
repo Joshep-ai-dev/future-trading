@@ -32,42 +32,66 @@ function group(levels:[number,number][],step:number,side:'ask'|'bid',quote:boole
 }
 const amount=(value:number)=>value.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
 
-type BookData={symbol?:string;orderBook?:OrderBookSnapshot|null;trades?:LiveTrade[]|null};
+type Tab='book'|'trades';
+type PanelData={symbol?:string;book:OrderBookSnapshot|null;trades:LiveTrade[]|null};
 
-/** Live page: order book and trades from the connected exchange's stream. */
+/** Latest value of one exchange depth stream (order book or trades); open only while enabled. */
+function useDepthStream<T>(venue:ExchangeVenue,kind:'orderBook'|'trades',enabled:boolean){
+  const [value,setValue]=useState<T|null>(null);
+  useEffect(()=>{
+    setValue(null);
+    if(!enabled)return;
+    const source=new EventSource(`/api/exchange/depth?venue=${venue}&kind=${kind}`);
+    source.onmessage=event=>{try{setValue(JSON.parse(event.data) as T);}catch{/* Ignore malformed frames. */}};
+    return()=>source.close();
+  },[venue,kind,enabled]);
+  return value;
+}
+
+/** Live page: reads only the selected tab from the connected exchange, only while shown. */
 export default function OrderBook({venue}:{venue:ExchangeVenue}){
   const {data,connected}=useExchangeStream(venue);
   const base=instrumentDetails(useExchangeInstrument()).base;
-  return <OrderBookPanel id="live-order-book" data={data} base={base} resetKey={`${venue}-${base}`}
-    emptyBook={connected?'Order book is not available for this exchange.':'Connect an exchange to stream the order book.'}
+  const [tab,setTab]=useState<Tab>('book');
+  const book=useDepthStream<OrderBookSnapshot>(venue,'orderBook',connected&&tab==='book');
+  const trades=useDepthStream<LiveTrade[]>(venue,'trades',connected&&tab==='trades');
+  return <OrderBookPanel id="live-order-book" tab={tab} onTab={setTab} data={{symbol:data?.symbol,book,trades}} base={base} resetKey={`${venue}-${base}`}
+    emptyBook={connected?'Waiting for the order book...':'Connect an exchange to stream the order book.'}
     emptyTrades={connected?'Waiting for trades...':'Connect an exchange to stream trades.'}/>;
 }
 
-/** Paper page: public OKX XAG order book, polled about once per second while shown. */
+/** Paper page: public OKX XAG book or trades (selected tab only), polled while shown. */
 export function PublicOrderBook({active,base,unavailable}:{active:boolean;base:string;unavailable?:string}){
-  const [data,setData]=useState<BookData|null>(null),[error,setError]=useState('');
+  const [tab,setTab]=useState<Tab>('book');
+  const [book,setBook]=useState<OrderBookSnapshot|null>(null),[trades,setTrades]=useState<LiveTrade[]|null>(null);
+  const [symbol,setSymbol]=useState<string>(),[error,setError]=useState('');
   useEffect(()=>{
-    if(!active||unavailable){setData(null);return;}
+    setError('');
+    if(!active||unavailable){setBook(null);setTrades(null);return;}
     let alive=true,timer:ReturnType<typeof setTimeout>;
     const abort=new AbortController();
     async function poll(){
-      try{const next=await api<BookData>('/api/market/orderbook',{signal:abort.signal});if(alive){setData(next);setError('');}}
-      catch(reason){if(alive)setError(String(reason));}
-      finally{if(alive)timer=setTimeout(poll,1000);}
+      try{
+        const next=await api<{symbol:string;orderBook?:OrderBookSnapshot;trades?:LiveTrade[]}>(`/api/market/orderbook?part=${tab==='book'?'book':'trades'}`,{signal:abort.signal});
+        if(!alive)return;
+        setSymbol(next.symbol);setError('');
+        if(tab==='book')setBook(next.orderBook??null);else setTrades(next.trades??null);
+      }catch(reason){if(alive)setError(String(reason));}
+      finally{if(alive)timer=setTimeout(poll,500);}
     }
     void poll();
     return()=>{alive=false;abort.abort();clearTimeout(timer);};
-  },[active,unavailable]);
-  const message=unavailable??(error?'Order book is unavailable. Retrying automatically.':'Loading order book...');
-  return <OrderBookPanel id="paper-order-book" data={unavailable?null:data} base={base} resetKey={base} emptyBook={message} emptyTrades={unavailable??(error?'Trades are unavailable. Retrying automatically.':'Loading trades...')}/>;
+  },[active,unavailable,tab]);
+  return <OrderBookPanel id="paper-order-book" tab={tab} onTab={setTab} data={{symbol,book:unavailable?null:book,trades:unavailable?null:trades}} base={base} resetKey={base}
+    emptyBook={unavailable??(error?'Order book is unavailable. Retrying automatically.':'Loading order book...')}
+    emptyTrades={unavailable??(error?'Trades are unavailable. Retrying automatically.':'Loading trades...')}/>;
 }
 
-function OrderBookPanel({id,data,base,resetKey,emptyBook,emptyTrades}:{id:string;data:BookData|null;base:string;resetKey:string;emptyBook:string;emptyTrades:string}){
-  const quoteName=data?.symbol?.split('/')[1]?.split(':')[0]??'USDT';
-  const [tab,setTab]=useState<'book'|'trades'>('book');
+function OrderBookPanel({id,tab,onTab,data,base,resetKey,emptyBook,emptyTrades}:{id:string;tab:Tab;onTab:(tab:Tab)=>void;data:PanelData;base:string;resetKey:string;emptyBook:string;emptyTrades:string}){
+  const quoteName=data.symbol?.split('/')[1]?.split(':')[0]??'USDT';
   const [multiplier,setMultiplier]=useState(1);
   const [quote,setQuote]=useState(false);
-  const book=data?.orderBook;
+  const book=data.book;
   // Show as many levels per side as fit the panel height (head + spread rows excluded).
   const table=useRef<HTMLDivElement>(null);
   const [levels,setLevels]=useState(11);
@@ -103,11 +127,11 @@ function OrderBookPanel({id,data,base,resetKey,emptyBook,emptyTrades}:{id:string
     <span role="cell">{amount(level.size)}</span>
     <span role="cell">{amount(level.total)}</span>
   </div>;
-  const trades=data?.trades??[];
+  const trades=data.trades??[];
   return <section id={id} className="terminal-panel order-book-panel" aria-label="Order book and recent trades">
     <div className="order-book-tabs" role="tablist" aria-label="Market depth">
-      <button type="button" role="tab" aria-selected={tab==='book'} onClick={()=>setTab('book')}>Order Book</button>
-      <button type="button" role="tab" aria-selected={tab==='trades'} onClick={()=>setTab('trades')}>Trades</button>
+      <button type="button" role="tab" aria-selected={tab==='book'} onClick={()=>onTab('book')}>Order Book</button>
+      <button type="button" role="tab" aria-selected={tab==='trades'} onClick={()=>onTab('trades')}>Trades</button>
     </div>
     {tab==='book'?<>
       <div className="order-book-controls">
