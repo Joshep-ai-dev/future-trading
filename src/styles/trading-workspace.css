@@ -777,3 +777,13 @@ html::-webkit-scrollbar,body::-webkit-scrollbar { display: none; }
 .result-workspace,
 .setup-layout,.setup-main,.setup-aside,
 .settings-layout { gap: 6px !important; }
+
+/* Stable market header: fixed-width digits and reserved widths so updating
+   prices and stats never push neighbouring items around. */
+.market-header .live-header-price strong,
+.market-header .live-header-stats .ui-metric strong { font-variant-numeric: tabular-nums; }
+@media(min-width:701px) {
+  .market-header .live-header-price { flex: none; min-width: 140px; }
+  .market-header .live-header-stats { flex: 0 1 auto; }
+  .market-header .live-header-stats > .ui-metric { flex: none; min-width: 128px; }
+}
