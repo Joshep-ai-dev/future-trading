@@ -1,5 +1,7 @@
 import {useRef,useState,type ReactNode} from 'react';
 import Button from '@mui/material/Button';
+import MenuItem from '@mui/material/MenuItem';
+import MenuList from '@mui/material/MenuList';
 import ClickAwayListener from '@mui/material/ClickAwayListener';
 import Paper from '@mui/material/Paper';
 import Popper from '@mui/material/Popper';
@@ -43,5 +45,14 @@ export function MaterialTimePicker({value,disabled=false,onChange}:{value:string
   const current=dayjs(`2000-01-01T${value}`);
   return <PickerField label="Choose chart time" text={value} disabled={disabled} className="is-time">
     {close=><MultiSectionDigitalClock value={current} ampm={false} timeSteps={{hours:1,minutes:1}} disabled={disabled} onChange={(selected,_state,section)=>{if(!selected?.isValid())return;onChange(selected.format('HH:mm'));if(section==='minutes')close();}} sx={{'& .MuiMultiSectionDigitalClockSection-root':{width:64,maxHeight:260},'& .MuiMultiSectionDigitalClockSection-item':{fontSize:12,width:52}}}/>}
+  </PickerField>;
+}
+
+const WEEKDAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+/** Weekday filter in the same popup style; value is 'all' or '0'..'6' (Sunday first). */
+export function MaterialWeekdayPicker({value,disabled=false,onChange}:{value:string;disabled?:boolean;onChange:(value:string)=>void}){
+  const options=[{value:'all',label:'Every day'},...WEEKDAYS.map((label,index)=>({value:String(index),label}))];
+  return <PickerField label="Choose weekday" text={options.find(option=>option.value===value)?.label??'Every day'} disabled={disabled} className="is-weekday">
+    {close=><MenuList autoFocusItem dense aria-label="Weekday" sx={{minWidth:140,py:1}}>{options.map(option=><MenuItem key={option.value} selected={option.value===value} onClick={()=>{onChange(option.value);close();}} sx={{fontSize:12,minHeight:32,borderRadius:1,mx:1,'&.Mui-selected':{bgcolor:'rgba(134,181,255,.18)',color:'primary.main'}}}>{option.label}</MenuItem>)}</MenuList>}
   </PickerField>;
 }
