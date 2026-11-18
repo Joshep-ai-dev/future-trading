@@ -133,7 +133,7 @@ button.workspace-focus-toggle[aria-expanded=false] { color: #9ebeff; border-colo
 @media(min-width:1100px) {
   .app-shell[data-page=paper] .terminal-grid { grid-template-columns: minmax(0,1fr) 320px; }
   .app-shell[data-page=paper] .terminal-grid[data-controls=hidden] { grid-template-columns: minmax(0,1fr); }
-  .app-shell[data-page=paper] .terminal-main { grid-template-rows: var(--terminal-chart,clamp(500px,65dvh,860px)) 12px auto; }
+  .app-shell[data-page=paper] .terminal-main { grid-template-rows: auto var(--terminal-chart,clamp(500px,65dvh,860px)) 12px auto; }
   .app-shell[data-page=paper] .terminal-sidebar { top: calc(var(--header-height) + 12px); max-height: calc(100dvh - var(--header-height) - 24px); overflow-y: auto; padding-right: 2px; }
 }
 @media(min-width:1600px) {
@@ -692,3 +692,12 @@ button.chart-date-trigger.is-open { color: #a9c2ff; background: #223251; border-
 .chart-navigation-tools .chart-date-header-fields .material-date-trigger:disabled { color: #dce8f9; opacity: .6; }
 .material-chart-calendar { color-scheme: dark; }
 .material-chart-calendar button { font-family: inherit; }
+
+/* Market header sits above the chart column only; the sidebar runs from the top. */
+.app-shell[data-page=paper] .terminal-main > .exchange-market-header { margin: 0 0 12px; min-width: 0; }
+@media(max-width:1099px) { .terminal-main > .market-header { order: 0; } }
+/* Sidebar scrolls without a visible scrollbar. */
+.app-shell[data-page=paper] .terminal-sidebar,
+.app-shell[data-page=paper] .terminal-sidebar * { scrollbar-width: none; }
+.app-shell[data-page=paper] .terminal-sidebar::-webkit-scrollbar,
+.app-shell[data-page=paper] .terminal-sidebar *::-webkit-scrollbar { display: none; }
