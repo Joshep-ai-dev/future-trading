@@ -770,3 +770,10 @@ html::-webkit-scrollbar,body::-webkit-scrollbar { display: none; }
 .activity-panel,
 .exchange-activity,
 .app-shell[data-page=paper] .terminal-panel.price-panel { border-radius: 10px !important; overflow: hidden; }
+
+/* Same 6px gutters between panels as the trading page. */
+.fc-layout,.fc-main,
+.news-page,.news-grid,.news-side,
+.result-workspace,
+.setup-layout,.setup-main,.setup-aside,
+.settings-layout { gap: 6px !important; }
