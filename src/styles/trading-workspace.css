@@ -30,6 +30,13 @@
 .workspace-account-mode.is-live { border-color: #8d5d25; background: #332719; color: #ffc77c; }
 button.workspace-focus-toggle { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 11px; min-height: 34px; width: auto; background: #1a1d23; border: 1px solid #363b45; border-radius: 6px; color: #d9dde6; font-size: 11px; white-space: nowrap; }
 .workspace-focus-toggle svg { width: 17px; height: 17px; flex: none; }
+.account-summary-heading { display: flex; align-items: center; gap: 8px; min-width: 0; }
+button.workspace-sidebar-arrow { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 28px; height: 28px; padding: 4px; border: 1px solid #363b45; border-radius: 5px; background: #1a1d23; color: #d9dde6; cursor: pointer; }
+.workspace-sidebar-arrow svg { width: 18px; height: 18px; }
+button.workspace-sidebar-arrow:hover { background: #222a37; border-color: #6386c3; }
+button.workspace-sidebar-arrow:focus-visible { outline: 2px solid #9ebeff; outline-offset: 2px; }
+.app-shell[data-page=paper] .terminal-grid { position: relative; }
+.workspace-sidebar-reopen { position: absolute; right: 8px; top: 22px; z-index: 5; }
 button.workspace-focus-toggle:hover { border-color: #6386c3; background: #222a37; }
 button.workspace-focus-toggle[aria-expanded=false] { color: #9ebeff; border-color: #496da7; background: #18253a; }
 

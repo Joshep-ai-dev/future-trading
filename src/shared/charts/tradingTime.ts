@@ -8,9 +8,9 @@ export const useTradingTimeZone=useChartTimeZone;
 
 export function formatTradingTime(epochSeconds:number,timeZone:TradingTimeZone=readChartTimeZone()){
   const parts=new Intl.DateTimeFormat('en-GB',{
-    timeZone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',
+    timeZone,weekday:'short',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',
     hourCycle:'h23',timeZoneName:'short',
   }).formatToParts(new Date(epochSeconds*1000));
   const part=(type:Intl.DateTimeFormatPartTypes)=>parts.find(value=>value.type===type)?.value??'';
-  return `${part('year')}-${part('month')}-${part('day')} ${part('hour')}:${part('minute')}:${part('second')} ${part('timeZoneName')}`;
+  return `${part('weekday')}, ${part('year')}-${part('month')}-${part('day')} ${part('hour')}:${part('minute')}:${part('second')} ${part('timeZoneName')}`;
 }
