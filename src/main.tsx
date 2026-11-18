@@ -4,7 +4,7 @@ import {api} from './shared/api/api';
 import type {Page} from './app/Tabs';
 import AppHeader from './app/layout/AppHeader';
 import BacktestPanel,{START_FOCUS} from './app/BacktestPanel';
-import MarketStatus from './shared/ui/MarketStatus';
+import {MarketSyncContext,useMarketSync} from './shared/api/useMarketSync';
 import AuthScreen,{type SignedInUser} from './features/auth/AuthScreen';
 import {useExchangeVenue} from './shared/api/exchangeVenue';
 import './style.css';
@@ -21,15 +21,15 @@ function App({user,onSignedOut}:{user:SignedInUser;onSignedOut:()=>void}) {
     catch(e){setError(String(e));}
   },[]);
   useEffect(()=>{void loadRange();},[loadRange]);
+  const marketSync=useMarketSync(loadRange);
   function navigate(next:Page){setPage(next);window.scrollTo({top:0});}
   function changeAccountMode(mode:'live'|'paper'){setAccountMode(mode);try{localStorage.setItem('silver.account.mode',mode);}catch{/* Account mode remains available for this session. */}}
   async function signOut(){await api('/api/auth/sign-out',{method:'POST'});onSignedOut();}
-  return <main className="app-shell" data-page={page} data-mode={accountMode}><AppHeader page={page} onNavigate={navigate} accountMode={accountMode} onModeChange={changeAccountMode} user={user} onSignOut={()=>void signOut()}/>
-    {page!=='account'&&!(page==='paper'&&accountMode==='live')&&<MarketStatus accountMode={accountMode} onUpdated={()=>void loadRange()}/>}
+  return <MarketSyncContext.Provider value={marketSync}><main className="app-shell" data-page={page} data-mode={accountMode}><AppHeader page={page} onNavigate={navigate} accountMode={accountMode} onModeChange={changeAccountMode} user={user} onSignOut={()=>void signOut()}/>
     {error&&<p className="error" role="alert">{error}</p>}
     {range?<BacktestPanel range={range} view={page} onViewChange={navigate} accountMode={accountMode} onAccountModeChange={changeAccountMode}/>:<p role="status">Loading market history...</p>}
     <footer className="app-footer"><span><i className="status-dot"/> LOCAL WORKSPACE</span><span>{accountMode==='live'?exchangeVenue.toUpperCase():'OKX'} · XAG / USDT perpetual</span><span>{accountMode==='live'?'Exchange market stream · Real account':'Virtual funds · Candle-based execution'}</span></footer>
-  </main>;
+  </main></MarketSyncContext.Provider>;
 }
 function Root(){
   const [auth,setAuth]=useState<{configured:boolean;available:boolean;error:string|null;user:SignedInUser|null}|null>(null);

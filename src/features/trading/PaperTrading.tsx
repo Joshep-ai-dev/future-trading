@@ -1,3 +1,5 @@
+import {MarketSyncContext} from '../../shared/api/useMarketSync';
+import MarketDataInfo from '../../shared/ui/MarketDataInfo';
 import MarketHeader from '../../shared/ui/MarketHeader';
 import PaperMarketPicker from './PaperMarketPicker';
 import {useMarketDatasets} from '../../shared/api/useMarketDatasets';
@@ -11,7 +13,7 @@ import {TIMEFRAMES,chartPosition} from '../../shared/charts/chartTimeframe';
 import TradeView from '../../shared/ui/TradeView';
 import {STOP_COLORS,type StopPoint} from '../../shared/charts/StopOverlay';
 import {FILL_COLORS} from '../../shared/charts/fillMarkers';
-import {useEffect,useMemo,useRef,useState} from 'react';
+import {useContext,useEffect,useMemo,useRef,useState} from 'react';
 import {api} from '../../shared/api/api';
 import {EquityChart} from '../../shared/charts/BacktestChart';
 import PaperPriceChart,{type ChartFocus} from '../../shared/charts/PaperPriceChart';
@@ -81,10 +83,8 @@ function adxSupertrendRules(settings:BacktestSettings):[string,string][]{
 
 export default function PaperTrading({settings,onChange,onConfigure,visible,profiles,onApplySetup,focus=null}:{settings:BacktestSettings;onChange:(s:BacktestSettings)=>void;onConfigure:()=>void;visible:boolean;profiles:SavedSetup[];onApplySetup:(setup:SavedSetup)=>void;focus?:ChartFocus|null}) {
   const datasets=useMarketDatasets();
+  const marketSync=useContext(MarketSyncContext);
   const chosenDataset=datasets.find(item=>item.id===settings.market);
-  const [paperMode,setPaperMode]=useState<'live'|'replay'>('live');
-  const [replayStart,setReplayStart]=useState(settings.start_date),[replayEnd,setReplayEnd]=useState(settings.end_date);
-  useEffect(()=>{if(chosenDataset){setPaperMode('replay');setReplayStart(chosenDataset.startDate);setReplayEnd(chosenDataset.endDate);}},[chosenDataset?.id]);
   const tradingTimeZone=useTradingTimeZone();
   const marketDataRevision=useMarketDataRevision();
   const [chartTimeframe,setChartTimeframe]=useState<BacktestSettings['entry_timeframe']>(settings.entry_timeframe);
@@ -116,7 +116,7 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
   async function action(action:'start'|'pause'|'resume') {
     if(settings.strategy==='none'&&action!=='pause')return;
     revision.current++;setBusy(true);setError('');
-    try{setData(await api<Response>(`/api/paper/${action}`,{method:'POST',headers:{'Content-Type':'application/json'},...(action==='start'?{body:JSON.stringify({...settings,paper_mode:settings.market!=='xag'?'replay':paperMode,replay_start:replayStart,replay_end:replayEnd})}:{})}));}
+    try{setData(await api<Response>(`/api/paper/${action}`,{method:'POST',headers:{'Content-Type':'application/json'},...(action==='start'?{body:JSON.stringify({...settings,paper_mode:settings.market==='xag'?'live':'replay',...(settings.market==='xag'?{}:{replay_start:chosenDataset?.startDate??settings.start_date,replay_end:chosenDataset?.endDate??settings.end_date})})}:{})}));}
     catch(e){setError(String(e));}finally{revision.current++;setBusy(false);}
   }
   const s=showingSession?data.session:null;
@@ -172,6 +172,7 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
       price={fmt(price,3)}
       quote={paperQuote}
       direction={ticker.tick}
+      info={<MarketDataInfo source={activeDataset?.venue.toUpperCase()??'OKX'} timestamp={activeDataset?activeDataset.end*1000:marketSync?.lastSuccess?marketSync.lastSuccess*1000:null} label={activeDataset?'Last candle':'Synced'} syncing={!activeDataset&&!!marketSync?.running} error={!activeDataset&&!!marketSync?.error}/>}
       metrics={[
         {label:'24h change',value:ticker.change===null?'\u2014':`${signed(ticker.change,3)} ${signed(ticker.percent,2)}%`,tone:(ticker.change??0)<0?'negative':'positive'},
         {label:'24h high / low',value:`${fmt(ticker.high,3)} / ${fmt(ticker.low,3)}`},
@@ -211,7 +212,6 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
     <aside id="paper-execution-sidebar" className="terminal-sidebar" aria-label="Paper trading controls" hidden={!controlsOpen}>
       <section className="terminal-panel trading-account-summary" aria-label="Paper account summary"><header><div className="account-summary-heading"><SidebarArrow open={controlsOpen} onToggle={()=>setControlsOpen(value=>!value)} panelId="paper-execution-sidebar"/><h2>Account overview</h2></div><span>Virtual funds</span></header><div className="account-equity"><span>Equity</span><strong>{fmt(equity,2)} <small>{paperQuote}</small></strong></div><div className="account-summary-metrics"><Metric label="Balance" value={fmt(balance,2)} unit={paperQuote}/><Metric label="Session P&L" value={`${pnl>=0?'+':''}${fmt(pnl,2)}`} unit={paperQuote} tone={pnl>=0?'positive':'negative'}/></div><div className="account-summary-time"><span>{s?(s.mode==='replay'?'Replay clock':'Session clock'):'Last market candle'}</span><time>{date(s?(s.mode==='replay'?displayClock:s.virtualTime??s.lastProcessed):liveMarket.minutes.at(-1)?.time??preview.at(-1)?.time??null,tradingTimeZone)}</time></div></section>
       <section className="terminal-panel bot-control"><div className="panel-heading"><h2>Paper bot</h2><span className={`bot-state ${s?.running?'is-running':''}`}><i className="status-dot"/>{status}</span></div>
-      <details className="paper-replay-settings"><summary><span>Session settings</span><small>{settings.market!=='xag'||paperMode==='replay'?'Historical replay':'Live paper'}</small></summary><div><label>Mode<select aria-label="Paper test mode" value={settings.market!=='xag'?'replay':paperMode} disabled={busy||!!s?.running||settings.market!=='xag'} onChange={event=>setPaperMode(event.target.value as 'live'|'replay')}><option value="live">Live paper trading</option><option value="replay">Historical replay</option></select></label>{(paperMode==='replay'||settings.market!=='xag')&&<><label>Start date (UTC)<input aria-label="Replay start date" type="date" value={replayStart} disabled={busy||!!s?.running} onChange={event=>setReplayStart(event.target.value)}/></label><label>End date (UTC)<input aria-label="Replay end date" type="date" min={replayStart} value={replayEnd} disabled={busy||!!s?.running} onChange={event=>setReplayEnd(event.target.value)}/></label></>}<p>Tests use virtual funds and the selected market history.</p></div></details>
       {settings.strategy==='none'?<div className="bot-form"><h3>No strategy configured</h3><p>The market chart and account history remain available. Automated paper trading is disabled.</p>{s?.running&&<button type="button" disabled={busy} onClick={()=>void action('pause')}>Pause existing session</button>}</div>:<form className="bot-form" onSubmit={e=>{e.preventDefault();void action('start');}}><fieldset disabled={busy||s?.running}>
         <BotSelector strategy={config.strategy} onStrategyChange={key=>onChange({...settings,strategy:key})} profiles={profiles} onApplySetup={onApplySetup} setupLabel="Saved parameters"/>
         <label>Timeframe<select value={config.entry_timeframe} onChange={e=>onChange({...settings,entry_timeframe:e.target.value as BacktestSettings['entry_timeframe']})}>{['1m','3m','5m','10m','15m','30m','1h','4h','1d'].map(tf=><option key={tf} value={tf}>{tf}</option>)}</select></label>
