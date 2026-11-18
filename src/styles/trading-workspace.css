@@ -898,3 +898,4 @@ html::-webkit-scrollbar,body::-webkit-scrollbar { display: none; }
 .ticket-available small,
 .ticket-market-price small { color: var(--muted); font-size: 9px; font-weight: 400; }
 .ticket-market-price { margin-bottom: 12px; }
+.ticket-available { margin-top: 12px; }
