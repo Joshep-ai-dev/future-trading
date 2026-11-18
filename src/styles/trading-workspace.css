@@ -901,3 +901,7 @@ html::-webkit-scrollbar,body::-webkit-scrollbar { display: none; }
 .ticket-available { margin-top: 12px; }
 .order-book-updated { flex: none; height: 22px; padding: 0 10px; border-top: 1px solid #23272f; color: #6f7a8a; font-size: 10px; line-height: 22px; text-align: right; font-variant-numeric: tabular-nums; }
 .order-trades .order-book-row { grid-template-columns: 1fr 1fr 1.2fr; }
+
+/* Divider after the chart title: same 20px line as the other toolbar dividers. */
+.app-shell[data-page=paper] .chart-toolbar-heading { position: relative; border-right: 0 !important; }
+.app-shell[data-page=paper] .chart-toolbar-heading::after { content: ''; position: absolute; top: 50%; right: 0; width: 1px; height: 20px; transform: translateY(-50%); background: var(--tv-border, #2a2e39); }
