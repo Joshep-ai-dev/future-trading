@@ -865,3 +865,7 @@ html::-webkit-scrollbar,body::-webkit-scrollbar { display: none; }
 .app-shell[data-page=paper] .price-panel > .tv-toolbar { border-radius: 10px 10px 0 0 !important; }
 .price-panel .chart-resize { border-radius: 0 0 10px 10px; overflow: hidden; }
 .price-panel > .chart-resize:first-child { border-radius: 10px; }
+/* Tab underline sits directly on the row's bottom line (same as the order book). */
+.live-method-section .execution-tabs-row { height: 38px; min-height: 38px; }
+.live-method-section .execution-tabs-row > .live-execution-mode-tabs { align-items: stretch; height: 100%; min-height: 0; }
+.live-method-section .execution-tabs-row > .live-execution-mode-tabs [role=tab] { display: flex; align-items: center; justify-content: center; height: 100%; min-height: 0; margin: 0; }
