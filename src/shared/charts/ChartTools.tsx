@@ -1,4 +1,4 @@
-import {useEffect,useRef,useState} from 'react';
+import {useEffect,useRef,useState,type ReactNode} from 'react';
 import type {IChartApi} from 'lightweight-charts';
 import type {ChartIndicatorSelection} from './chartIndicatorSelection';
 
@@ -20,8 +20,8 @@ export function resizeChart(chart:IChartApi,element:HTMLDivElement,initialView:(
   return ()=>observer.disconnect();
 }
 
-export default function ChartTools({chartRef,valueLabel='Price',horizontalLabel='Time',onFullscreen,fullscreen=false,endLabel='Latest',onLatest,onEarlier,onNavigate,loading=false,hasMore=false,indicators,onToggleIndicator,strategyVisible,onToggleStrategy,follow,onFollowChange,showEarlier=false,onAnalyzePattern,patternSelecting=false}: {
-  onAnalyzePattern?:()=>void;patternSelecting?:boolean;
+export default function ChartTools({chartRef,valueLabel='Price',horizontalLabel='Time',onFullscreen,fullscreen=false,endLabel='Latest',onLatest,onEarlier,onNavigate,loading=false,hasMore=false,indicators,onToggleIndicator,strategyVisible,onToggleStrategy,follow,onFollowChange,showEarlier=false,onAnalyzePattern,patternSelecting=false,actions}: {
+  actions?:ReactNode;onAnalyzePattern?:()=>void;patternSelecting?:boolean;
   chartRef: {current:IChartApi|null}; valueLabel?:string; onLatest?:()=>void;
   endLabel?:string;horizontalLabel?:string;onFullscreen?:()=>void;fullscreen?:boolean;
   onEarlier?:()=>void; loading?:boolean; hasMore?:boolean;
@@ -71,12 +71,12 @@ export default function ChartTools({chartRef,valueLabel='Price',horizontalLabel=
   const needle=query.trim().toLowerCase();
   const matches=(text:string)=>!needle||text.toLowerCase().includes(needle);
   return <div className="chart-actions tv-toolbar">
-    {onAnalyzePattern&&<button type="button" className="tv-pattern-analyze" aria-pressed={patternSelecting} title="Select a candle range and find similar chart patterns" onClick={onAnalyzePattern}><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M2 15l4-7 4 4 4-9 4 5M2 18h16" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg>{patternSelecting?'Cancel selection':'Analyze pattern'}</button>}
+    {onAnalyzePattern&&<button type="button" className="tv-icon tv-pattern-analyze" aria-label={patternSelecting?"Cancel pattern selection":"Analyze pattern"} aria-pressed={patternSelecting} title="Select a candle range and find similar chart patterns" onClick={onAnalyzePattern}><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M2 15l4-7 4 4 4-9 4 5M2 18h16" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg></button>}
     {(overlays||studies)&&<details className="tv-menu" ref={menu} onToggle={event=>{if(!(event.currentTarget as HTMLDetailsElement).open)setQuery('');}}><summary title="Indicators"><svg viewBox="0 0 28 28" aria-hidden="true"><path d="M10.5 22c2 0 2.6-1.6 3-4l1.6-9c.4-2.3 1-4 3.4-4M10 11h8M15.5 15l5 6M20.5 15l-5 6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>Indicators{activeCount>0&&<span className="tv-count">{activeCount}</span>}</summary>
       <div className="tv-menu-popover" role="group" aria-label="Chart overlays and indicators">
         <div className="tv-menu-search"><svg viewBox="0 0 18 18" aria-hidden="true"><circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" strokeWidth="1.4"/><path d="M12 12l4 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg><input type="search" placeholder="Search" aria-label="Search indicators" value={query} onChange={event=>setQuery(event.target.value)}/></div>
         <p className="tv-menu-section">Script name</p>
-        {overlays&&matches('Trend overlays moving averages')&&<label><input type="checkbox" checked={strategyVisible} onChange={onToggleStrategy}/><span>Trend overlays<small>Moving averages from chart history</small></span></label>}
+        {overlays&&matches('MA simple moving average SMA')&&<label><input type="checkbox" checked={strategyVisible} onChange={onToggleStrategy}/><span>MA<small>Simple moving average</small></span></label>}
         {studies&&studyList.filter(study=>matches(`${study.name} ${study.description}`)).map(study=><label key={study.key}><input type="checkbox" checked={indicators[study.key]} onChange={()=>onToggleIndicator(study.key)}/><span>{study.name}<small>{study.description}</small></span></label>)}
       </div>
     </details>}
@@ -88,10 +88,10 @@ export default function ChartTools({chartRef,valueLabel='Price',horizontalLabel=
       <button type="button" className="tv-icon" title={`Compress ${valueLabel.toLowerCase()} scale`} aria-label={`Zoom out ${valueLabel.toLowerCase()}`} onClick={()=>zoomValue(1/.7)}><svg viewBox="0 0 28 28" aria-hidden="true"><path d="M14 5v18M10 5l4 4 4-4M10 23l4-4 4 4" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg></button>
       <button type="button" className="tv-icon" title="Reset chart view" aria-label="Fit / reset" onClick={reset}><svg viewBox="0 0 28 28" aria-hidden="true"><path d="M7 14a7 7 0 1 0 2.2-5.1M7 6v4h4" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg></button>
       <button type="button" className="tv-icon" title="Take a snapshot (download PNG)" aria-label="Take a snapshot" onClick={snapshot}><svg viewBox="0 0 28 28" aria-hidden="true"><path d="M5.5 10.5a2 2 0 0 1 2-2h2.3l1.7-2.5h5l1.7 2.5h2.3a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2Z" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/><circle cx="14" cy="14.5" r="3.6" fill="none" stroke="currentColor" strokeWidth="1.4"/></svg></button>
-      {(onEarlier||showEarlier)&&<button type="button" className="tv-text" title="Load older candles" disabled={loading||!hasMore||!onEarlier} onClick={onEarlier}>{loading?'Loading…':'Load earlier'}</button>}
+      {(onEarlier||showEarlier)&&<button type="button" className="tv-icon" aria-label={loading?"Loading earlier candles":"Load earlier candles"} title="Load older candles" disabled={loading||!hasMore||!onEarlier} onClick={onEarlier}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5l-7 7 7 7M4 12h16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg></button>}
       {onFullscreen&&<button type="button" className="tv-icon" title={fullscreen?'Exit fullscreen':'Fullscreen mode'} aria-label={fullscreen?'Exit chart fullscreen':'Show chart fullscreen'} aria-pressed={fullscreen} onClick={onFullscreen}>{fullscreen?<svg viewBox="0 0 28 28" aria-hidden="true"><path d="M11 6v5H6M17 6v5h5M11 22v-5H6M17 22v-5h5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>:<svg viewBox="0 0 28 28" aria-hidden="true"><path d="M6 11V6h5M22 11V6h-5M6 17v5h5M22 17v5h-5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>}</button>}
     </div>
-    <div className="tv-spacer"/>
+    {actions&&<div className="chart-navigation-tools">{actions}</div>}<div className="tv-spacer"/>
     {follow!==undefined&&onFollowChange&&<label className="tv-follow" title="Keep the latest candle in view"><input type="checkbox" checked={follow} onChange={event=>{onNavigate?.();onFollowChange(event.target.checked);if(event.target.checked)onLatest?.();}}/><i aria-hidden="true"/>Follow</label>}
     {onLatest&&<button type="button" className="tv-text tv-latest" title="Scroll to the most recent bar" onClick={onLatest}>{endLabel}<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5l5 5-5 5M11 5l5 5-5 5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg></button>}
   </div>;

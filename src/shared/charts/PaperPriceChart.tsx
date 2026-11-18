@@ -77,6 +77,7 @@ import type { Analysis } from "../types/types";
 import type { PaperTrade, Position } from "../../features/trading/PaperTrading";
 import { chartVolume } from "./chartVolume";
 import PatternRangeAnalyzer from "./PatternRangeAnalyzer";
+import ChartTimeNavigator from "./ChartTimeNavigator";
 
 type Point = {
   time: number;
@@ -165,14 +166,17 @@ export default function PaperPriceChart(props: Props) {
     adx: false,
     rsi: false,
   });
-  const [strategyVisible, setStrategyVisible] = useState(true);
+  const [strategyVisible, setStrategyVisible] = useState(false);
+  const [maHidden, setMaHidden] = useState(false);
   const strategyVisibleRef = useRef(strategyVisible);
-  strategyVisibleRef.current = strategyVisible;
+  strategyVisibleRef.current = strategyVisible && !maHidden;
   const hiddenRef = useRef(hiddenIndicators);
   hiddenRef.current = hiddenIndicators;
   const updateVisibility = useRef<() => void>(() => {});
   const updateStrategyVisibility = useRef<() => void>(() => {});
   const loadEarlier = useRef<() => void>(() => {});
+  const clearFocus = useRef<() => void>(() => {});
+  const focusRequest = useRef(0);
   const focusOn = useRef<(focus: ChartFocus) => Promise<void>>(async () => {});
   const [loading, setLoading] = useState(false),
     [hasMore, setHasMore] = useState(true),
@@ -257,20 +261,19 @@ export default function PaperPriceChart(props: Props) {
     const focusMarker = createSeriesMarkers(price, []);
     const fillLabels = new FillLabels();
     price.attachPrimitive(fillLabels);
-    const overlays = props.showSma
-      ? [
-          {
-            key: "trendSma" as const,
-            series: chart.addSeries(LineSeries, {
-              color: configRef.current.trendSmaColor,
-              lineWidth: configRef.current.trendSmaWidth as 1 | 2 | 3 | 4,
-              title: "",
-              priceLineVisible: false,
-              lastValueVisible: false,
-            }),
-          },
-        ]
-      : [];
+    const overlays = [
+      {
+        key: "trendSma" as const,
+        series: chart.addSeries(LineSeries, {
+          color: configRef.current.trendSmaColor,
+          lineWidth: configRef.current.trendSmaWidth as 1 | 2 | 3 | 4,
+          title: "",
+          priceLineVisible: false,
+          lastValueVisible: false,
+          visible: strategyVisibleRef.current,
+        }),
+      },
+    ];
     updateStrategyVisibility.current = () => {
       for (const { series } of overlays)
         series.applyOptions({ visible: strategyVisibleRef.current });
@@ -629,7 +632,9 @@ export default function PaperPriceChart(props: Props) {
     loadEarlier.current = () => {
       void earlier();
     };
+    clearFocus.current = () => { focusRequest.current++; focusMarker.setMarkers([]); };
     focusOn.current = async (focus) => {
+      const request = ++focusRequest.current;
       // Load contiguous history back to a little before the focus time (large pages), then centre it.
       const duration = TIMEFRAMES[props.timeframe as keyof typeof TIMEFRAMES];
       following.current = false;
@@ -637,9 +642,9 @@ export default function PaperPriceChart(props: Props) {
       setLoading(true);
       setHistoryError("");
       try {
-        while (!disposed && cached.length && cached[0].time > focus.time - 120 * duration && more && !props.loadHistory) {
+        while (!disposed && request === focusRequest.current && cached.length && cached[0].time > focus.time - 120 * duration && more && (props.allowLocalHistory !== false || props.loadHistory)) {
           const before = cached[0].time;
-          const page = await api<HistoryPage>("/api/candles", {
+          const page = props.loadHistory ? await props.loadHistory(before) : await api<HistoryPage>("/api/candles", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             signal: abort.signal,
@@ -649,18 +654,18 @@ export default function PaperPriceChart(props: Props) {
           cached = mergeHistory(older, cached);
           more = page.hasMore && older.length > 0;
         }
-        if (disposed || !latestData) return;
+        if (disposed || request !== focusRequest.current || !latestData) return;
         setHasMore(more);
         update.current(latestData);
         const bucket = Math.floor(focus.time / duration) * duration;
         const index = cached.findIndex((c) => c.time >= bucket);
-        if (index < 0 || cached[0].time > focus.time) {
+        if (index < 0 || cached[0].time > focus.time || cached[index].time !== bucket) {
           setHistoryError("No candles are available for that date.");
           return;
         }
         focusMarker.setMarkers([{ time: cached[index].time as UTCTimestamp, position: "aboveBar", shape: "arrowDown", color: TV.orange, text: focus.label }]);
         const span = Math.max(80, Math.round(5 * 3600 / duration));
-        chart.timeScale().setVisibleLogicalRange({ from: index - span * 0.25, to: index + span * 0.75 });
+        chart.timeScale().setVisibleLogicalRange({ from: index - span / 2, to: index + span / 2 });
       } catch (error) {
         if (!disposed) setHistoryError(`Could not load candles for that date: ${String(error)}`);
       } finally {
@@ -1031,7 +1036,7 @@ export default function PaperPriceChart(props: Props) {
   }, [hiddenIndicators, hiddenOverlays]);
   useEffect(() => {
     updateStrategyVisibility.current();
-  }, [strategyVisible]);
+  }, [strategyVisible, maHidden]);
   useEffect(() => {
     changePanels.current(selectedIndicators, indicatorConfig);
   }, [
@@ -1045,7 +1050,9 @@ export default function PaperPriceChart(props: Props) {
     props.allowLocalHistory !== false || !!props.loadHistory;
   return (
     <>
+
       <ChartTools
+        actions={<ChartTimeNavigator timeZone={timeZone} getLatest={()=>props.candles.at(-1)?.time??Date.now()/1000} onSelect={selection=>void focusOn.current(selection)} onCancel={()=>{clearFocus.current();latest();}} busy={loading}/>}
         onAnalyzePattern={() => { holdView(); setPatternSelecting(value => !value); }}
         patternSelecting={patternSelecting}
         chartRef={chartRef}
@@ -1058,7 +1065,7 @@ export default function PaperPriceChart(props: Props) {
         indicators={selectedIndicators}
         onToggleIndicator={toggleIndicator}
         strategyVisible={strategyVisible}
-        onToggleStrategy={() => setStrategyVisible((value) => !value)}
+        onToggleStrategy={() => { setMaHidden(false); setStrategyVisible((value) => !value); }}
         follow={follow}
         onFollowChange={setFollow}
       />
@@ -1100,15 +1107,16 @@ export default function PaperPriceChart(props: Props) {
           title={`${props.symbol ?? "XAGUSDT"} · ${props.timeframe}`}
           data={legend}
           overlays={[
-            ...(props.showSma
+            ...(strategyVisible
               ? [
                   {
                     key: "trend-sma",
-                    name: "Trend SMA",
+                    name: "MA",
                     params: String(indicatorConfig.trendSmaLength),
                     color: indicatorConfig.trendSmaColor,
-                    hidden: !strategyVisible,
-                    onToggleVisible: () => setStrategyVisible((v) => !v),
+                    hidden: maHidden,
+                    onToggleVisible: () => setMaHidden((v) => !v),
+                    onRemove: () => setStrategyVisible(false),
                     onSettings: () => setSettingsOpen("trendsma"),
                   },
                 ]

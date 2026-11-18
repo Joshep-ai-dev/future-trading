@@ -4,6 +4,7 @@ export type ChartIndicatorSelection={atr:boolean;adx:boolean;rsi:boolean;supertr
 type IndicatorKey=keyof ChartIndicatorSelection;
 const key='silver.chart.oscillators';
 const changed='silver:chart-oscillators-changed';
+const maDefaultsKey='silver.chart.ma-defaults.v1';
 const defaults:ChartIndicatorSelection={atr:false,adx:false,rsi:false,supertrend:false,bollinger:true,triplema:false};
 let current:ChartIndicatorSelection|null=null;
 
@@ -11,6 +12,13 @@ function read():ChartIndicatorSelection{
   if(current)return current;
   try{const saved=JSON.parse(localStorage.getItem(key)??'{}');current={atr:saved.atr===true,adx:saved.adx===true,rsi:saved.rsi===true,supertrend:saved.supertrend===true,bollinger:saved.bollinger!==false,triplema:saved.triplema===true};}
   catch{current={...defaults};}
+  try{
+    if(localStorage.getItem(maDefaultsKey)!=='1'){
+      current.triplema=false;
+      localStorage.setItem(key,JSON.stringify(current));
+      localStorage.setItem(maDefaultsKey,'1');
+    }
+  }catch{/* Keep chart settings usable when storage is unavailable. */}
   return current;
 }
 function subscribe(listener:()=>void){

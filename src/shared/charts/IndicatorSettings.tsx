@@ -82,7 +82,7 @@ export function useIndicatorSettings(){
 /** Hex color plus alpha, e.g. alpha('#00ff00', .65). */
 export function alpha(hex:string,opacity:number){return `${hex}${Math.round(opacity*255).toString(16).padStart(2,'0')}`;}
 
-const TITLES:Record<SettingsKind,string>={trendsma:'Trend SMA',bollinger:'BB',supertrend:'Supertrend',triplema:'Triple MA',rsi:'RSI',adx:'ADX Trend Strength',atr:'ATR'};
+const TITLES:Record<SettingsKind,string>={trendsma:'MA',bollinger:'BB',supertrend:'Supertrend',triplema:'Triple MA',rsi:'RSI',adx:'ADX Trend Strength',atr:'ATR'};
 const FIELDS:Record<SettingsKind,(keyof IndicatorConfig)[]>={
   trendsma:['trendSmaLength','trendSmaColor','trendSmaWidth'],
   bollinger:['bbLength','bbMaType','bbSource','bbMultiplier','bbOffset','bbBasisColor','bbUpperColor','bbLowerColor','bbWidth'],

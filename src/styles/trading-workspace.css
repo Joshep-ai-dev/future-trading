@@ -173,3 +173,54 @@ button.workspace-focus-toggle[aria-expanded=false] { color: #9ebeff; border-colo
 @media(prefers-reduced-motion:reduce) {
   .workspace-focus-toggle { transition: none; }
 }
+.chart-date-inline { min-width: 0; max-width: 100%; color: #c4cad4; color-scheme: dark; }
+.chart-date-inline form { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; padding: 3px; border: 1px solid #2c3038; border-radius: 8px; background: #12151a; }
+.chart-date-inline footer,.chart-date-row { display: flex; align-items: center; gap: 2px; }
+.chart-date-inline footer { margin-left: 2px; padding-left: 4px; border-left: 1px solid #2c3038; }
+.chart-date-row + .chart-date-row { padding-left: 4px; border-left: 1px solid #2c3038; }
+.chart-date-row label { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.chart-date-inline input,.chart-date-inline select,.chart-date-inline button { box-sizing: border-box; width: auto; min-height: 30px; height: 30px; min-width: 0; padding: 4px 6px; background: transparent; color: #c4cad4; border: 1px solid transparent; border-radius: 5px; font: inherit; font-size: 11px; }
+.chart-date-inline input { font-variant-numeric: tabular-nums; }
+.chart-date-inline input[type=date] { width: 122px; }
+.chart-date-inline input[type=time] { width: 102px; }
+.chart-date-inline select { max-width: 100px; cursor: pointer; }
+.chart-date-inline button { display: inline-flex; align-items: center; justify-content: center; width: 30px; flex: none; cursor: pointer; }
+.chart-date-inline button svg,.chart-date-weekday > svg { width: 16px; height: 16px; flex: none; }
+.chart-date-weekday > svg { margin-left: 5px; color: #848e9f; }
+.chart-date-inline button:hover:not(:disabled),.chart-date-inline input:hover,.chart-date-inline select:hover { background: #222833; color: #edf2fc; }
+.chart-date-inline button:disabled { opacity: .25; cursor: default; }
+.chart-date-inline button.chart-date-go { color: #a9c2ff; background: #223251; }
+.chart-date-inline button.chart-date-go:hover:not(:disabled) { color: #fff; background: #304a78; }
+.chart-date-inline :focus-visible { outline: 2px solid #83aaff; outline-offset: 1px; }
+.chart-date-inline p { flex-basis: 100%; margin: 2px 6px; font-size: 11px; color: #f0ad74; }
+.chart-date-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+button.chart-date-trigger.is-open { color: #a9c2ff; background: #223251; border-radius: 5px; }
+@media(max-width:700px) { .chart-date-inline { flex-basis: 100%; } .chart-date-inline form { width: fit-content; max-width: 100%; } .chart-date-row { max-width: 100%; } }/* Keep navigation on the toolbar's shared centerline. */
+.app-shell[data-page=paper] .price-panel > .tv-toolbar { align-items: center; }
+.app-shell[data-page=paper] .tv-toolbar .tv-group { align-items: center; }
+.chart-navigation-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; min-width: 0; max-width: 100%; margin-right: 20px; }
+.chart-date-inline form { padding: 0; border: 0; border-radius: 0; background: transparent; }
+.chart-date-inline footer { padding-left: 6px; }
+.chart-date-inline input,.chart-date-inline select { background: #12151a; }
+.chart-date-inline button { background: transparent; border: 0; }
+.chart-date-inline button.chart-date-go { background: transparent; color: #a9c2ff; }
+.chart-date-inline button.chart-date-go:hover:not(:disabled) { background: #222833; }
+.app-shell[data-page=paper] .tv-toolbar button.tv-pattern-analyze { width: 29px; height: 30px; min-height: 30px; padding: 5px; border: 0; background: transparent; color: #c4cad4; }
+.app-shell[data-page=paper] .tv-toolbar button.tv-pattern-analyze:hover { background: #222833; }
+.app-shell[data-page=paper] .tv-toolbar button.tv-pattern-analyze[aria-pressed=true] { color: #a9c2ff; background: #223251; }
+@media(max-width:700px) { .chart-navigation-tools { flex-basis: 100%; margin-right: 0; } .chart-navigation-tools .chart-date-inline { flex: 1 1 auto; } }
+/* Use one explicit control track, including SVGs and native date/time fields. */
+.chart-navigation-tools { --date-control-size: 30px; align-items: center; }
+.chart-navigation-tools .chart-date-inline { display: flex; align-items: center; }
+.chart-navigation-tools .chart-date-inline form { align-items: center; row-gap: 6px; }
+.chart-navigation-tools .chart-date-row,
+.chart-navigation-tools .chart-date-row label,
+.chart-navigation-tools .chart-date-inline footer { height: var(--date-control-size); margin-top: 0; margin-bottom: 0; padding-top: 0; padding-bottom: 0; align-items: center; line-height: 1; }
+.app-shell[data-page=paper] .tv-toolbar .chart-navigation-tools button,
+.chart-navigation-tools .chart-date-inline button { display: inline-grid; place-items: center; box-sizing: border-box; width: var(--date-control-size); height: var(--date-control-size); min-height: var(--date-control-size); padding: 0; margin-top: 0; margin-bottom: 0; line-height: 1; align-self: center; }
+.app-shell[data-page=paper] .tv-toolbar .chart-navigation-tools button svg,
+.chart-navigation-tools .chart-date-weekday > svg { display: block; width: 16px; height: 16px; margin-top: 0; margin-bottom: 0; align-self: center; }
+.chart-navigation-tools .chart-date-inline input,
+.chart-navigation-tools .chart-date-inline select { height: var(--date-control-size); min-height: var(--date-control-size); margin: 0; padding-top: 0; padding-bottom: 0; line-height: normal; align-self: center; }
+.chart-navigation-tools .chart-date-inline input::-webkit-datetime-edit { padding: 0; }
+.chart-navigation-tools .chart-date-inline input::-webkit-calendar-picker-indicator { margin-top: 0; margin-bottom: 0; padding-top: 0; padding-bottom: 0; }
