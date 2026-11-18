@@ -757,3 +757,8 @@ html::-webkit-scrollbar,body::-webkit-scrollbar { display: none; }
 .balance-chart-shell > .tv-toolbar,
 .app-shell[data-page=paper] .price-panel > .tv-header,
 .app-shell[data-page=paper] .price-panel > .compact-chart-toolbar { background: var(--app-panel) !important; }
+
+/* Thin divider between the chart header row and the chart body. */
+.price-panel > .tv-toolbar,
+.price-panel > .compact-chart-toolbar,
+.app-shell[data-page=paper] .price-panel > .compact-chart-toolbar { border-bottom: 1px solid #23272f !important; }
