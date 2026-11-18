@@ -24,7 +24,7 @@ export const TV = {
   purple: "#7e57c2",
   teal: "#00bcd4",
   green: "#4caf50",
-  font: '-apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, Ubuntu, sans-serif',
+  font: 'Arial, "Helvetica Neue", Helvetica, sans-serif',
 } as const;
 
 /** Default plot colors of the matching TradingView built-in studies. */

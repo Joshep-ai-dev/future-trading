@@ -1,9 +1,17 @@
 /* Similar-pattern panel: controls, summary, overlay chart and match table. */
 
 .pattern-panel {
+  font-family: var(--tv-font);
   display: grid;
   gap: 14px;
   padding: 14px 16px 16px;
+}
+
+.pattern-panel button,
+.pattern-panel input,
+.pattern-panel select,
+.pattern-panel textarea {
+  font-family: inherit;
 }
 
 .pattern-controls {

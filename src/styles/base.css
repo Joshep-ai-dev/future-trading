@@ -306,7 +306,7 @@ button:hover:not(:disabled) {
   border-radius: 50%;
   background: linear-gradient(145deg,#e2e2e2,#868686);
   color: #272727;
-  font-family: Georgia,serif;
+  font-family: var(--tv-font);
   font-size: 21px;
   font-weight: bold;
   border: 3px solid #363636;

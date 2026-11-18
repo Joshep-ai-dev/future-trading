@@ -265,7 +265,7 @@
   border: 0;
   background: transparent;
   color: #b5b5b5;
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-family: var(--tv-font);
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -113,7 +113,7 @@ button.workspace-focus-toggle[aria-expanded=false] { color: #9ebeff; border-colo
 .app-shell[data-page=paper] .activity-panel > .ui-tabs,
 .app-shell[data-page=paper] .exchange-activity > .ui-tabs { padding: 0 12px; min-height: 46px; gap: 14px; overflow-x: auto; flex-wrap: nowrap; border-bottom: 1px solid #292c32; }
 .app-shell[data-page=paper] .activity-panel > .ui-tabs > button,
-.app-shell[data-page=paper] .exchange-activity > .ui-tabs > button { flex: none; padding: 14px 2px; font-size: 11px; white-space: nowrap; }
+.app-shell[data-page=paper] .exchange-activity > .ui-tabs > button { flex: none; padding: 14px 2px; font-family: var(--tv-font); font-size: 12px; font-weight: 500; white-space: nowrap; }
 .app-shell[data-page=paper] .ui-tabs > button[aria-selected=true] { color: #aac7ff; border-bottom-color: #759fff; }
 .app-shell[data-page=paper] .ui-tabs-trailing { flex: none; font-size: 10px; }
 .app-shell[data-page=paper] .activity-panel [role=tabpanel][hidden] { display: none; }

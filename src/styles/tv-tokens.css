@@ -22,7 +22,7 @@
   --tv-red-light: #f7525f;
   --tv-orange: #ff9800;
   --tv-popover: #1e1e1e;
-  --tv-font: -apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, Ubuntu, sans-serif;
+  --tv-font: Arial, "Helvetica Neue", Helvetica, sans-serif;
 
   /* App tokens mapped onto the TradingView palette */
   --background: var(--tv-bg);
@@ -49,6 +49,7 @@ body {
   font-family: var(--tv-font);
 }
 
+button,
 input,
 select,
 textarea {
