@@ -869,3 +869,9 @@ html::-webkit-scrollbar,body::-webkit-scrollbar { display: none; }
 .live-method-section .execution-tabs-row { height: 38px; min-height: 38px; }
 .live-method-section .execution-tabs-row > .live-execution-mode-tabs { align-items: stretch; height: 100%; min-height: 0; }
 .live-method-section .execution-tabs-row > .live-execution-mode-tabs [role=tab] { display: flex; align-items: center; justify-content: center; height: 100%; min-height: 0; margin: 0; }
+
+/* Live page: panel show/hide toggles at the right end of the chart toolbar. */
+.live-panel-toggles { display: inline-flex; align-items: center; gap: 2px; }
+.app-shell[data-page=paper] .tv-toolbar button.live-panel-toggle { color: #6f7a8a; border: 0; background: transparent; border-radius: 4px; }
+.app-shell[data-page=paper] .tv-toolbar button.live-panel-toggle[aria-pressed=true] { color: #76a9ef; }
+.app-shell[data-page=paper] .tv-toolbar button.live-panel-toggle:hover { color: #dceaff; background: #1b2028; }

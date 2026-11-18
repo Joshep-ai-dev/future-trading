@@ -62,7 +62,7 @@ export default function OrderBook({venue}:{venue:ExchangeVenue}){
     <span role="cell">{amount(level.total)}</span>
   </div>;
   const trades=data?.trades??[];
-  return <section className="terminal-panel order-book-panel" aria-label="Order book and recent trades">
+  return <section id="live-order-book" className="terminal-panel order-book-panel" aria-label="Order book and recent trades">
     <div className="order-book-tabs" role="tablist" aria-label="Market depth">
       <button type="button" role="tab" aria-selected={tab==='book'} onClick={()=>setTab('book')}>Order Book</button>
       <button type="button" role="tab" aria-selected={tab==='trades'} onClick={()=>setTab('trades')}>Trades</button>
