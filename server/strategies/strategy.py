@@ -15,7 +15,7 @@ class BacktestRequest(BaseModel):
     end_date: date
     validation_date: date | None = None  # Accepted only for older saved settings.
     strategy: Literal['none', 'adx_supertrend', 'st_scalper'] = 'none'
-    market: Literal['xag', 'stable'] = 'xag'
+    market: str = Field(default='xag', pattern=r'^(xag|stable|dataset:[a-f0-9]{64})$')
     bb_reversal: dict = Field(default_factory=dict)
     ml_directional: dict = Field(default_factory=dict)
     adx_supertrend: dict = Field(default_factory=dict)

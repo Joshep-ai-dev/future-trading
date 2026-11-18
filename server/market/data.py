@@ -12,7 +12,10 @@ def load_bars(timeframe='1m', path=None, instrument='xag'):
     if timeframe not in TIMEFRAMES:
         raise ValueError('Unsupported timeframe.')
     if instrument not in ('xag', 'stable'):
-        raise ValueError('Unsupported backtest market.')
+        from server.market.datasets import dataset_path
+        downloaded = dataset_path(instrument)
+        if path is None:
+            path = downloaded
     source_seconds = 60
     if path is None:
         path = CSV if instrument == 'xag' else STABLE_CSV
@@ -52,5 +55,6 @@ def load_bars(timeframe='1m', path=None, instrument='xag'):
     complete = (bars.minutes == seconds // source_seconds) & (bars.index + pd.Timedelta(seconds=seconds) <= pd.Timestamp.now(tz='UTC'))
     quality = dict(sourceBars=len(df), missingBars=int((df.index[-1]-df.index[0]).total_seconds()/source_seconds+1-len(df)),
                    excludedBars=int((~complete).sum()), completeBars=int(complete.sum()))
+    quality['missingMinutes'] = quality['missingBars']
     bars.loc[~complete, ['open', 'high', 'low', 'close', 'volume']] = np.nan
     return bars, quality

@@ -1,4 +1,4 @@
-import type { IChartApi, ISeriesApi, SeriesType } from "lightweight-charts";
+import type { IChartApi, ISeriesApi, MouseEventParams, SeriesType } from "lightweight-charts";
 import { TV } from "./tvTheme";
 
 export type CountdownSource = () => {
@@ -30,13 +30,23 @@ export function trackPriceAxis(
 ) {
   const box = document.createElement("div");
   box.className = "tv-countdown";
+  const mousePrice = document.createElement("div");
+  mousePrice.className = "tv-mouse-price";
+  mousePrice.hidden = true;
   const price = document.createElement("strong");
   const countdown = document.createElement("span");
   box.append(price, countdown);
   const originalLastValueVisible = series.options().lastValueVisible;
   let nativeLabelVisible = originalLastValueVisible;
+  const originalCrosshairLabelVisible = chart.options().crosshair.horzLine.labelVisible;
+  let crosshairLabelVisible = originalCrosshairLabelVisible;
   box.hidden = true;
-  if (source) wrapper.appendChild(box);
+  if (source) wrapper.append(box, mousePrice);
+  let crosshairY: number | null = null;
+  const crosshairMoved = (event: MouseEventParams) => {
+    crosshairY = event.point && (event.paneIndex ?? 0) === 0 ? event.point.y : null;
+  };
+  if (source) chart.subscribeCrosshairMove(crosshairMoved);
   let frame = 0,
     width = -1,
     last = "";
@@ -64,23 +74,57 @@ export function trackPriceAxis(
       nativeLabelVisible = showNative;
     }
     const formattedPrice = info ? series.priceFormatter().format(info.price) : '';
+    const top = y === null ? 0 : y - 8;
+    const chartTop = offsetTop();
     const key = visible
-      ? `${Math.round(y!)}|${formattedPrice}|${formatCountdown(remaining)}|${info!.up}|${scale}`
+      ? `${Math.round(y!)}|${formattedPrice}|${formatCountdown(remaining)}|${info!.up}|${scale}|${chartTop}`
       : "hidden";
-    if (key === last) return;
-    last = key;
-    box.hidden = !visible;
-    if (!visible) return;
-    price.textContent = formattedPrice;
-    countdown.textContent = formatCountdown(remaining);
-    box.style.top = `${offsetTop() + y! - 8}px`;
-    box.style.right = `${scale}px`;
-    box.style.background = info!.up ? TV.up : TV.down;
+    if (key !== last) {
+      last = key;
+      box.hidden = !visible;
+      if (visible) {
+        price.textContent = formattedPrice;
+        countdown.textContent = formatCountdown(remaining);
+        box.style.top = `${chartTop + top}px`;
+        box.style.right = `${scale}px`;
+        box.style.background = info!.up ? TV.up : TV.down;
+      }
+    }
+    // Measure the rendered badge: font and browser scaling can change its
+    // height. The mouse readout must clear the whole price/countdown block.
+    const badgeHeight = box.offsetHeight;
+    const mouseHeight = Math.ceil(chart.options().layout.fontSize * 1.5) + 4;
+    const gap = 5;
+    const overlapping = !!visible && crosshairY !== null
+      && crosshairY + mouseHeight / 2 + gap > top
+      && crosshairY - mouseHeight / 2 - gap < top + badgeHeight;
+    const mouseValue = overlapping ? series.coordinateToPrice(crosshairY!) : null;
+    const showMousePrice = overlapping && mouseValue !== null && originalCrosshairLabelVisible;
+    const showCrosshairLabel = showMousePrice ? false : originalCrosshairLabelVisible;
+    if (showCrosshairLabel !== crosshairLabelVisible) {
+      chart.applyOptions({crosshair: {horzLine: {labelVisible: showCrosshairLabel}}});
+      crosshairLabelVisible = showCrosshairLabel;
+    }
+    mousePrice.hidden = !showMousePrice;
+    if (showMousePrice) {
+      const above = top - mouseHeight - gap;
+      const below = top + badgeHeight + gap;
+      const preferAbove = crosshairY! < top + badgeHeight / 2;
+      const mouseTop = preferAbove && above >= 0 ? above
+        : below + mouseHeight <= paneHeight ? below : Math.max(0, above);
+      mousePrice.textContent = series.priceFormatter().format(mouseValue!);
+      mousePrice.style.top = `${chartTop + mouseTop}px`;
+      mousePrice.style.right = `${scale}px`;
+      mousePrice.style.minHeight = `${mouseHeight}px`;
+    }
   };
   frame = requestAnimationFrame(tick);
   return () => {
     cancelAnimationFrame(frame);
+    if (source) chart.unsubscribeCrosshairMove(crosshairMoved);
     if (nativeLabelVisible !== originalLastValueVisible) series.applyOptions({lastValueVisible: originalLastValueVisible});
+    if (crosshairLabelVisible !== originalCrosshairLabelVisible) chart.applyOptions({crosshair: {horzLine: {labelVisible: originalCrosshairLabelVisible}}});
     box.remove();
+    mousePrice.remove();
   };
 }

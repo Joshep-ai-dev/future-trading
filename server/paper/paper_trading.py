@@ -95,6 +95,9 @@ class PaperTrading:
                 if position and session['displayPrice'] is not None else self.state['equity'])
             return dict(session=session, error=self.error)
 
+    def market_bars(self, timeframe: str, market: str = 'xag'):
+        return self.loader(timeframe) if market == 'xag' else self.loader(timeframe, instrument=market)
+
     def begin(self, request):
         with self.lock:
             if self.state and self.state['running']:
@@ -103,7 +106,7 @@ class PaperTrading:
             now = int(self.now())
             first = ((now+duration-1)//duration)*duration
             runner = get_strategy(request.strategy)
-            history, _ = self.loader(request.entry_timeframe)
+            history, _ = self.market_bars(request.entry_timeframe, getattr(request, 'market', 'xag'))
             history = history.dropna(subset=['open','high','low','close'])
             history = history.loc[history.index + pd.Timedelta(seconds=duration) <= pd.Timestamp(now,unit='s',tz='UTC')]
             warmup = runner.warmup_bars(request)
@@ -124,7 +127,7 @@ class PaperTrading:
                 replay_candles = self.encode(available)
                 candles = self.encode(history.loc[history.index+pd.Timedelta(seconds=duration) <=
                                       pd.Timestamp(first,unit='s',tz='UTC')].tail(warmup))
-            minutes,_ = self.loader('1m')
+            minutes,_ = self.market_bars('1m', getattr(request, 'market', 'xag'))
             minutes = minutes.dropna(subset=['open','high','low','close'])
             minute_start = first if mode == 'replay' else now//duration*duration
             minutes = minutes.loc[minutes.index >= pd.Timestamp(minute_start,unit='s',tz='UTC')]
@@ -202,7 +205,7 @@ class PaperTrading:
                 history.index = pd.to_datetime(history.pop('time'),unit='s',utc=True)
                 cutoff = state['virtualTime']
             else:
-                history, _ = self.loader(cfg['entry_timeframe'])
+                history, _ = self.market_bars(cfg['entry_timeframe'], cfg.get('market', 'xag'))
                 history = history.dropna(subset=['open','high','low','close'])
                 cutoff = now
                 state['virtualTime'] = now

@@ -12,7 +12,7 @@ import os
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from server.market.data import load_bars, TIMEFRAMES
 from server.market.live_quote import silver_quote
@@ -135,6 +135,7 @@ def set_auth_cookie(response: Response, token: str) -> None:
 class Parameters(BaseModel):
     model_config = ConfigDict(extra='forbid')
     timeframe: Literal['1m', '3m', '5m', '10m', '15m', '30m', '1h', '4h', '1d'] = '1m'
+    market: str = Field(default='xag', pattern=r'^(xag|stable|dataset:[a-f0-9]{64})$')
 
 
 class ChartViewRequest(Parameters):
@@ -185,7 +186,7 @@ def session_chart(parameters: ChartViewRequest, request: Request):
         snapshots = list(state.get('minuteCandles',[]))
         settings = dict(state['settings']['bb_reversal'])
     try:
-        frame, _ = load_bars('1m')
+        frame, _ = load_bars('1m', instrument=state['settings'].get('market', 'xag'))
         return chart_view(frame,snapshots,parameters.timeframe,clock,settings,replay)
     except (ValueError,OSError) as error:
         raise HTTPException(status_code=400,detail=str(error)) from error
@@ -313,7 +314,7 @@ def paper_status(request: Request):
 class ExchangeConnectRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
     venue: Literal['okx','htx','mexc','binance','hyperliquid']
-    instrument: Literal['xag','silver','stable'] = 'xag'
+    instrument: str = Field(default='xag', min_length=1, max_length=120)
     api_key: str = Field(min_length=1,max_length=512)
     secret: str = Field(min_length=1,max_length=512)
     passphrase: str | None = Field(default=None,max_length=512)
@@ -333,7 +334,7 @@ class ExchangeOrderRequest(BaseModel):
 class ExchangeDisconnectRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
     venue: Literal['okx','htx','mexc','binance','hyperliquid']
-    instrument: Literal['xag','silver','stable'] = 'xag'
+    instrument: str = Field(default='xag', min_length=1, max_length=120)
 
 
 class ExchangeProtectionRequest(BaseModel):
@@ -351,6 +352,24 @@ class ExchangeCloseRequest(BaseModel):
     side: Literal['long','short'] | None = None
     margin_mode: Literal['isolated','cross'] | None = None
     confirmation: Literal['CLOSE LIVE POSITION']
+
+
+@app.get('/api/exchange/markets')
+def exchange_markets(venue: Literal['okx','htx','mexc','binance','hyperliquid']):
+    from server.exchanges.market_catalog import market_catalog
+    try:
+        return {'markets': market_catalog(venue)}
+    except Exception as error:
+        raise HTTPException(status_code=502, detail=f'{venue.upper()} market discovery failed. Retry after checking exchange connectivity.') from error
+
+
+@app.get('/api/exchange/quotes')
+def exchange_quotes(venue: Literal['okx','htx','mexc','binance','hyperliquid']):
+    from server.exchanges.market_quotes import market_quotes
+    try:
+        return market_quotes(venue)
+    except Exception as error:
+        raise HTTPException(status_code=502, detail='Market quotes are unavailable. Retrying automatically.') from error
 
 
 @app.get('/api/exchange/status')
@@ -372,6 +391,15 @@ def exchange_connect(parameters: ExchangeConnectRequest, request: Request):
     except Exception as error:
         # Exchange/library errors may echo request details. Never return credentials to the browser.
         raise HTTPException(status_code=502,detail=f'{parameters.venue.upper()} connection failed. Check API permissions, {parameters.instrument.upper()} contract access, account mode, and network availability.') from error
+
+
+@app.get('/api/exchange/leverage')
+def exchange_leverage(venue: Literal['okx','htx','mexc','binance','hyperliquid'], request: Request):
+    from server.exchanges.leverage import leverage_profile
+    try:
+        return leverage_profile(workspace(request).exchange, venue)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
 
 @app.get('/api/exchange/overview')
@@ -436,6 +464,70 @@ def exchange_candles(venue: Literal['okx','htx','mexc','binance','hyperliquid'],
         raise HTTPException(status_code=400, detail=str(error)) from error
     except Exception as error:
         raise HTTPException(status_code=502, detail='Exchange candle history is unavailable.') from error
+
+
+class HistoryDownloadRequest(BaseModel):
+    venue: Literal['okx','htx','mexc','binance','hyperliquid']
+    symbol: str = Field(min_length=1, max_length=120)
+    days: int = Field(default=7, ge=1, le=30)
+    start_date: date | None = None
+    end_date: date | None = None
+
+    @model_validator(mode='after')
+    def valid_download_dates(self):
+        from datetime import datetime, timezone
+        if (self.start_date is None) != (self.end_date is None):
+            raise ValueError('Choose both start and end dates')
+        if self.start_date is not None:
+            if self.end_date < self.start_date:
+                raise ValueError('End date must be on or after start date')
+            if (self.end_date-self.start_date).days >= 30:
+                raise ValueError('Download up to 30 days at a time')
+            if self.end_date > datetime.now(timezone.utc).date():
+                raise ValueError('History dates cannot be in the future')
+        return self
+
+
+@app.post('/api/exchange/history/download')
+def download_exchange_history(parameters: HistoryDownloadRequest, request: Request):
+    from server.market.datasets import download_minutes
+    try:
+        exchange, market = workspace(request).exchange._get(parameters.venue)
+        if market['symbol'] != parameters.symbol:
+            raise ValueError('The selected market changed. Retry the download.')
+        bounds = {}
+        if parameters.start_date is not None:
+            bounds = dict(start_ms=int(pd.Timestamp(parameters.start_date, tz='UTC').timestamp()*1000),
+                          end_ms=int(pd.Timestamp(parameters.end_date+timedelta(days=1), tz='UTC').timestamp()*1000))
+        return download_minutes(exchange, dict(market), parameters.venue, parameters.days, **bounds)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        import ccxt
+        logging.getLogger(__name__).warning('History download failed for %s: %s', parameters.venue, safe_exchange_error(error))
+        if isinstance(error, ccxt.RateLimitExceeded):
+            raise HTTPException(status_code=429, detail='The exchange rate limit was reached. Wait briefly, then retry the history download.') from error
+        if isinstance(error, ccxt.BadSymbol):
+            raise HTTPException(status_code=400, detail='The exchange does not expose candle history for this symbol.') from error
+        raise HTTPException(status_code=502, detail=f'{parameters.venue.upper()} public candle history request failed. Your account connection may still be active. Retry a shorter, recent date range.') from error
+
+
+@app.get('/api/market/datasets')
+def market_datasets():
+    from server.market.datasets import list_datasets
+    return {'datasets': list_datasets()}
+
+
+@app.get('/api/market/datasets/export')
+def export_market_dataset(market: str):
+    from server.market.datasets import dataset_path
+    try:
+        path = dataset_path(market)
+        if not path.exists():
+            raise ValueError('Download this market history first')
+        return FileResponse(path, media_type='text/csv', filename='market-1m-history.csv')
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
 
 @app.post('/api/exchange/disconnect')
@@ -547,6 +639,8 @@ class PaperStartRequest(BBBacktestRequest):
 
     @model_validator(mode='after')
     def replay_dates(self):
+        if self.market.startswith('dataset:') and self.paper_mode != 'replay':
+            raise ValueError('Downloaded exchange datasets must use historical replay')
         if self.paper_mode == 'replay':
             from datetime import date
             try:
@@ -602,7 +696,7 @@ def paper_action(action: Literal['pause', 'resume'], request: Request):
 @app.post('/api/analyze')
 def run(parameters: Parameters):
     try:
-        frame, quality = load_bars(parameters.timeframe)
+        frame, quality = load_bars(parameters.timeframe, instrument=parameters.market)
         complete = frame.dropna(subset=['open', 'high', 'low', 'close'])
         if complete.empty:
             raise ValueError('No complete bars available for this timeframe.')
@@ -617,7 +711,7 @@ def run(parameters: Parameters):
 
 
 @app.get('/api/data-range')
-def data_range(market: Literal['xag', 'stable'] = 'xag'):
+def data_range(market: str = 'xag'):
     try:
         frame, _ = load_bars('1h' if market == 'stable' else '1m', instrument=market)
         complete = frame.dropna(subset=['open','high','low','close'])
@@ -958,13 +1052,14 @@ def candle_page(frame, before=None, limit=5000):
 @app.post('/api/candles')
 def history(parameters: CandleRequest):
     try:
-        frame, _ = load_bars(parameters.timeframe)
+        frame, _ = load_bars(parameters.timeframe, instrument=parameters.market)
         return candle_page(frame, parameters.before, parameters.limit)
     except (ValueError, OSError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
 
 class PatternRequest(BaseModel):
+    market: str = Field(default='xag', pattern=r'^(xag|stable|dataset:[a-f0-9]{64})$')
     model_config = ConfigDict(extra='forbid')
     timeframe: Literal['1m', '3m', '5m', '10m', '15m', '30m', '1h', '4h', '1d'] = '15m'
     window: int = Field(default=48, ge=8, le=500)
@@ -981,7 +1076,7 @@ def similar_patterns(parameters: PatternRequest):
     """Past windows most similar to the latest (or ``end``) window and their future high/low bands."""
     from server.market.patterns import find_similar
     try:
-        bars, _ = load_bars(parameters.timeframe)
+        bars, _ = load_bars(parameters.timeframe, instrument=parameters.market)
         end = pd.Timestamp(parameters.end, unit='s', tz='UTC') if parameters.end else None
         from server.news.features import news_features
         news = news_features(bars.index, TIMEFRAMES[parameters.timeframe], store=news_service.store)

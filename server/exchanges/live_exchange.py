@@ -81,8 +81,8 @@ class LiveExchange:
     @staticmethod
     def _market(exchange, instrument: str = 'xag'):
         if getattr(exchange, 'id', '') == 'hyperliquid':
-            # SILVER is deployed by XYZ as a HIP-3 market, so explicitly load that DEX.
-            exchange.options.setdefault('fetchMarkets', {}).setdefault('hip3', {})['dexes'] = ['xyz']
+            # Include every HIP-3 DEX rather than only XYZ or the adapter's first ten.
+            exchange.options.setdefault('fetchMarkets', {})['hip3'] = {'limit': 1_000_000}
         exchange.load_markets()
         base = instrument.upper()
         collateral = 'USDC' if getattr(exchange, 'id', '') == 'hyperliquid' else 'USDT'
@@ -90,7 +90,8 @@ class LiveExchange:
                       if market.get('swap') and market.get('linear')
                       and market.get('quote') == collateral
                       and market.get('settle') == collateral
-                      and (str(market.get('base', '')).upper() == base
+                      and (str(market.get('symbol', '')).upper() == base
+                           or str(market.get('base', '')).upper() == base
                            or str(market.get('baseId', '')).upper() == base
                            or (getattr(exchange, 'id', '') == 'hyperliquid'
                                and (str(market.get('base', '')).upper().endswith('-' + base)
@@ -104,12 +105,6 @@ class LiveExchange:
                 instrument: str = 'xag'):
         if self.auto_bot and self.auto_bot.running and self.auto_bot.venue == venue:
             raise ValueError('Stop the live bot before changing its exchange market')
-        if instrument == 'stable' and venue == 'htx':
-            raise ValueError('HTX does not currently list a STABLE/USDT linear perpetual; choose OKX, MEXC or Binance')
-        if instrument == 'silver' and venue != 'hyperliquid':
-            raise ValueError('SILVER/USDC is only available on Hyperliquid')
-        if venue == 'hyperliquid' and instrument not in ('silver', 'stable'):
-            raise ValueError('Hyperliquid supports SILVER/USDC and STABLE/USDC perpetuals; it does not currently list an XAG perpetual')
         if venue not in VENUES:
             raise ValueError('Choose OKX, HTX, MEXC or Binance USDⓈ-M Futures')
         if not api_key.strip() or not secret.strip():
@@ -126,7 +121,7 @@ class LiveExchange:
         if venue == 'htx':
             credentials['options'] = {'defaultType': 'swap', 'defaultSubType': 'linear'}
         if venue == 'hyperliquid':
-            credentials['options'] = {'fetchMarkets': {'hip3': {'dexes': ['xyz']}}}
+            credentials['options'] = {'fetchMarkets': {'hip3': {'limit': 1_000_000}}}
         exchange = exchange_type(credentials)
         base = instrument.upper()
         collateral = 'USDC' if venue == 'hyperliquid' else 'USDT'
@@ -302,9 +297,14 @@ class LiveExchange:
     def prepare_account(self, venue: str, leverage: int) -> None:
         """Isolated margin and leverage, tolerating 'already set' answers. Call only when flat."""
         exchange, market = self.execution_client(venue)
+        limits = (market.get('limits') or {}).get('leverage') or {}
+        maximum = limits.get('max')
+        minimum = limits.get('min') or 1
+        if not math.isfinite(leverage) or leverage != int(leverage) or leverage < minimum or (maximum is not None and leverage > maximum):
+            raise ValueError(f"Leverage is outside the supported range for {market['symbol']}")
         import ccxt
         def set_leverage() -> None:
-            params = margin_params(venue)
+            params = {'marginMode': 'isolated'} if venue == 'hyperliquid' else margin_params(venue)
             if venue != 'htx':
                 exchange.set_leverage(int(leverage), market['symbol'], params)
                 return
@@ -319,7 +319,9 @@ class LiveExchange:
 
         steps = [(f'Setting {leverage}x leverage', set_leverage)]
         if venue not in PER_ORDER_MARGIN:  # HTX sets isolated margin on each order instead.
-            steps.insert(0, ('Setting isolated margin', lambda: exchange.set_margin_mode('isolated', market['symbol'])))
+            steps.insert(0, ('Setting isolated margin', lambda: exchange.set_margin_mode(
+                'isolated', market['symbol'], {'leverage': int(leverage)}) if venue == 'hyperliquid'
+                else exchange.set_margin_mode('isolated', market['symbol'])))
         for step, call in steps:
             try:
                 call()

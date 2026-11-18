@@ -6,9 +6,6 @@ import type {
 } from "../../shared/api/exchangeTypes";
 import { Button, StatusBadge } from "../../shared/ui/ui";
 import {
-  EXCHANGE_INSTRUMENTS,
-  instrumentDetails,
-  instrumentSupported,
   type ExchangeInstrument,
 } from "../../shared/api/exchangeInstrument";
 
@@ -19,7 +16,6 @@ type Props = {
   savedVenues: ExchangeVenue[];
   busy: boolean;
   onVenueChange: (venue: ExchangeVenue) => void;
-  onInstrumentChange: (instrument: ExchangeInstrument) => void;
   onRun: ExchangeAction;
   onOpenTerminal?: () => void;
 };
@@ -30,15 +26,16 @@ export default function ExchangeConnections({
   savedVenues,
   busy,
   onVenueChange,
-  onInstrumentChange,
   onRun,
   onOpenTerminal,
 }: Props) {
+  useEffect(() => {
+    if (venue === 'binance') onVenueChange('htx');
+  }, [venue, onVenueChange]);
   const [apiKey, setApiKey] = useState("");
   const [secret, setSecret] = useState("");
   const [passphrase, setPassphrase] = useState("");
   const exchange = EXCHANGES.find((item) => item.id === venue)!;
-  const product = instrumentDetails(instrument);
   const collateral = venue === "hyperliquid" ? "USDC" : "USDT";
   const account = statuses.find((item) => item.venue === venue);
   const connected = !!account?.connected;
@@ -90,7 +87,7 @@ export default function ExchangeConnections({
         <div className='connections-list-heading'>
           EXCHANGES{" "}
           <span>
-            {statuses.filter((item) => item.connected).length} connected
+            {statuses.filter((item) => item.connected && item.venue !== 'binance').length} connected
           </span>
         </div>
         {EXCHANGES.map((item) => {
@@ -139,7 +136,7 @@ export default function ExchangeConnections({
             <div>
               <h2>{exchange.name}</h2>
               <p>
-                {product.base} / {collateral} perpetual trading
+                {collateral} perpetual trading
               </p>
             </div>
           </div>
@@ -147,30 +144,6 @@ export default function ExchangeConnections({
             {connected ? "Connected" : "Disconnected"}
           </StatusBadge>
         </div>
-        <label className='ui-field'>
-          <span>Perpetual market</span>
-          <select
-            aria-label='Perpetual market'
-            value={instrument}
-            disabled={busy}
-            onChange={(event) =>
-              onInstrumentChange(event.target.value as ExchangeInstrument)
-            }
-          >
-            {EXCHANGE_INSTRUMENTS.map((item) => (
-              <option
-                key={item.id}
-                value={item.id}
-                disabled={!instrumentSupported(item.id, venue)}
-              >
-                {item.base} / {collateral}
-                {instrumentSupported(item.id, venue)
-                  ? ""
-                  : " · unavailable on this exchange"}
-              </option>
-            ))}
-          </select>
-        </label>
         {connected ? (
           <>
             <div className='connection-success'>

@@ -1,3 +1,4 @@
+import {displaySymbol} from './displaySymbol';
 import { BollingerOverlay } from "./BollingerOverlay";
 import { chartBollingerBands } from "./bollingerBands";
 import { SupertrendOverlay } from "./SupertrendOverlay";
@@ -101,6 +102,7 @@ type HistoryPage = { candles: Analysis["candles"]; hasMore: boolean };
 type Props = Data & {
   header?: ReactNode;
   toolbarEnd?: ReactNode;
+  toolbarActions?: ReactNode;
   sessionId: number;
   showSma: boolean;
   timeframe: string;
@@ -110,6 +112,7 @@ type Props = Data & {
   loadHistory?: (before: number) => Promise<HistoryPage>;
   historyLabel?: string;
   symbol?: string;
+  market?: string;
   /** Scroll to this moment (e.g. an economic release); ``key`` changes on every request. */
   focus?: ChartFocus | null;
 };
@@ -597,6 +600,7 @@ export default function PaperPriceChart(props: Props) {
               signal: abort.signal,
               body: JSON.stringify({
                 timeframe: props.timeframe,
+                ...(props.market&&props.market!=='xag'?{market:props.market}:{}),
                 before,
                 limit: 1000,
               }),
@@ -650,7 +654,8 @@ export default function PaperPriceChart(props: Props) {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             signal: abort.signal,
-            body: JSON.stringify({ timeframe: props.timeframe, before, limit: 5000 }),
+            body: JSON.stringify({ timeframe: props.timeframe,
+                ...(props.market&&props.market!=='xag'?{market:props.market}:{}), before, limit: 5000 }),
           });
           const older = page.candles.filter((c) => c.time < before);
           cached = mergeHistory(older, cached);
@@ -1056,6 +1061,7 @@ export default function PaperPriceChart(props: Props) {
       <ChartTools
         header={props.header}
         endActions={props.toolbarEnd}
+        patternActions={props.toolbarActions}
         actions={<ChartTimeNavigator timeZone={timeZone} getLatest={()=>props.candles.at(-1)?.time??Date.now()/1000} onSelect={selection=>void focusOn.current(selection)} onCancel={()=>{clearFocus.current();latest();}} busy={loading}/>}
         onAnalyzePattern={() => { holdView(); setPatternSelecting(value => !value); }}
         patternSelecting={patternSelecting}
@@ -1108,7 +1114,7 @@ export default function PaperPriceChart(props: Props) {
         <PatternRangeAnalyzer active={patternSelecting} onFinish={() => setPatternSelecting(false)} chartRef={chartRef} containerRef={container} getCandles={() => patternCandles.current} timeframe={props.timeframe} symbol={props.symbol ?? 'XAGUSDT'} clock={() => props.indicatorClock}/>
         <DrawingToolbar {...drawing.toolbar} />
         <ChartLegend
-          title={`${props.symbol ?? "XAGUSDT"} · ${props.timeframe}`}
+          title={`${displaySymbol(props.symbol ?? "XAGUSDT")} · ${props.timeframe}`}
           data={legend}
           overlays={[
             ...(strategyVisible

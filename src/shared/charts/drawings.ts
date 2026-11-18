@@ -42,6 +42,7 @@ const newId = () => `${Date.now().toString(36)}-${Math.random().toString(36).sli
 const storageKey = (symbol: string) => `silver.chart.drawings.${symbol}`;
 const changed = "silver:chart-drawings-changed";
 const cache = new Map<string, Drawing[]>();
+let activeDrawingChart: HTMLElement | null = null;
 function readDrawings(symbol: string): Drawing[] {
   const hit = cache.get(symbol);
   if (hit) return hit;
@@ -179,6 +180,22 @@ export class DrawingLayer implements ISeriesPrimitive<Time> {
     const time = this.logicalToTime(snapped);
     return time === null ? null : { time, price };
   }
+  /** Move the complete drawing by chart bars and screen pixels. */
+  nudge(drawing: Drawing, bars: number, pixels: number): Drawing | null {
+    if (!this.host) return null;
+    const points: Anchor[] = [];
+    for (const point of drawing.points) {
+      const logical = this.timeToLogical(point.time);
+      const y = this.y(point.price);
+      if (logical === null || y === null) return null;
+      const time = bars ? this.logicalToTime(logical + bars) : point.time;
+      const price = pixels ? this.host.series.coordinateToPrice(y + pixels) : point.price;
+      if (time === null || price === null || !Number.isFinite(time) || !Number.isFinite(price)) return null;
+      points.push({time, price});
+    }
+    return {...drawing, points};
+  }
+
   /** Returns the drawing id under the point and which anchor (or -1 for the body). */
   hit(px: number, py: number, width: number, height: number): { id: string; anchor: number } | null {
     if (this.hidden) return null;
@@ -376,6 +393,7 @@ export function useChartDrawings(symbol: string) {
   const state = useRef({ tool, magnet, locked, hidden, selected, drawings, symbol });
   state.current = { tool, magnet, locked, hidden, selected, drawings, symbol };
   const chartRef = useRef<IChartApi | null>(null);
+  const elementRef = useRef<HTMLElement | null>(null);
 
   const setTool = useCallback((next: DrawingTool) => {
     setToolState(next);
@@ -413,7 +431,28 @@ export function useChartDrawings(symbol: string) {
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
-      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+      if (target?.closest('input,textarea,select,button,a,summary,[contenteditable]:not([contenteditable="false"]),[role="textbox"],[role="listbox"],[role="menu"],[role="tablist"],dialog')) return;
+      const element = elementRef.current;
+      if (!element || activeDrawingChart !== element || !element.isConnected || !element.getClientRects().length) return;
+      const arrow = ({ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1]} as const)[event.key as 'ArrowLeft'|'ArrowRight'|'ArrowUp'|'ArrowDown'];
+      if (arrow && !event.altKey && !event.ctrlKey && !event.metaKey) {
+        const current = state.current, layer = layerRef.current;
+        if (!current.selected || current.locked || current.hidden || !layer) return;
+        const drawing = current.drawings.find(item => item.id === current.selected);
+        if (!drawing) return;
+        const step = event.shiftKey ? 10 : 1;
+        const moved = layer.nudge(drawing, arrow[0] * step, arrow[1] * step);
+        if (!moved) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const next = current.drawings.map(item => item.id === moved.id ? moved : item);
+        // Repeated keydown events can arrive before React renders again.
+        state.current = {...current, drawings: next};
+        layer.drawings = next;
+        layer.update();
+        save(next);
+        return;
+      }
       const shortcut = event.altKey ? ({ t: "trend", h: "hline", v: "vline" } as const)[event.key.toLowerCase() as "t" | "h" | "v"] : undefined;
       if (shortcut) {
         event.preventDefault();
@@ -428,7 +467,7 @@ export function useChartDrawings(symbol: string) {
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [removeSelected, setTool]);
+  }, [removeSelected, setTool, save]);
 
   /** Call inside the chart effect; returns the cleanup. */
   const attach = useCallback(
@@ -440,6 +479,9 @@ export function useChartDrawings(symbol: string) {
       series.attachPrimitive(layer);
       layerRef.current = layer;
       chartRef.current = chart;
+      elementRef.current = element;
+      const originalTabIndex = element.getAttribute('tabindex');
+      if (originalTabIndex === null) element.tabIndex = 0;
       chart.applyOptions({ handleScroll: { pressedMouseMove: state.current.tool === "cursor" } });
       let drag: { id: string; anchor: number; start: Anchor; original: Anchor[] } | null = null;
       const local = (event: PointerEvent) => {
@@ -458,6 +500,8 @@ export function useChartDrawings(symbol: string) {
         if (event.button !== 0) return;
         const { x, y } = local(event);
         if (y > mainHeight() || x > plotWidth()) return;
+        activeDrawingChart = element;
+        element.focus({preventScroll: true});
         const s = state.current;
         if (s.tool !== "cursor") {
           const anchor = layer.toAnchor(x, y, s.magnet);
@@ -537,6 +581,9 @@ export function useChartDrawings(symbol: string) {
         element.removeEventListener("pointercancel", up);
         if (layerRef.current === layer) layerRef.current = null;
         if (chartRef.current === chart) chartRef.current = null;
+        if (elementRef.current === element) elementRef.current = null;
+        if (activeDrawingChart === element) activeDrawingChart = null;
+        if (originalTabIndex === null) element.removeAttribute('tabindex');
       };
     },
     [save, setTool],

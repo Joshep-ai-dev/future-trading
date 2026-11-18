@@ -1,3 +1,4 @@
+import {useMarketDatasets} from '../../shared/api/useMarketDatasets';
 import TradeView from "../../shared/ui/TradeView";
 import {
   Button,
@@ -79,6 +80,9 @@ export default function ResultsWorkspace({
   summary?: [string, string][];
   onOpenRun: (id: number) => void;
 }) {
+  const datasets=useMarketDatasets();
+  const symbol=datasets.find(item=>item.id===result?.settings.market)?.symbol??(result?.settings.market==='stable'?'STABLE/USDT':'XAG/USDT');
+  const base=symbol.split('/')[0];
   const [selectedId, setSelectedId] = useState<number | null>(null),
     [page, setPage] = useState(0);
   const tradingTimeZone = useTradingTimeZone();
@@ -395,11 +399,13 @@ export default function ResultsWorkspace({
             <div className='results-main'>
               <section className='terminal-panel result-chart price-panel'>
                 <TradingChartHeader
+                  symbol={symbol}
                   timeframe={result.executionTimeframe}
                   mode='BACKTEST'
                   caption=''
                 />
                 <BacktestChart
+                  symbol={symbol}
                   indicators={result.indicators}
                   indicatorSettings={result.settings}
                   barSeconds={result.barSeconds}
@@ -594,7 +600,7 @@ export default function ResultsWorkspace({
                               "Exit candle",
                               "Entry price",
                               "Exit price",
-                              "Size (XAG)",
+                              `Size (${base})`,
                               "Net P&L",
                               "Cum. P&L",
                               "R",

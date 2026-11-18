@@ -74,7 +74,7 @@ export type StScalperConfig = {
   max_hold_bars: number; exit_on_flip: boolean; risk_pct: number; trade_mode: 'Both'|'Long Only'|'Short Only';
 };
 export type BacktestSettings = {
-  market: 'xag'|'stable';
+  market: string;
   atr_active: boolean; atr_period: number; atr_multiplier: number;
   ema_fast: number; ema_slow: number; rsi_period: number; rsi_threshold: number; rsi_active: boolean;
   strategy: 'none'|'adx_supertrend'|'st_scalper'|'sweep'|'mtf'|'chartart_v12'|'bb_outer_reversal'|'ml_directional'|'ml_ensemble'|'rl_ppo'; adx_supertrend: AdxSupertrendConfig; st_scalper: StScalperConfig; rl:RLConfig; ml: MLConfig; ml_directional: MLDirectionalConfig; bb_period: number; chartart_stop_pct: number;

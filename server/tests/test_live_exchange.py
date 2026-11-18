@@ -57,10 +57,6 @@ class ExchangeConnectionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'STABLE/USDT'):
             self.service._market(self.exchange, 'stable')
 
-    def test_htx_rejects_stable_before_opening_a_connection(self) -> None:
-        with self.assertRaisesRegex(ValueError, 'does not currently list'):
-            self.service.connect('htx', 'key', 'secret', instrument='stable')
-
     def test_hyperliquid_uses_api_wallet_and_usdc_stable_market(self) -> None:
         market = {'symbol': 'STABLE/USDC:USDC', 'base': 'STABLE', 'quote': 'USDC',
                   'settle': 'USDC', 'contractSize': 1}
@@ -84,11 +80,7 @@ class ExchangeConnectionTests(unittest.TestCase):
                   'active': True, 'baseName': 'xyz:SILVER', 'info': {'name': 'xyz:SILVER'}}
         self.exchange.markets = {silver['symbol']: silver}
         self.assertIs(self.service._market(self.exchange, 'silver'), silver)
-        self.assertEqual(self.exchange.options['fetchMarkets']['hip3']['dexes'], ['xyz'])
-
-    def test_hyperliquid_rejects_unlisted_xag(self) -> None:
-        with self.assertRaisesRegex(ValueError, 'does not currently list an XAG'):
-            self.service.connect('hyperliquid', '0xwallet', 'agent-private-key', instrument='xag')
+        self.assertEqual(self.exchange.options['fetchMarkets']['hip3']['limit'], 1_000_000)
 
     def test_htx_reads_linear_perpetual_balance(self) -> None:
         with patch.object(ccxt, 'htx', return_value=self.exchange) as adapter, patch.object(

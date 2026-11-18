@@ -9,10 +9,10 @@ import {instrumentDetails,useExchangeInstrument} from '../../shared/api/exchange
 
 type Props={venue:ExchangeVenue;settings:BacktestSettings;onSettingsChange?:(settings:BacktestSettings)=>void;onConfigure?:()=>void;
   profiles?:SavedSetup[];onApplySetup?:(setup:SavedSetup)=>void;bot:BotStatus;connected:boolean;busy:boolean;blocked:boolean;
-  positionOpen:boolean;leverage:string;onLeverageChange:(value:string)=>void;onRun:ExchangeAction};
+  positionOpen:boolean;leverage:string;minimumLeverage:number;maximumLeverage:number;leverageLoading:boolean;onLeverageChange:(value:string)=>void;onRun:ExchangeAction};
 
 /** Live bot controls, laid out like the paper bot: model and saved parameters, timeframe, sizing, start/stop. */
-export default function LiveBotPanel({venue,settings,onSettingsChange,onConfigure,profiles=[],onApplySetup,bot,connected,busy,blocked,positionOpen,leverage,onLeverageChange,onRun}:Props){
+export default function LiveBotPanel({venue,settings,onSettingsChange,onConfigure,profiles=[],onApplySetup,bot,connected,busy,blocked,positionOpen,leverage,minimumLeverage,maximumLeverage,leverageLoading,onLeverageChange,onRun}:Props){
   const asset=instrumentDetails(useExchangeInstrument()).base;
   const {data,connected:streamConnected}=useExchangeStream(venue);
   const [confirmed,setConfirmed]=useState(false);
@@ -24,13 +24,13 @@ export default function LiveBotPanel({venue,settings,onSettingsChange,onConfigur
   if(settings.strategy==='none')return <div id="bot-ticket-panel" role="tabpanel" aria-labelledby="execution-tab-bot" className="live-bot-panel bot-control"><h3>No strategy configured</h3><p>Automated trading is disabled. Use Manual for the order ticket.</p>{active&&<button type="button" disabled={busy} onClick={()=>void onRun('/api/exchange/auto/stop')}>Stop existing automation</button>}</div>;
   const locked=bot.running||busy||!onSettingsChange;
   const validAllocation=Number.isFinite(config.amount_per_trade)&&config.amount_per_trade>0&&(config.amount_unit==='percent'?config.amount_per_trade<=100:!validMargin||config.amount_per_trade<=available);
-  const validLeverage=Number.isInteger(Number(leverage))&&Number(leverage)>=1&&Number(leverage)<=100;
+  const validLeverage=Number.isInteger(Number(leverage))&&!leverageLoading&&Number(leverage)>=minimumLeverage&&Number(leverage)<=maximumLeverage;
   const simulationOnly=settings.strategy!=='bb_outer_reversal';
   const canStart=!simulationOnly&&connected&&validMargin&&validAllocation&&!blocked&&!positionOpen&&!bot.running&&confirmed&&!busy&&validLeverage;
   // First reason the bot cannot start, shown under the button.
   const hint=bot.running?null:!connected?'Connect an exchange account first.':simulationOnly?'This strategy runs in backtests and paper trading only; choose BB Reversal to trade live.'
     :blocked?'Live trading is blocked until the position check succeeds.':positionOpen?'Close the open position to start.'
-    :!validMargin?'Waiting for available margin.':!validAllocation?'Margin per trade exceeds the available margin.':!validLeverage?'Leverage must be a whole number from 1 to 100.'
+    :!validMargin?'Waiting for available margin.':!validAllocation?'Margin per trade exceeds the available margin.':!validLeverage?`Leverage must be a whole number from ${minimumLeverage} to ${maximumLeverage}.`
     :!confirmed?'Tick the authorization box to enable the start button.':null;
 
   async function start(){
@@ -45,7 +45,7 @@ export default function LiveBotPanel({venue,settings,onSettingsChange,onConfigur
         <label>Timeframe<select value={settings.entry_timeframe} onChange={event=>onSettingsChange?.({...settings,entry_timeframe:event.target.value as BacktestSettings['entry_timeframe']})}>{['1m','3m','5m','10m','15m','30m','1h','4h','1d'].map(timeframe=><option key={timeframe} value={timeframe}>{timeframe}</option>)}</select></label>
         <div className="control-row">
           <label>Available margin (USDT)<input readOnly tabIndex={-1} value={validMargin?number(available,2):'—'}/></label>
-          <label>Leverage<input type="number" required min={1} max={100} step={1} value={leverage} disabled={!connected} onChange={event=>onLeverageChange(event.target.value)}/></label>
+          <label>Leverage<input type="number" required min={minimumLeverage} max={maximumLeverage} step={1} value={leverage} disabled={!connected||leverageLoading} onChange={event=>onLeverageChange(event.target.value)}/></label>
         </div>
         <div className="allocation-control"><label>Margin per trade<div className="input-with-unit"><input type="number" required min={.01} step="any" max={config.amount_unit==='percent'?100:undefined} value={config.amount_per_trade} onChange={event=>onSettingsChange?.({...settings,bb_reversal:{...config,amount_per_trade:Number(event.target.value)}})}/><select aria-label="Margin unit" value={config.amount_unit} onChange={event=>onSettingsChange?.({...settings,bb_reversal:{...config,amount_unit:event.target.value as 'price'|'percent'}})}><option value="percent">%</option><option value="price">$</option></select></div></label><small>≈ {number(amount,2)} USDT margin · {number(amount==null?null:amount*Number(leverage),2)} USDT position value.</small></div>
       </fieldset>

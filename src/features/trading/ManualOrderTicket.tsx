@@ -5,10 +5,10 @@ import {Button,StatusBadge} from '../../shared/ui/ui';
 import {estimateOrderSize} from './orderSizing';
 import PositionProtection from './PositionProtection';
 
-type Props={venue:ExchangeVenue;asset:string;connected:boolean;busy:boolean;blocked:boolean;botRunning:boolean;leverage:string;onLeverageChange:(value:string)=>void;onRun:(path:string,body:unknown)=>Promise<boolean>};
-const leverageOptions=[...Array.from({length:20},(_,index)=>index+1),...Array.from({length:16},(_,index)=>(index+5)*5)];
+type Props={venue:ExchangeVenue;asset:string;connected:boolean;busy:boolean;blocked:boolean;botRunning:boolean;leverage:string;minimumLeverage:number;maximumLeverage:number;leverageLoading:boolean;onLeverageChange:(value:string)=>void;onRun:(path:string,body:unknown)=>Promise<boolean>};
 
-export default function ManualOrderTicket({venue,asset,connected,busy,blocked,botRunning,leverage,onLeverageChange,onRun}:Props){
+export default function ManualOrderTicket({venue,asset,connected,busy,blocked,botRunning,leverage,minimumLeverage,maximumLeverage,leverageLoading,onLeverageChange,onRun}:Props){
+  const leverageOptions=Array.from({length:Math.max(0,maximumLeverage-minimumLeverage+1)},(_,index)=>index+minimumLeverage);
   const {data,connected:streamConnected}=useExchangeStream(venue);
   const [action,setAction]=useState<'open'|'close'>('open');
   const [size,setSize]=useState('');
@@ -30,9 +30,12 @@ export default function ManualOrderTicket({venue,asset,connected,busy,blocked,bo
   const validPrice=price!=null&&Number.isFinite(price)&&price>0;
   const stopValid=!useStop||(Number.isFinite(Number(stop))&&Number(stop)>0);
   const takeProfitValid=!useTakeProfit||(Number.isFinite(Number(takeProfit))&&Number(takeProfit)>0);
-  const openDisabled=disabled||positionOpen||!confirmed||quantity==null||!stopValid||!takeProfitValid||!validPrice||data?.streams.market!=='live';
+  const validLeverage=Number.isInteger(Number(leverage))&&Number(leverage)>=minimumLeverage&&Number(leverage)<=maximumLeverage;
+  const openDisabled=leverageLoading||!validLeverage||disabled||positionOpen||!confirmed||quantity==null||!stopValid||!takeProfitValid||!validPrice||data?.streams.market!=='live';
   // Why Open Long/Short are unavailable, first reason that applies.
   const openBlockReason=!connected?'Connect the exchange account first.'
+    :leverageLoading?'Reading market leverage from the exchange.'
+    :!validLeverage?'Choose supported leverage for this market.'
     :botRunning?'The automated bot is running; stop it to trade manually.'
     :blocked?'Live trading is blocked for this account.'
     :!accountVerified?'Waiting for verified account and position data from the exchange.'
@@ -60,7 +63,7 @@ export default function ManualOrderTicket({venue,asset,connected,busy,blocked,bo
   return <div className="order-ticket" id="manual-ticket-panel" role="tabpanel" aria-labelledby="execution-tab-manual">
     <div className="ticket-segment" role="group" aria-label="Order action">{(['open','close'] as const).map(value=><button key={value} type="button" aria-pressed={action===value} onClick={()=>{setAction(value);setConfirmed(false);}}>{value==='open'?'Open':'Close'}</button>)}</div>
     {action==='open'?<>
-      <div className="ticket-mode-row"><StatusBadge>Isolated margin</StatusBadge><label><span className="sr-only">Order leverage</span><select aria-label="Order leverage" value={leverage} disabled={disabled} onChange={event=>onLeverageChange(event.target.value)}>{leverageOptions.map(value=><option key={value} value={value}>{value}x</option>)}</select></label></div>
+      <div className="ticket-mode-row"><StatusBadge>Isolated margin</StatusBadge><label><span className="sr-only">Order leverage</span><select aria-label="Order leverage" value={leverage} disabled={disabled||leverageLoading||positionOpen} onChange={event=>onLeverageChange(event.target.value)}>{leverageOptions.map(value=><option key={value} value={value}>{value}x</option>)}</select></label></div>
       <div className="ticket-order-type"><strong>Market</strong><span>Immediate execution</span></div>
       <div className="ticket-available"><span>Available margin</span><strong>{number(data?.balance?.free,4)} <small>{collateral}</small></strong></div>
       <div className="ticket-market-price"><span>Market price</span><strong>{number(price,priceDigits)} <small>{collateral}</small></strong></div>

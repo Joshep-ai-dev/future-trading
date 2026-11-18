@@ -1,3 +1,4 @@
+import BrandMark from '../../shared/ui/BrandMark';
 import { useState, type FormEvent } from "react";
 import { api } from "../../shared/api/api";
 
@@ -8,11 +9,7 @@ export type SignedInUser = {
   level: "viewer" | "trader" | "admin";
 };
 
-const BRAND_MARK = (
-  <svg viewBox='0 0 24 24' fill='none' aria-hidden='true'>
-    <path d='M4 16l5-7 5 4 6-9M4 21h16' stroke='currentColor' strokeWidth='2' strokeLinecap='round' strokeLinejoin='round' />
-  </svg>
-);
+const BRAND_MARK = <BrandMark/>;
 
 /** Decorative rising candles for the sign-in panel (deterministic, no data). */
 const HERO_CANDLES = Array.from({ length: 60 }, (_, i) => {
@@ -67,17 +64,17 @@ export default function AuthScreen({
   }
   return (
     <main className='auth-page'>
-      <section className='auth-hero' aria-label='About Silver'>
+      <section className='auth-hero' aria-label='About Trading Workspace'>
         <div className='auth-brand'>
           <span className='brand-mark'>{BRAND_MARK}</span>
           <div>
-            <strong>SILVER</strong>
-            <small>TRADING WORKSPACE</small>
+            <strong>TRADING</strong>
+            <small>WORKSPACE</small>
           </div>
         </div>
         <div className='auth-hero-copy'>
-          <h2>Silver perpetuals in one focused terminal.</h2>
-          <p>Chart, backtest and paper trade XAG / USDT, then trade live on your own exchange account.</p>
+          <h2>Your markets. One trading workspace.</h2>
+          <p>Explore perpetual markets, download history and test strategies before trading on your exchange account.</p>
           <ul className='auth-features'>
             {FEATURES.map(([title, detail]) => (
               <li key={title}>
@@ -106,8 +103,8 @@ export default function AuthScreen({
         <div className='auth-brand'>
           <span className='brand-mark'>{BRAND_MARK}</span>
           <div>
-            <strong>SILVER</strong>
-            <small>TRADING WORKSPACE</small>
+            <strong>TRADING</strong>
+            <small>WORKSPACE</small>
           </div>
         </div>
         {!configured || databaseError ? (

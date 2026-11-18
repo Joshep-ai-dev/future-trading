@@ -937,3 +937,22 @@
     grid-template-columns: minmax(0, 1fr) 140px;
   }
 }
+
+/* A collision-adjusted mouse price stays clear of the current-price badge. */
+.tv-mouse-price {
+  position: absolute;
+  z-index: 4;
+  transform: translateX(100%);
+  width: max-content;
+  box-sizing: border-box;
+  padding: 2px 5px;
+  border-radius: 2px;
+  background: #303030;
+  color: #fff;
+  font-family: var(--tv-font, sans-serif);
+  font-size: 12px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}

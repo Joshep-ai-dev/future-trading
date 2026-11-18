@@ -1,4 +1,7 @@
-import {useEffect,useRef,useState} from 'react';
+import {SidebarArrow} from './TradingWorkspaceTools';
+import {ExecutionModeContext,LiveSidebarContext,type ExecutionMode} from './ExecutionModeContext';
+import {useMarketLeverage} from '../../shared/api/useMarketLeverage';
+import {useContext,useEffect,useRef,useState} from 'react';
 import {api} from '../../shared/api/api';
 import {disconnectExchangeStream,reconnectExchangeStream,syncExchangeConnection} from '../../shared/api/useExchangeStream';
 import ManualOrderTicket from './ManualOrderTicket';
@@ -9,7 +12,7 @@ import type {VenueStatus,BotStatus} from '../../shared/api/exchangeTypes';
 import ExchangeConnections from '../account/ExchangeConnections';
 import LiveBotPanel from './LiveBotPanel';
 import type {SavedSetup} from '../strategy/SetupPicker';
-import {defaultInstrumentForVenue,instrumentDetails,saveExchangeInstrument,useExchangeInstrument,type ExchangeInstrument} from '../../shared/api/exchangeInstrument';
+import {defaultInstrumentForVenue,instrumentDetails,saveExchangeInstrument,useExchangeInstrument} from '../../shared/api/exchangeInstrument';
 
 type Venue=ExchangeVenue;
 export default function LiveExecution({view,settings,onSettingsChange,onConfigure,onManageAccount,onOpenTerminal,profiles,onApplySetup}:{view:'account'|'terminal';settings:BacktestSettings;profiles?:SavedSetup[];onApplySetup?:(setup:SavedSetup)=>void;onSettingsChange?:(settings:BacktestSettings)=>void;onConfigure?:()=>void;onManageAccount?:()=>void;onOpenTerminal?:()=>void}){
@@ -17,11 +20,15 @@ export default function LiveExecution({view,settings,onSettingsChange,onConfigur
   const venue=useExchangeVenue();
   const instrument=useExchangeInstrument(),instrumentInfo=instrumentDetails(instrument);
   const [savedVenues,setSavedVenues]=useState<Venue[]>([]);
-  const [mode,setMode]=useState<'manual'|'bot'>('manual');
-  const [liveLeverage,setLiveLeverage]=useState(String(Math.max(1,Math.floor(settings.max_leverage)))),[busy,setBusy]=useState(false),[message,setMessage]=useState('');
+  const sidebar=useContext(LiveSidebarContext);
+  const localMode=useState<ExecutionMode>('manual');
+  const [mode,setMode]=useContext(ExecutionModeContext)??localMode;
+  const [busy,setBusy]=useState(false),[message,setMessage]=useState('');
   const selected=EXCHANGES.find(item=>item.id===venue)!;
   const account=statuses.find(item=>item.venue===venue);
   const connected=!!account?.connected;
+  const leverage=useMarketLeverage(venue,instrument,connected&&view==='terminal',account?.symbol);
+  const liveLeverage=leverage.value,setLiveLeverage=leverage.setValue;
   const positionOpen=!!account?.position?.side;
   const positionCheckFailed=!!account?.position?.error||!!account?.executionError;
   const botForVenue=bot.running&&bot.venue===venue;
@@ -62,20 +69,13 @@ export default function LiveExecution({view,settings,onSettingsChange,onConfigur
     saveExchangeInstrument(defaultInstrumentForVenue(value));
     saveExchangeVenue(value);
   }
-  async function changeInstrument(value:ExchangeInstrument){
-    if(value===instrument)return;
-    if(savedVenues.includes(venue)){
-      if(await run('/api/exchange/reconnect',{venue,instrument:value}))saveExchangeInstrument(value);
-    }else saveExchangeInstrument(value);
-  }
 
   return <div className={`live-account-content live-${view}-view`}>
-    {view==='account'&&<ExchangeConnections venue={venue} instrument={instrument} statuses={statuses} savedVenues={savedVenues} busy={busy} onVenueChange={changeVenue} onInstrumentChange={value=>void changeInstrument(value)} onRun={run} onOpenTerminal={onOpenTerminal}/>}
+    {view==='account'&&<ExchangeConnections venue={venue} instrument={instrument} statuses={statuses} savedVenues={savedVenues} busy={busy} onVenueChange={changeVenue} onRun={run} onOpenTerminal={onOpenTerminal}/>}
     {view==='terminal'&&<div className="live-method-section">
-      <TabBar items={[{value:'manual',label:'Manual',controls:'manual-ticket-panel'},{value:'bot',label:'Bots',controls:'bot-ticket-panel'}] as const} value={mode} onChange={setMode} label="Execution mode" idPrefix="execution-tab"/>
-      <div className="ticket-connection"><StatusBadge tone={connected?'positive':'warning'} dot>{connected?selected.name+' connected':'No exchange connected'}</StatusBadge>{connected?<Button variant="ghost" disabled={busy} onClick={()=>{if(window.confirm('Disconnect this exchange? Local automation stops. Exchange positions and orders remain active.'))void run('/api/exchange/disconnect',{venue});}}>Disconnect</Button>:<Button variant="ghost" onClick={onManageAccount}>Connect API</Button>}</div>
+      <div className="ticket-connection">{sidebar&&<SidebarArrow open={sidebar.open} onToggle={sidebar.toggle} panelId="live-execution-sidebar"/>}<TabBar className="live-execution-mode-tabs" items={[{value:'manual',label:'Manual',controls:'manual-ticket-panel'},{value:'bot',label:'Bots',controls:'bot-ticket-panel'}] as const} value={mode} onChange={setMode} label="Execution mode" idPrefix="execution-tab"/><StatusBadge tone={connected?'positive':'warning'} dot>{connected?selected.name+' connected':'Not connected'}</StatusBadge>{!connected&&<Button variant="ghost" onClick={onManageAccount}>Connect API</Button>}</div>
       {account?.executionError&&<p className="exchange-inline-error">{account.executionError}</p>}
-      {mode==='manual'?<ManualOrderTicket key={`${venue}-${instrument}`} venue={venue} asset={instrumentInfo.base} connected={connected} busy={busy} blocked={positionCheckFailed} botRunning={botForVenue} leverage={liveLeverage} onLeverageChange={setLiveLeverage} onRun={run}/>:<LiveBotPanel key={`${venue}-${instrument}`} venue={venue} settings={settings} onSettingsChange={onSettingsChange} onConfigure={onConfigure} profiles={profiles} onApplySetup={onApplySetup} bot={bot} connected={connected} busy={busy} blocked={positionCheckFailed} positionOpen={positionOpen} leverage={liveLeverage} onLeverageChange={setLiveLeverage} onRun={run}/>}
+      {mode==='manual'?<ManualOrderTicket key={`${venue}-${instrument}`} venue={venue} asset={instrumentInfo.base} connected={connected} busy={busy} blocked={positionCheckFailed} botRunning={botForVenue} leverage={liveLeverage} minimumLeverage={leverage.minimum} maximumLeverage={leverage.maximum} leverageLoading={leverage.loading} onLeverageChange={setLiveLeverage} onRun={run}/>:<LiveBotPanel key={`${venue}-${instrument}`} venue={venue} settings={settings} onSettingsChange={onSettingsChange} onConfigure={onConfigure} profiles={profiles} onApplySetup={onApplySetup} bot={bot} connected={connected} busy={busy} blocked={positionCheckFailed} positionOpen={positionOpen} leverage={liveLeverage} minimumLeverage={leverage.minimum} maximumLeverage={leverage.maximum} leverageLoading={leverage.loading} onLeverageChange={setLiveLeverage} onRun={run}/>}
 
     </div>}
     {message&&<p className={message.startsWith('Error:')?'error':'live-result'} role="status">{message}</p>}

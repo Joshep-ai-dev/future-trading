@@ -57,7 +57,7 @@ function PatternChart({result,highlight}:{result:PatternResult;highlight:number|
 }
 
 /** Find past windows shaped like the latest candles and project the next high and low. */
-export default function PatternPanel({defaultTimeframe='15m',newsControls=false}:{defaultTimeframe?:string;newsControls?:boolean}){
+export default function PatternPanel({defaultTimeframe='15m',newsControls=false,market='xag'}:{defaultTimeframe?:string;newsControls?:boolean;market?:string}){
   const [view,setView]=useState<'library'|'history'>(newsControls?'history':'library');
   const [timeframe,setTimeframe]=useState<string>(TIMEFRAMES.includes(defaultTimeframe as typeof TIMEFRAMES[number])?defaultTimeframe:'15m');
   const [window,setWindow]=useState(48),[horizon,setHorizon]=useState(24),[topK,setTopK]=useState(20);
@@ -76,10 +76,10 @@ export default function PatternPanel({defaultTimeframe='15m',newsControls=false}
         const path=forecastPath(await api<LivePrediction>(`/api/forecast/models/${model.id}/live`));
         forecast=path.closes;setStraight(path.straight);look=Math.max(horizon,forecast.length);
       }
-      setResult(await api<PatternResult>('/api/patterns',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({timeframe:usedTimeframe,window,horizon:look,top_k:topK,news_weight:newsWeight,forecast})}));
+      setResult(await api<PatternResult>('/api/patterns',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({market,timeframe:usedTimeframe,window,horizon:look,top_k:topK,news_weight:newsWeight,forecast})}));
     }
     catch(reason){setError(String(reason));}finally{setBusy(false);}
-  },[usedTimeframe,window,horizon,topK,newsWeight,model]);
+  },[market,usedTimeframe,window,horizon,topK,newsWeight,model]);
   useEffect(()=>{if(view==='history'&&!result)void analyze();},[view]);// eslint-disable-line react-hooks/exhaustive-deps
   const summary=result?.summary;
   const minutes=result?Math.round(result.horizon*result.stepSeconds/60):0;

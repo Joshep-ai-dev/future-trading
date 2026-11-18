@@ -1,3 +1,4 @@
+import {displaySymbol} from './displaySymbol';
 import { BollingerOverlay } from "./BollingerOverlay";
 import { chartBollingerBands } from "./bollingerBands";
 import { SupertrendOverlay } from "./SupertrendOverlay";
@@ -210,6 +211,7 @@ export function EquityChart({
 }
 
 export default function BacktestChart({
+  symbol="XAG/USDT",
   candles,
   trades,
   selected,
@@ -219,6 +221,7 @@ export default function BacktestChart({
   timeframe,
   indicatorSettings,
 }: {
+  symbol?: string;
   indicatorSettings: BacktestSettings;
   indicators: IndicatorPoint[];
   barSeconds: number;
@@ -246,7 +249,7 @@ export default function BacktestChart({
   const [settingsOpen, setSettingsOpen] = useState<
     IndicatorKind | OverlayKind | null
   >(null);
-  const drawing = useChartDrawings("XAGUSDT");
+  const drawing = useChartDrawings(symbol);
   const [hiddenOverlays, setHiddenOverlays] = useState<
     Record<OverlayKind, boolean>
   >({ bollinger: false, supertrend: false, triplema: false });
@@ -1072,7 +1075,7 @@ export default function BacktestChart({
       <div className='chart-resize with-tools'>
         <DrawingToolbar {...drawing.toolbar} />
         <ChartLegend
-          title={`XAGUSDT · ${timeframe}`}
+          title={`${displaySymbol(symbol)} · ${timeframe}`}
           data={legend}
           overlays={[
             ...(trendOverlayName

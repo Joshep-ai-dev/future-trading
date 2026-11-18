@@ -4,10 +4,10 @@ export const EXCHANGES=[
   {id:'okx',name:'OKX',passphrase:true,wallet:false},
   {id:'htx',name:'HTX',passphrase:false,wallet:false},
   {id:'mexc',name:'MEXC',passphrase:false,wallet:false},
-  {id:'binance',name:'Binance USDⓈ-M',passphrase:false,wallet:false},
   {id:'hyperliquid',name:'Hyperliquid',passphrase:false,wallet:true},
 ] as const;
-export type ExchangeVenue=typeof EXCHANGES[number]['id'];
+// Keep legacy account/status payloads readable without offering Binance in selectors.
+export type ExchangeVenue=typeof EXCHANGES[number]['id']|'binance';
 
 const storageKey='silver.exchange.venue';
 const changedEvent='silver:exchange-venue-changed';
@@ -17,12 +17,14 @@ export function readExchangeVenue():ExchangeVenue{
   if(activeVenue)return activeVenue;
   try{
     const saved=localStorage.getItem(storageKey);
-    activeVenue=EXCHANGES.some(exchange=>exchange.id===saved)?saved as ExchangeVenue:'okx';
+    activeVenue=saved==='binance'?'htx':EXCHANGES.some(exchange=>exchange.id===saved)?saved as ExchangeVenue:'okx';
+    if(saved==='binance')localStorage.setItem(storageKey,activeVenue);
   }catch{activeVenue='okx';}
   return activeVenue;
 }
 
 export function saveExchangeVenue(value:ExchangeVenue){
+  if(value==='binance')value='htx';
   activeVenue=value;
   try{localStorage.setItem(storageKey,value);}catch{/* Keep this selection active for the current session. */}
   if(typeof window!=='undefined')window.dispatchEvent(new Event(changedEvent));

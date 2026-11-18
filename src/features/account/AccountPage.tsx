@@ -1,3 +1,4 @@
+import BrandMark from '../../shared/ui/BrandMark';
 import { useState } from "react";
 import {
   CHART_TIME_ZONES,
@@ -67,9 +68,9 @@ export default function AccountPage({
       <div className='account-settings-shell'>
         <aside className='account-navigation'>
           <div className='account-workspace-identity'>
-            <span>S</span>
+            <span><BrandMark/></span>
             <div>
-              <strong>Silver workspace</strong>
+              <strong>Trading Workspace</strong>
               <small>Local trading terminal</small>
             </div>
           </div>

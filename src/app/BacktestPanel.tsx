@@ -1,3 +1,4 @@
+import {useMarketDatasets} from '../shared/api/useMarketDatasets';
 import {lazy,Suspense,useEffect,useState,type ReactNode} from 'react';
 import {PageHeader} from '../shared/ui/ui';
 import {htxCostDefaults} from '../features/strategy/executionCostDefaults';
@@ -89,6 +90,9 @@ function initial(range: {
 
 export default function BacktestPanel({range,view,onViewChange,accountMode,onAccountModeChange}:{range:{startDate:string;endDate:string};view:Page;onViewChange:(page:Page)=>void;accountMode:'live'|'paper';onAccountModeChange:(mode:'live'|'paper')=>void}) {
   const [settings,setSettings]=useState(()=>initial(range));
+  const datasets=useMarketDatasets();
+  const dataset=datasets.find(item=>item.id===settings.market);
+  const marketRange=dataset?{startDate:dataset.startDate,endDate:dataset.endDate}:range;
   const [message,setMessage]=useState('');
   const [stopping,setStopping]=useState(false);
   const [result,setResult]=useState<BacktestResult|null>(null);
@@ -138,11 +142,12 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
     {keep('paper-live',<LiveTrading settings={settings} controls={<LiveExecution view="terminal" settings={settings} onSettingsChange={setSettings} onConfigure={()=>onViewChange('strategy')} onManageAccount={()=>onViewChange('account')}/>}/>)}
     {keep('paper-paper',<PaperTrading settings={settings} onChange={setSettings} onConfigure={()=>onViewChange('strategy')} visible={current==='paper-paper'} profiles={[]} onApplySetup={()=>{}} focus={chartFocus}/>)}
     {keep('strategy',<div id="page-strategy" role="tabpanel" aria-labelledby="tab-strategy" className="setup-page">
+      <label className="ui-field"><span>Backtest market</span><select aria-label="Backtest market" value={settings.market} disabled={busy} onChange={event=>{const next=datasets.find(item=>item.id===event.target.value);setSettings({...settings,market:event.target.value,...(next?{start_date:next.startDate,end_date:next.endDate}:{start_date:range.startDate,end_date:range.endDate})});}}><option value="xag">XAG / USDT - OKX local history</option>{datasets.map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
       <div className="strategy-switch"><BotSelector strategy={settings.strategy} onStrategyChange={strategy=>{if(strategy==='adx_supertrend'||strategy==='st_scalper')setSettings({...settings,strategy,st_scalper:{...stScalperDefaults,...settings.st_scalper}});}} profiles={[]} onApplySetup={()=>{}}/></div>
       {settings.strategy==='st_scalper'
-        ?<ScalperSettings settings={settings} onChange={setSettings} onRun={()=>void runBacktest()} busy={busy} range={range}/>
+        ?<ScalperSettings settings={settings} onChange={setSettings} onRun={()=>void runBacktest()} busy={busy} range={marketRange}/>
         :settings.strategy==='adx_supertrend'
-        ?<AdxSupertrendSettings settings={settings} onChange={setSettings} onRun={()=>void runBacktest()} busy={busy} range={range}/>
+        ?<AdxSupertrendSettings settings={settings} onChange={setSettings} onRun={()=>void runBacktest()} busy={busy} range={marketRange}/>
         :<button type="button" onClick={()=>setSettings({...settings,strategy:'adx_supertrend'})}>Use ADX + Supertrend</button>}
     </div>)}
     {keep('results',<div id="page-results" role="tabpanel" aria-labelledby="tab-results">
@@ -153,7 +158,7 @@ export default function BacktestPanel({range,view,onViewChange,accountMode,onAcc
         onExport={exportResult} onOpenRun={id=>void openRun(id)}
         onApplySettings={()=>{if(result)setSettings({...settings,...result.settings,adx_supertrend:{...adxSupertrendDefaults,...result.settings.adx_supertrend}});}}
         summary={[
-          ['Market','XAG / USDT · OKX'],
+          ['Market',dataset?.label??'XAG / USDT - OKX'],
           ['Period (UTC)',settings.start_date+' → '+settings.end_date],
           ['Timeframe',settings.entry_timeframe],
           ['Starting balance','$'+fmt(settings.capital)],
