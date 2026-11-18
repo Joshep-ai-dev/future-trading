@@ -3,14 +3,14 @@
 /* Palette variables come from tv-tokens.css (:root). */
 
 .price-panel {
-  background: var(--tv-bg) !important;
+  background: var(--app-panel, #101114) !important;
   border-color: var(--tv-border) !important;
   font-family: var(--tv-font);
 }
 
 .price-panel > .tv-header,
 .balance-chart-shell > .tv-toolbar {
-  background: var(--tv-bg);
+  background: var(--app-panel, #101114);
   border-color: var(--tv-border);
 }
 
@@ -209,7 +209,7 @@
 .price-panel .chart-resize,
 .result-chart .chart-resize,
 .balance-chart-shell .chart-resize {
-  background: var(--tv-bg);
+  background: var(--app-panel, #101114);
   border-color: var(--tv-border);
 }
 
@@ -454,7 +454,7 @@
   overflow-y: auto;
   scrollbar-width: none;
   border-right: 4px solid var(--tv-border, #222222);
-  background: var(--tv-bg, #000000);
+  background: var(--app-panel, #101114);
   box-sizing: border-box;
 }
 

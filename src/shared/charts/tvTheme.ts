@@ -6,7 +6,7 @@ import { ColorType, CrosshairMode, LineStyle } from "lightweight-charts";
  * src/styles/tv-tokens.css and must use the same values.
  */
 export const TV = {
-  background: "#000000",
+  background: "#101114",
   grid: "#303030",
   border: "#222222",
   separator: "#303030",
