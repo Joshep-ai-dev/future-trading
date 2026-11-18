@@ -6,6 +6,18 @@ import { formatTradingTime } from "../../shared/charts/tradingTime";
 import ReleaseChart, { type ChartRelease } from "./ReleaseChart";
 
 type Reaction = { m15: number | null; m60: number | null; m240: number | null } | null;
+type FedTextResult = {
+  status: "pending" | "ready" | "unavailable";
+  label: string;
+  score?: number | null;
+  previousScore?: number | null;
+  previousLabel?: string;
+  change?: number | null;
+  silverBias?: number | null;
+  meeting?: string;
+  shift?: string;
+  note: string;
+};
 type Release = {
   id: string;
   name: string;
@@ -23,6 +35,7 @@ type Release = {
   surpriseZ: number | null;
   silverBias: number | null;
   reaction: Reaction;
+  minutesResult?: FedTextResult | null;
 };
 type GroupStats = {
   group: string;
@@ -43,6 +56,8 @@ const value = (release: Release, number: number | null) => (number == null ? "�
 const signed = (number: number | null | undefined, digits = 2, suffix = "") =>
   number == null ? "—" : `${number > 0 ? "+" : ""}${fmt(number, digits)}${suffix}`;
 const tone = (number: number | null | undefined) => (number == null || Math.abs(number) < 1e-9 ? "" : number > 0 ? "positive" : "negative");
+const fedTone = (result: FedTextResult | null | undefined) => !result ? "Not loaded" : result.score == null ? result.label : `${result.label} (${signed(result.score, 0)})`;
+const isTextRelease = (release: Release) => release.group === "minutes" || release.group === "press";
 const period = (release: Release) => {
   if (!release.period) return "";
   const date = new Date(`${release.period}T00:00:00Z`);
@@ -76,6 +91,29 @@ function BiasPill({ bias }: { bias: number | null }) {
   return <span className={`news-pill ${bias > 0 ? "is-bullish" : "is-bearish"}`}>{bias > 0 ? "Silver +" : "Silver −"}</span>;
 }
 
+function ReleaseResultCells({ release }: { release: Release }) {
+  if (isTextRelease(release)) {
+    const result = release.minutesResult;
+    const ready = result?.status === "ready";
+    return <>
+      <td className='econ-actual' title={result?.note}>{!result && release.released > Date.now() / 1000 ? "Awaiting release" : fedTone(result)}</td>
+      <td title='Fed text releases have no numeric consensus forecast'>—</td>
+      <td>{result?.previousScore == null ? "—" : `${result.previousLabel} (${signed(result.previousScore, 0)})`}</td>
+      <td title={result?.shift}>{signed(result?.change, 0, " pts")}</td>
+      <td title={result?.note}>{ready ? "Rules" : "—"}</td>
+      <td>{!ready ? "—" : result.silverBias == null ? <span className='news-pill is-neutral'>Unclear</span> : <BiasPill bias={result.silverBias} />}</td>
+    </>;
+  }
+  return <>
+    <td className='econ-actual'>{value(release, release.actual)}</td>
+    <td>{value(release, release.forecast)}</td>
+    <td>{value(release, release.revised ?? release.previous)}</td>
+    <td className={tone(release.surprise)}>{signed(release.surprise, 2, unit(release))}</td>
+    <td>{signed(release.surpriseZ)}</td>
+    <td>{release.actual == null ? "" : <BiasPill bias={release.silverBias} />}</td>
+  </>;
+}
+
 /** US releases that move silver: forecast vs actual, the surprise, and how silver really reacted. */
 export default function EconomicCalendar({ visible, onOpenChart, newSince = Infinity }: { visible: boolean; onOpenChart?: (time: number, label: string) => void; newSince?: number }) {
   const zone = useChartTimeZone();
@@ -87,7 +125,7 @@ export default function EconomicCalendar({ visible, onOpenChart, newSince = Infi
     [group, setGroup] = useState(""),
     [coreOnly, setCoreOnly] = useState(true);
   // Poll every 10 s from 10 minutes before a release to 30 minutes after it, otherwise every minute.
-  const hot = [...(data?.past ?? []), ...(data?.upcoming ?? [])].some(
+  const hot = (data?.past ?? []).some((row) => row.minutesResult?.status === "pending") || [...(data?.past ?? []), ...(data?.upcoming ?? [])].some(
     (row) => row.released >= Date.now() / 1000 - 30 * 60 && row.released <= Date.now() / 1000 + 10 * 60,
   );
   useEffect(() => {
@@ -109,15 +147,18 @@ export default function EconomicCalendar({ visible, onOpenChart, newSince = Infi
     if (view !== "past" || !row.reaction) return;
     setChart({
       name: row.name,
+      toneAssessment: isTextRelease(row),
       label: shortName(row.name),
       released: row.released,
-      actual: value(row, row.actual),
+      actual: isTextRelease(row) ? fedTone(row.minutesResult) : value(row, row.actual),
       forecast: value(row, row.forecast),
-      surprise: row.surprise == null ? "—" : signed(row.surprise, 2, unit(row)),
+      surprise: isTextRelease(row) ? signed(row.minutesResult?.change, 0, " tone pts") : row.surprise == null ? "—" : signed(row.surprise, 2, unit(row)),
       reaction: row.reaction,
     });
   }
   const rows = (view === "past" ? data?.past : data?.upcoming)?.filter((row) => !coreOnly || row.core) ?? [];
+  const toneGroup = group === "minutes" || group === "press";
+  const missingMinutes = view === "past" && rows.some((row) => isTextRelease(row) && !row.minutesResult);
   return (
     <section className='news-panel econ' aria-label='US economic calendar'>
       <header>
@@ -134,6 +175,7 @@ export default function EconomicCalendar({ visible, onOpenChart, newSince = Infi
           {error}
         </p>
       )}
+      {missingMinutes && <p className='error' role='status'>The running backend has not supplied FOMC analysis. Stop the current development terminal with Ctrl+C, run npm run dev again, then refresh this page.</p>}
 
       <div className='econ-cards'>
         {data?.stats.map((item) => {
@@ -147,7 +189,13 @@ export default function EconomicCalendar({ visible, onOpenChart, newSince = Infi
               onClick={() => setGroup(group === item.group ? "" : item.group)}
             >
               <span className='econ-card-title'>{item.label}</span>
-              {last && last.actual != null ? (
+              {last && isTextRelease(last) && last.minutesResult ? (
+                <span className='econ-card-last'>
+                  <b>{fedTone(last.minutesResult)}</b>
+                  {last.minutesResult.silverBias != null && <BiasPill bias={last.minutesResult.silverBias} />}
+                  <small>Last: {formatTradingTime(last.released, zone).slice(0, 10)}</small>
+                </span>
+              ) : last && last.actual != null ? (
                 <span className='econ-card-last'>
                   <b>{value(last, last.actual)}</b>
                   <small>vs {value(last, last.forecast)} forecast</small>
@@ -171,7 +219,7 @@ export default function EconomicCalendar({ visible, onOpenChart, newSince = Infi
               </span>
               <span className='econ-card-next'>
                 {item.next
-                  ? `Next ${until(item.next.released)} · ${item.next.forecast == null ? "forecast pending" : `fcst ${value(item.next, item.next.forecast)}`}`
+                  ? `Next ${until(item.next.released)} · ${isTextRelease(item.next) ? "text analysis after release" : item.next.forecast == null ? "forecast pending" : `fcst ${value(item.next, item.next.forecast)}`}`
                   : "No date scheduled yet"}
               </span>
             </button>
@@ -214,11 +262,11 @@ export default function EconomicCalendar({ visible, onOpenChart, newSince = Infi
                 <th>Time</th>
                 <th>Release</th>
                 <th>Period</th>
-                <th>Actual</th>
+                <th>{toneGroup ? "Tone index" : "Actual / tone"}</th>
                 <th>Forecast</th>
-                <th>Previous</th>
-                <th>Surprise</th>
-                <th>σ</th>
+                <th>{toneGroup ? "Previous tone" : "Previous"}</th>
+                <th>{toneGroup ? "Tone change" : "Surprise / Δ tone"}</th>
+                <th>{toneGroup ? "Method" : "σ / method"}</th>
                 <th>Expected</th>
                 <th>Silver 15m</th>
                 <th>Silver 1h</th>
@@ -246,13 +294,8 @@ export default function EconomicCalendar({ visible, onOpenChart, newSince = Infi
                     {view === "upcoming" && <small> {until(row.released)}</small>}
                   </td>
                   <td title={row.name}>{shortName(row.name)}</td>
-                  <td>{period(row)}</td>
-                  <td className='econ-actual'>{value(row, row.actual)}</td>
-                  <td>{value(row, row.forecast)}</td>
-                  <td>{value(row, row.revised ?? row.previous)}</td>
-                  <td className={tone(row.surprise)}>{row.surprise == null ? "—" : signed(row.surprise, 2, unit(row))}</td>
-                  <td>{signed(row.surpriseZ)}</td>
-                  <td>{row.actual == null ? "" : <BiasPill bias={row.silverBias} />}</td>
+                  <td>{row.minutesResult?.meeting ?? period(row)}</td>
+                  <ReleaseResultCells release={row} />
                   <td className={tone(row.reaction?.m15)}>{signed(row.reaction?.m15, 2, "%")}</td>
                   <td className={tone(row.reaction?.m60)}>{signed(row.reaction?.m60, 2, "%")}</td>
                   <td className={tone(row.reaction?.m240)}>{signed(row.reaction?.m240, 2, "%")}</td>
@@ -269,7 +312,8 @@ export default function EconomicCalendar({ visible, onOpenChart, newSince = Infi
       <p className='news-caption'>
         &quot;Expected&quot; is the textbook first reaction: hotter inflation, stronger growth or a higher rate than forecast lifts yields and the
         dollar, which usually pushes silver down. The cards show how often silver really moved that way within an hour. FOMC minutes and the press
-        conference have no forecast, and rate decisions rarely differ from it, so for those the silver move is what matters. Silver moves exist only from your first market candle, so older releases show —. Source: FXStreet economic calendar (stored from 2024).
+        conference have no numeric forecast. FOMC minutes and press conference transcripts show a rule-based tone index (−100 dovish to +100 hawkish), its change from the preceding release of the same type, and a textbook silver bias. This is an uncalibrated text estimate, not a market-consensus surprise or trade probability.
+        Silver moves exist only from your first market candle, so older releases show —. Price moves do not establish causation. Sources: FXStreet economic calendar (stored from 2024); Federal Reserve minutes and press conference transcripts.
       </p>
       {chart && (
         <ReleaseChart

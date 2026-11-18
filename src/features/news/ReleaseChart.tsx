@@ -18,6 +18,7 @@ import type { Analysis } from "../../shared/types/types";
 
 export type ChartRelease = {
   name: string;
+  toneAssessment?: boolean;
   label: string;
   released: number;
   actual: string;
@@ -123,13 +124,13 @@ export default function ReleaseChart({ release, onClose, onOpenTrading }: { rele
       </header>
       <div className='release-chart-facts'>
         <span>
-          Actual <b>{release.actual}</b>
+          {release.toneAssessment ? "Tone" : "Actual"} <b>{release.actual}</b>
         </span>
         <span>
           Forecast <b>{release.forecast}</b>
         </span>
         <span>
-          Surprise <b>{release.surprise}</b>
+          {release.toneAssessment ? "Tone change" : "Surprise"} <b>{release.surprise}</b>
         </span>
         <span>
           Silver 15m <b className={tone(release.reaction?.m15)}>{pct(release.reaction?.m15)}</b>

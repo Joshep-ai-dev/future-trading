@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import time
 from collections import Counter
+from http.client import HTTPException as HTTPReadError
 from typing import Literal
 
 import numpy as np
@@ -18,6 +19,17 @@ from server.news.service import news_service
 
 router = APIRouter(prefix='/api/news')
 RESOLUTIONS = {'15m': 900, '1h': 3600, '4h': 14400, '1d': 86400}
+
+
+@router.get('/minutes')
+def fomc_minutes(released: int = Query(..., ge=1704067200, le=4102444800)):
+    from server.news.minutes_result import analyze_minutes
+    try:
+        return analyze_minutes(released)
+    except LookupError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except (OSError, ValueError, HTTPReadError) as error:
+        raise HTTPException(status_code=502, detail='Unable to load verified Federal Reserve minutes. Please retry.') from error
 
 
 @router.get('')
@@ -135,6 +147,12 @@ def economic_calendar(days_back: int = Query(60, ge=1, le=1200), days_ahead: int
     rows = calendar_rows()
     now = time.time()
     shown = [row for row in rows if now-days_back*86400 <= row['released'] <= now+days_ahead*86400 and (not group or row['group'] == group)]
+    from server.news.minutes_result import calendar_result
+    for row in sorted(shown, key=lambda item: -item['released']):
+        if row['group'] == 'minutes':
+            row['minutesResult'] = calendar_result(row['released'])
+        elif row['group'] == 'press':
+            row['minutesResult'] = calendar_result(row['released'], kind='press')
     return dict(groups=[dict(key=key, label=label) for key, label in GROUPS], stats=group_stats(rows),
                 past=sorted([row for row in shown if row['released'] <= now], key=lambda row: -row['released']),
                 upcoming=[row for row in shown if row['released'] > now])
