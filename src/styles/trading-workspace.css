@@ -878,3 +878,10 @@ html::-webkit-scrollbar,body::-webkit-scrollbar { display: none; }
 /* No floating reopen arrow any more: keep the toolbar's normal right padding. */
 .app-shell[data-page=paper] .terminal-grid[data-controls=hidden] .price-panel > .tv-toolbar { padding-right: 8px; }
 .app-shell[data-page=paper] .terminal-grid[data-controls=hidden] .price-panel > .tv-header { padding-right: 14px; }
+
+/* The order book never sizes its grid rows: it fills the header + chart height
+   and switching to Trades (longer content) scrolls inside instead of growing. */
+@media(min-width:1100px) {
+  .terminal-main.has-order-book > .order-book-panel { contain: size; height: auto; align-self: stretch; }
+}
+.order-book-panel .order-trades { flex: 1; min-height: 0; overflow-y: auto; }
