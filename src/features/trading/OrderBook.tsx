@@ -29,6 +29,7 @@ function group(levels:[number,number][],step:number,side:'ask'|'bid',quote:boole
   let total=0;
   return sorted.map(([price,size])=>{total+=size;return {price,size,total};});
 }
+const clock=(ms:number)=>{const d=new Date(ms);return `${d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})}.${String(d.getMilliseconds()).padStart(3,'0')}`;};
 const amount=(value:number)=>value.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
 
 type Tab='book'|'trades';
@@ -131,12 +132,13 @@ function OrderBookPanel({id,tab,onTab,data,base,resetKey,emptyBook,emptyTrades}:
         <div className="order-book-side is-bids">{bids.map(level=>row(level,'bid'))}</div>
         {!book&&<p className="order-book-empty" role="status">{emptyBook}</p>}
       </div>
+      <div className="order-book-updated" aria-live="off">{book?.timestamp?`Exchange time ${clock(book.timestamp)}`:' '}</div>
     </>:<div className="order-book-table order-trades" role="table" aria-label={`${base} recent trades`}>
       <div className="order-book-row is-head" role="row"><span role="columnheader">Price</span><span role="columnheader">Size ({base})</span><span role="columnheader">Time</span></div>
       {trades.map((trade,index)=><div key={trade.id??index} className={`order-book-row ${trade.side==='sell'?'is-ask':'is-bid'}`} role="row">
         <span role="cell" className="order-book-price">{trade.price==null?'—':trade.price.toFixed(priceDigits)}</span>
         <span role="cell">{trade.quantity==null?'—':amount(trade.quantity)}</span>
-        <span role="cell">{trade.timestamp==null?'—':new Date(trade.timestamp).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})}</span>
+        <span role="cell">{trade.timestamp==null?'—':clock(trade.timestamp)}</span>
       </div>)}
       {!trades.length&&<p className="order-book-empty" role="status">{emptyTrades}</p>}
     </div>}

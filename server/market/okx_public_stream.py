@@ -10,7 +10,7 @@ import time
 
 import aiohttp
 
-from server.exchanges.exchange_stream import BOOK_DEPTH, TRADE_HISTORY, trade_view
+from server.exchanges.exchange_stream import BOOK_DEPTH, TRADE_HISTORY, apply_bbo, trade_view
 from server.market.public_book import INSTRUMENT, SYMBOL, contract_value, public_order_book
 
 URL = 'wss://ws.okx.com/ws/v5/public'
@@ -99,6 +99,9 @@ class OkxPublicStream:
                 async with aiohttp.ClientSession() as session:
                     async with session.ws_connect(URL, heartbeat=None, receive_timeout=30) as socket:
                         args = [dict(channel=CHANNELS[kind], instId=INSTRUMENT) for kind in sorted(kinds)]
+                        if 'orderBook' in kinds:
+                            # Tick-by-tick best bid/offer (about 10 ms) between 100 ms book updates.
+                            args.append(dict(channel='bbo-tbt', instId=INSTRUMENT))
                         await socket.send_json(dict(op='subscribe', args=args))
                         last_ping = time.monotonic()
                         while True:
@@ -126,6 +129,11 @@ class OkxPublicStream:
                                     if not book.apply(packet.get('action', 'snapshot'), item):
                                         raise ConnectionError('Order book sequence gap; resubscribing')
                                 self.publish('orderBook', book.view(size))
+                            elif channel == 'bbo-tbt' and 'orderBook' in self.latest:
+                                item = data[-1]
+                                bid = [float(item['bids'][0][0]), float(item['bids'][0][1]) * size] if item.get('bids') else None
+                                ask = [float(item['asks'][0][0]), float(item['asks'][0][1]) * size] if item.get('asks') else None
+                                self.publish('orderBook', apply_bbo(self.latest['orderBook'], bid, ask, int(item['ts'])))
                             elif channel == 'trades':
                                 fresh = [trade_view(dict(id=item.get('tradeId'), side=item.get('side'), price=float(item['px']),
                                                          amount=float(item['sz']), timestamp=int(item['ts'])), size)

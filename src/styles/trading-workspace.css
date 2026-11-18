@@ -899,3 +899,5 @@ html::-webkit-scrollbar,body::-webkit-scrollbar { display: none; }
 .ticket-market-price small { color: var(--muted); font-size: 9px; font-weight: 400; }
 .ticket-market-price { margin-bottom: 12px; }
 .ticket-available { margin-top: 12px; }
+.order-book-updated { flex: none; height: 22px; padding: 0 10px; border-top: 1px solid #23272f; color: #6f7a8a; font-size: 10px; line-height: 22px; text-align: right; font-variant-numeric: tabular-nums; }
+.order-trades .order-book-row { grid-template-columns: 1fr 1fr 1.2fr; }
