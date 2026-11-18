@@ -838,3 +838,6 @@ html::-webkit-scrollbar,body::-webkit-scrollbar { display: none; }
 @media(max-width:1099px) {
   .terminal-main.has-order-book > .order-book-panel { order: 1; height: 420px; border-radius: 10px; }
 }
+/* Order book tabs: flat, straight underline (no rounded button corners). */
+.order-book-tabs button { position: relative; border: 0 !important; border-radius: 0 !important; box-shadow: none !important; }
+.order-book-tabs button[aria-selected=true]::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; border-radius: 0; background: #4fd1c5; }
