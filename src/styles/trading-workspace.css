@@ -748,3 +748,12 @@ html::-webkit-scrollbar,body::-webkit-scrollbar { display: none; }
   border-radius: 10px;
   box-shadow: none !important;
 }
+
+/* Chart header/toolbar row shares the panel fill. */
+.price-panel > .tv-header,
+.price-panel > .tv-toolbar,
+.price-panel .chart-actions,
+.price-panel .compact-chart-toolbar,
+.balance-chart-shell > .tv-toolbar,
+.app-shell[data-page=paper] .price-panel > .tv-header,
+.app-shell[data-page=paper] .price-panel > .compact-chart-toolbar { background: var(--app-panel) !important; }
