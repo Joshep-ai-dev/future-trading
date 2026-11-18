@@ -708,3 +708,17 @@ button.chart-date-trigger.is-open { color: #a9c2ff; background: #223251; border-
 }
 html { scrollbar-width: none; }
 html::-webkit-scrollbar,body::-webkit-scrollbar { display: none; }
+
+/* Borderless panels: separation comes from the panel fill against the page. */
+.terminal-panel,.ui-panel,.settings-section,.settings-profiles,.configuration-runbar,
+.execution-notes,.strategy-navigation,.analysis-empty-panel,
+.app-shell[data-page=paper] .terminal-panel,
+.app-shell[data-page=paper] .terminal-sidebar > .ui-panel,
+.app-shell[data-page=paper] .exchange-market-header { border-color: transparent; box-shadow: none; }
+/* Tighter gutters between trading panels. */
+.app-shell[data-page=paper] .terminal-grid { gap: 6px; padding-top: 6px; }
+.app-shell[data-page=paper] .terminal-sidebar { gap: 6px; }
+.app-shell[data-page=paper] .terminal-main > .exchange-market-header { margin-bottom: 6px; }
+@media(min-width:1100px) {
+  .app-shell[data-page=paper] .terminal-main { grid-template-rows: auto var(--terminal-chart,clamp(500px,65dvh,860px)) 6px auto; }
+}
