@@ -841,3 +841,19 @@ html::-webkit-scrollbar,body::-webkit-scrollbar { display: none; }
 /* Order book tabs: flat, straight underline (no rounded button corners). */
 .order-book-tabs button { position: relative; border: 0 !important; border-radius: 0 !important; box-shadow: none !important; }
 .order-book-tabs button[aria-selected=true]::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; border-radius: 0; background: #4fd1c5; }
+
+/* Shared top-menu tabs: Manual / Bots matches Order Book / Trades. */
+.order-book-tabs button[aria-selected=true] { color: #dceaff; }
+.order-book-tabs button[aria-selected=true]::after { background: #76a9ef; }
+.order-book-tabs button:hover { color: #eef4ff; }
+.live-method-section .execution-tabs-row { display: flex; align-items: stretch; border-bottom: 1px solid #23272f; }
+.live-method-section .execution-tabs-row > .workspace-sidebar-arrow { flex: none; align-self: center; width: 28px; height: 28px; margin: 0 4px 0 8px; }
+.live-method-section .execution-tabs-row > .live-execution-mode-tabs { display: flex; flex: 1; gap: 0; margin: 0; padding: 0; border: 0; }
+.live-method-section .execution-tabs-row > .live-execution-mode-tabs [role=tab] {
+  flex: 1; justify-content: center; height: 38px; min-height: 38px; padding: 0;
+  border: 0; border-radius: 0; background: transparent; color: #8b93a1; font-size: 12px; text-align: center;
+}
+.live-method-section .execution-tabs-row > .live-execution-mode-tabs [role=tab][aria-selected=true] { color: #dceaff; }
+.live-method-section .execution-tabs-row > .live-execution-mode-tabs [role=tab][aria-selected=true]::after { left: 0; right: 0; bottom: 0; height: 2px; border-radius: 0; background: #76a9ef; }
+.live-method-section .execution-tabs-row > .live-execution-mode-tabs [role=tab]:hover { color: #eef4ff; }
+.live-method-section .ticket-connection { justify-content: flex-end; padding-top: 10px; }
