@@ -740,7 +740,7 @@ html::-webkit-scrollbar,body::-webkit-scrollbar { display: none; }
 .metrics article,.result-scorecards article,.result-answer,.model-kpis,
 .setup-card,.setup-summary,.compute-status,
 .fc-topbar,.fc-models,.fc-summary,.fc-kpis,.fc-panel,.forecast-sequential-comparison,.forecast-quote-header,.forecast-terminal-chart,
-.news-head,.news-mood,.news-panel,.release-chart,.econ-card,
+.news-head,.news-mood,.news-panel,.release-chart,
 .pattern-chart,.pattern-table,
 #page-strategy>form>fieldset>.settings-grid {
   background: var(--app-panel) !important;
@@ -905,3 +905,9 @@ html::-webkit-scrollbar,body::-webkit-scrollbar { display: none; }
 /* Divider after the chart title: same 20px line as the other toolbar dividers. */
 .app-shell[data-page=paper] .chart-toolbar-heading { position: relative; border-right: 0 !important; }
 .app-shell[data-page=paper] .chart-toolbar-heading::after { content: ''; position: absolute; top: 50%; right: 0; width: 1px; height: 20px; transform: translateY(-50%); background: var(--tv-border, #2a2e39); }
+
+/* Economic release cards: separate tiles inside the news panel. */
+.econ-cards { gap: 6px; }
+.econ-card { border: 0 !important; border-radius: 8px; background: #181b22 !important; }
+.econ-card:hover { background: #1d212a !important; }
+.econ-card[aria-pressed=true] { background: #1a2640 !important; box-shadow: inset 0 0 0 1px #2962ff80; }
