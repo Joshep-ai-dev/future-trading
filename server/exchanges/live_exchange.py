@@ -66,6 +66,15 @@ class OrderStepError(RuntimeError):
         self.step = step
 
 
+class RateLimitedError(RuntimeError):
+    """The exchange asked us to slow down; the caller keeps its last data."""
+
+
+def is_rate_limit(error: Exception) -> bool:
+    import ccxt
+    return isinstance(error, (ccxt.RateLimitExceeded, ccxt.DDoSProtection)) or '429' in str(error)
+
+
 class LiveExchange:
     def __init__(self):
         self.lock = threading.RLock()
@@ -77,6 +86,48 @@ class LiveExchange:
         self.protection_prices: dict[str, dict] = {}
         self.auto_bot = None
         self.on_execution = None
+        # Display-only read cache and rate-limit cooldown; order checks always read fresh.
+        self.read_lock = threading.Lock()
+        self.read_cache: dict[tuple, tuple[float, object]] = {}
+        self.read_locks: dict[tuple, threading.Lock] = {}
+        self.cooldown: dict[str, tuple[float, float]] = {}
+
+    def invalidate_reads(self, venue: str) -> None:
+        with self.read_lock:
+            for key in [key for key in self.read_cache if key[0] == venue]:
+                self.read_cache.pop(key, None)
+
+    def display_read(self, venue: str, name: str, ttl: float, fetch):
+        """Shared, short-lived cache for display polling (never used before placing orders).
+
+        Concurrent identical reads wait for one request. After an exchange rate limit
+        (HTTP 429), requests pause with a growing backoff and the last value is reused.
+        """
+        client = self.clients.get(venue)
+        key = (venue, id(client), name)
+        with self.read_lock:
+            lock = self.read_locks.setdefault(key, threading.Lock())
+        with lock:
+            now = time.monotonic()
+            hit = self.read_cache.get(key)
+            until, delay = self.cooldown.get(venue, (0.0, 0.0))
+            if hit and (now - hit[0] < ttl or now < until):
+                return hit[1]
+            if now < until:
+                raise RateLimitedError(f'{venue.upper()} rate limit reached; retrying in {int(until - now) + 1} s.')
+            try:
+                value = fetch()
+            except Exception as error:
+                if not is_rate_limit(error):
+                    raise
+                delay = min(60.0, delay * 2 if delay else 5.0)
+                self.cooldown[venue] = (time.monotonic() + delay, delay)
+                if hit:
+                    return hit[1]
+                raise RateLimitedError(f'{venue.upper()} rate limit reached; retrying in {int(delay)} s.') from error
+            self.cooldown.pop(venue, None)
+            self.read_cache[key] = (time.monotonic(), value)
+            return value
 
     @staticmethod
     def _market(exchange, instrument: str = 'xag'):
@@ -189,7 +240,7 @@ class LiveExchange:
                      contractSize=market.get('contractSize'),position=None,
                      executionError=self.execution_error(client))
             try:
-                active=[p for p in self.positions(venue) if float(p.get('contracts') or 0)!=0]
+                active=[p for p in self.display_read(venue, 'positions', 1.0, lambda: self.positions(venue)) if float(p.get('contracts') or 0)!=0]
                 if len(active)==1:
                     p=active[0]
                     row['position']=dict(side=p.get('side'),quantity=abs(float(p.get('contracts') or 0))*float(market.get('contractSize') or 1),
@@ -234,7 +285,7 @@ class LiveExchange:
                     result[section] = {key: ticker.get(key) for key in
                                        ('last', 'bid', 'ask', 'high', 'low', 'percentage', 'quoteVolume', 'timestamp')}
                 elif section == 'balance':
-                    balance = self.account_balance(exchange, venue)
+                    balance = self.display_read(venue, 'balance', 2.0, lambda: self.account_balance(exchange, venue))
                     collateral = market.get('settle') or market.get('quote') or 'USDT'
                     if balance.get('total', {}).get(collateral) is None:
                         raise ValueError(f'{collateral} balance unavailable')
@@ -243,7 +294,7 @@ class LiveExchange:
                     result[section] = [dict(side=p.get('side'),
                         quantity=abs(float(p.get('contracts') or 0)) * contract_size,
                         **{key: p.get(key) for key in ('entryPrice', 'markPrice', 'unrealizedPnl', 'leverage', 'liquidationPrice', 'marginMode', 'initialMargin', 'percentage')})
-                        for p in self.positions(venue) if float(p.get('contracts') or 0) != 0]
+                        for p in self.display_read(venue, 'positions', 1.0, lambda: self.positions(venue)) if float(p.get('contracts') or 0) != 0]
                 elif section == 'conditionalOrders':
                     rows = classic_conditional_orders(exchange, market) if venue == 'htx' else []
                     result[section] = [dict(row, quantity=None if row['amount'] is None else row['amount'] * contract_size) for row in rows]
@@ -255,7 +306,10 @@ class LiveExchange:
                         price=o.get('price'), marginMode=o.get('marginMode') or (o.get('info') or {}).get('margin_mode'), triggerPrice=o.get('triggerPrice') or o.get('stopPrice'),
                         quantity=None if o.get('amount') is None else float(o['amount']) * contract_size,
                         filled=None if o.get('filled') is None else float(o['filled']) * contract_size,
-                        status=o.get('status')) for o in self.open_orders(venue)]
+                        status=o.get('status')) for o in self.display_read(venue, 'orders', 2.0, lambda: self.open_orders(venue))]
+            except RateLimitedError as error:
+                result['errors'][section] = str(error)
+                result['rateLimited'] = True
             except Exception:
                 result['errors'][section] = f'{section.capitalize()} could not be refreshed. Check exchange API access and retry.'
         result['updatedAt'] = time.time() * 1000
@@ -286,6 +340,7 @@ class LiveExchange:
             order = exchange.create_order(market['symbol'], 'market', side, amount, None, params)
         if not order.get('id'):
             raise RuntimeError(f'The exchange returned no order id, so the order was not placed. Exchange reply: {_reply(exchange, order)}')
+        self.invalidate_reads(venue)
         if self.on_execution is not None:
             self.on_execution(venue)
         if not reduce_only:
@@ -561,6 +616,7 @@ class LiveExchange:
             # Classic positions must close on the matching classic account API,
             # even when the balance was read from the unified V5 API.
             result = self._close_htx_classic(exchange, market, position, order_side, contracts)
+            self.invalidate_reads(venue)
             if self.on_execution is not None:
                 self.on_execution(venue)
             return dict(venue=venue, closed=True, order=result,

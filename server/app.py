@@ -413,11 +413,16 @@ def exchange_overview(venue: Literal['okx','htx','mexc','binance','hyperliquid']
         raise HTTPException(status_code=400, detail=str(error)) from error
 
 
+from server.exchanges.live_exchange import RateLimitedError  # noqa: E402
+
+
 @app.get('/api/exchange/trade-history')
 def exchange_trade_history(venue: Literal['okx','htx','mexc','binance','hyperliquid'], request: Request):
     ws = workspace(request)
     try:
-        return {'trades': ws.exchange.trade_history(venue)}
+        return {'trades': ws.exchange.display_read(venue, 'history', 8.0, lambda: ws.exchange.trade_history(venue))}
+    except RateLimitedError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except Exception as error:
