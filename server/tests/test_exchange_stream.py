@@ -4,7 +4,7 @@ import unittest
 import ccxt
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from server.exchanges.exchange_stream import apply_bbo, book_view, trade_view, ExchangeFeed, ExchangeStreams, classic_auth
+from server.exchanges.exchange_stream import apply_bbo, fill_day_stats, book_view, trade_view, ExchangeFeed, ExchangeStreams, classic_auth
 from server.exchanges.htx_account import classic_balance, classic_positions, rejection_reason, normalize_htx_balance, classic_conditional_orders
 from server.exchanges.live_exchange import LiveExchange
 
@@ -245,6 +245,18 @@ class DepthDemandTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(task.cancelled())
         self.assertEqual(feed.depth_tasks, {})
         self.assertNotIn('orderBook', feed.depth)
+
+
+class DayStatsTests(unittest.TestCase):
+    def test_missing_ticker_stats_are_derived(self) -> None:
+        values = fill_day_stats({'last': 45.0, 'percentage': None}, 50.0, (47.0, 44.5))
+        self.assertAlmostEqual(values['percentage'], -10.0)
+        self.assertEqual((values['high'], values['low']), (47.0, 44.5))
+
+    def test_live_price_extends_the_range_and_existing_values_win(self) -> None:
+        self.assertEqual(fill_day_stats({'last': 48.0}, None, (47.0, 44.5))['high'], 48.0)
+        kept = fill_day_stats({'last': 45.0, 'percentage': 1.5, 'high': 46.0, 'low': 44.0}, 50.0, (47.0, 44.5))
+        self.assertEqual((kept['percentage'], kept['high'], kept['low']), (1.5, 46.0, 44.0))
 
 
 class BboMergeTests(unittest.TestCase):

@@ -59,6 +59,20 @@ def trade_view(trade: dict, contract_size: float) -> dict:
                 timestamp=trade.get('timestamp'))
 
 
+def fill_day_stats(values: dict, previous_close, day_range) -> dict:
+    """Complete 24h change / high / low when the exchange ticker omits them (e.g. Hyperliquid)."""
+    last = values.get('last')
+    if last is None:
+        return values
+    if values.get('percentage') is None and previous_close:
+        values['percentage'] = (float(last) / float(previous_close) - 1) * 100
+    if day_range:
+        high, low = day_range
+        values['high'] = max(high, float(last)) if values.get('high') is None else values['high']
+        values['low'] = min(low, float(last)) if values.get('low') is None else values['low']
+    return values
+
+
 DEPTH_SECTIONS = ('orderBook', 'trades')
 def apply_bbo(view: dict, bid: list | None, ask: list | None, timestamp=None) -> dict:
     """Refresh the top of a slower full-book snapshot from a fast best bid/offer update."""
@@ -92,6 +106,8 @@ class ExchangeFeed:
         self.depth_queues: dict[str, set[asyncio.Queue]] = {'orderBook': set(), 'trades': set()}
         self.depth_tasks: dict[str, asyncio.Task] = {}
         self.ready = asyncio.Event()
+        self.previous_close = None
+        self.day_range: tuple[float, float] | None = None
         self.client = None
         self.tasks: list[asyncio.Task] = []
         self.runner = asyncio.create_task(self.run())
@@ -131,6 +147,7 @@ class ExchangeFeed:
             # Share market metadata, never the synchronous client's network session.
             self.client.set_markets(self.source.markets, self.source.currencies)
             self.tasks = [asyncio.create_task(self.watch(section)) for section in ('market', 'candle', 'lastTrade')]
+            self.tasks.append(asyncio.create_task(self.track_day_range()))
             if self.venue == 'htx' and self.source.options.get('localAccountApi') == 'classic':
                 self.tasks.append(asyncio.create_task(self.classic_private()))
             else:
@@ -157,6 +174,29 @@ class ExchangeFeed:
             await asyncio.gather(*self.tasks, *depth, return_exceptions=True)
             if self.client is not None:
                 await self.client.close()
+
+    async def track_day_range(self) -> None:
+        """24h high/low from hourly candles for exchanges whose ticker omits them; refreshed each minute."""
+        symbol = self.market['symbol']
+        while True:
+            try:
+                market = self.state.get('market') or {}
+                if market.get('high') is None or self.day_range is not None:
+                    since = int((time.time() - 24 * 3600) * 1000)
+                    candles = await self.client.fetch_ohlcv(symbol, '1h', since=since, limit=25)
+                    rows = [row for row in candles if row[0] >= since - 3600 * 1000]
+                    if rows:
+                        self.day_range = (max(float(row[2]) for row in rows), min(float(row[3]) for row in rows))
+                        values = dict(self.state.get('market') or {})
+                        if values.get('last') is not None:
+                            values.pop('high', None)
+                            values.pop('low', None)
+                            self.update('market', fill_day_stats(values, self.previous_close, self.day_range))
+                await asyncio.sleep(60)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                await asyncio.sleep(60)
 
     def start_depth(self, section: str) -> None:
         if self.ready.is_set() and section not in self.depth_tasks:
@@ -234,7 +274,12 @@ class ExchangeFeed:
                         fields.pop('last', None)
                         fields.pop('timestamp', None)
                     values.update(fields)
-                    self.update('market', values)
+                    if ticker.get('previousClose'):
+                        self.previous_close = ticker['previousClose']
+                    if ticker.get('high') is None:
+                        values.pop('high', None)
+                        values.pop('low', None)
+                    self.update('market', fill_day_stats(values, self.previous_close, self.day_range))
                     self.stream_status('market', 'live')
                 elif section == 'candle':
                     candles = await self.client.watch_ohlcv(symbol, '1m')
@@ -249,7 +294,11 @@ class ExchangeFeed:
                         values = dict(self.state['market'] or {})
                         if latest.get('timestamp') and latest['timestamp'] >= (values.get('timestamp') or 0):
                             values.update(last=float(latest['price']), timestamp=latest['timestamp'])
-                            self.update('market', values)
+                            if self.day_range:
+                                values.pop('high', None)
+                                values.pop('low', None)
+                            values.pop('percentage', None) if self.previous_close else None
+                            self.update('market', fill_day_stats(values, self.previous_close, self.day_range))
                             self.stream_status('market', 'live')
                 elif section == 'orderBook':
                     book = await self.client.watch_order_book(symbol)
