@@ -1,0 +1,22 @@
+.tv-countdown.tv-countdown-interactive { pointer-events: auto; cursor: pointer; border: 0; text-align: center; }
+.tv-countdown-interactive:hover { filter: brightness(1.15); }
+.tv-countdown-interactive:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.price-insight-modal { width: min(520px, calc(100vw - 32px)); max-height: 85dvh; overflow: auto; box-sizing: border-box; padding: 24px; border: 1px solid #363a45; border-radius: 12px; background: #171a21; color: #d1d4dc; font: 14px/1.5 sans-serif; }
+.price-insight-modal::backdrop { background: #0009; }
+.price-insight-modal header { display: flex; justify-content: space-between; gap: 16px; align-items: start; }
+.price-insight-modal h2 { margin: 4px 0 20px; font-size: 22px; }
+.price-insight-modal header button { border: 0; background: transparent; color: inherit; font-size: 26px; cursor: pointer; padding: 0 8px; }
+.price-insight-modal dl { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 0; }
+.price-insight-modal dl div { background: #222630; border-radius: 8px; padding: 12px; }
+.price-insight-modal dt { font-size: 12px; color: #a9b1c2; }
+.price-insight-modal dd { margin: 5px 0 0; font-size: 21px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.price-insight-modal .insight-support dd { color: #26a69a; }
+.price-insight-modal .insight-resistance dd { color: #ef7382; }
+.price-insight-modal p,.price-insight-modal small { color: #a9b1c2; }
+.price-insight-modal a { color: #72b7ff; }
+.price-insight-modal dd.insight-time { font-size: 14px; }
+.price-insight-modal .insight-delayed { color: #f0bb62; }
+.price-insight-modal footer { margin-top: 18px; }
+.price-insight-modal footer button { padding: 8px 12px; border: 1px solid #485064; border-radius: 6px; background: #272d39; color: inherit; cursor: pointer; }
+.price-insight-modal footer button:disabled { opacity: .6; cursor: wait; }
+@media(max-width:400px) { .price-insight-modal { padding: 16px; } .price-insight-modal dl { grid-template-columns: 1fr; } }

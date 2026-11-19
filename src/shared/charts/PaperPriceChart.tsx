@@ -1,3 +1,4 @@
+import PriceInsightModal from "./PriceInsightModal";
 import {displaySymbol} from './displaySymbol';
 import IndicatorHeader from "./IndicatorHeader";
 import IndicatorSettings from "./IndicatorSettings";
@@ -93,6 +94,7 @@ type Props = Data & {
 export type ChartFocus = { time: number; label: string; key: number };
 
 export default function PaperPriceChart(props: Props) {
+  const [insightOpen, setInsightOpen] = useState(false);
   const [patternSelecting, setPatternSelecting] = useState(false);
   const patternCandles = useRef<Analysis['candles']>([]);
   const container = useRef<HTMLDivElement>(null),
@@ -306,6 +308,9 @@ export default function PaperPriceChart(props: Props) {
     clearFocus.current = () => { focusRequest.current++; focusMarker.setMarkers([]); };
     focusOn.current = async (focus) => {
       const request = ++focusRequest.current;
+      // Capture zoom before loading history, which can change logical indexes.
+      const visibleRange = chart.timeScale().getVisibleLogicalRange();
+      const span = visibleRange ? visibleRange.to - visibleRange.from : 155;
       // Load contiguous history back to a little before the focus time (large pages), then centre it.
       const duration = TIMEFRAMES[props.timeframe as keyof typeof TIMEFRAMES];
       following.current = false;
@@ -336,7 +341,6 @@ export default function PaperPriceChart(props: Props) {
           return;
         }
         focusMarker.setMarkers([{ time: cached[index].time as UTCTimestamp, position: "aboveBar", shape: "arrowDown", color: TV.orange, text: focus.label }]);
-        const span = Math.max(80, Math.round(5 * 3600 / duration));
         chart.timeScale().setVisibleLogicalRange({ from: index - span / 2, to: index + span / 2 });
       } catch (error) {
         if (!disposed) setHistoryError(`Could not load candles for that date: ${String(error)}`);
@@ -553,6 +557,7 @@ export default function PaperPriceChart(props: Props) {
             }
           : null;
       },
+      () => setInsightOpen(true),
     );
     return () => {
       stopAxis();
@@ -599,7 +604,7 @@ export default function PaperPriceChart(props: Props) {
     props.allowLocalHistory !== false || !!props.loadHistory;
   return (
     <>
-
+      {insightOpen&&<PriceInsightModal symbol={props.symbol??"XAGUSDT"} timeframe={props.timeframe} getCandles={()=>patternCandles.current} clock={props.indicatorClock} onClose={()=>setInsightOpen(false)}/>}
       <ChartTools
         header={props.header}
         endActions={props.toolbarEnd}

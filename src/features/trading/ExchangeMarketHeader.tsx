@@ -8,7 +8,7 @@ import {liveNumber as number,reconnectExchangeStream,useExchangeStream} from '..
 import {useExchangeMarkets,instrumentDetails,saveExchangeInstrument,useExchangeInstrument,type ExchangeInstrument} from '../../shared/api/exchangeInstrument';
 import {api} from '../../shared/api/api';
 
-export default function ExchangeMarketHeader({venue,botRunning=false,actions}:{venue:ExchangeVenue;botRunning?:boolean;actions?:ReactNode}){
+export default function ExchangeMarketHeader({venue,active=true,botRunning=false,actions}:{venue:ExchangeVenue;active?:boolean;botRunning?:boolean;actions?:ReactNode}){
   const {data,connected}=useExchangeStream(venue);
   const instrumentId=useExchangeInstrument(),instrument=instrumentDetails(instrumentId);
   const {markets,error:marketError,loading,retry}=useExchangeMarkets(venue);
@@ -40,7 +40,7 @@ export default function ExchangeMarketHeader({venue,botRunning=false,actions}:{v
   const priceDigits=instrument.id==='stable'?5:3;
   const collateral=venue==='hyperliquid'?'USDC':'USDT';
   const market=data?.market;
-  useMarketTitle(true,number(market?.last,priceDigits),`${instrument.base}/${collateral}`);
+  useMarketTitle(active,number(market?.last,priceDigits),`${instrument.base}/${collateral}`);
   useEffect(()=>{
     const close=(event:PointerEvent)=>{if(picker.current&&!picker.current.contains(event.target as Node))picker.current.open=false;};
     const escape=(event:KeyboardEvent)=>{if(event.key==='Escape'&&picker.current){picker.current.open=false;picker.current.querySelector('summary')?.focus();}};

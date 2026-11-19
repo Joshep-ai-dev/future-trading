@@ -16,6 +16,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from server.market.data import load_bars, TIMEFRAMES
 from server.market.live_quote import silver_quote
+from server.market.online_analysis import router as online_analysis_router
 from server.forecast_research import ForecastRequest, run_forecast_test
 from server.forecast_forward import ForwardForecastRequest, issue_forward_forecast, observed_outcome
 from server.forecast_models import TrainForecastRequest, train_saved_model, list_models, load_model, delete_model
@@ -81,6 +82,7 @@ async def lifespan(app):
 
 app = FastAPI(title='Silver Price Research', lifespan=lifespan)
 app.include_router(news_router)
+app.include_router(online_analysis_router)
 app.include_router(lab_router)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 logger = logging.getLogger(__name__)

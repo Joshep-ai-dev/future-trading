@@ -7,9 +7,6 @@ export function useMarketTitle(active:boolean,price:string|null|undefined,symbol
   useEffect(()=>{
     if(!active)return;
     document.title=price&&price!=='—'?`${price} ${symbol} · ${APP_NAME}`:`${symbol} · ${APP_NAME}`;
-  },[active,price,symbol]);
-  useEffect(()=>{
-    if(!active)return;
     return()=>{document.title=APP_NAME;};
-  },[active]);
+  },[active,price,symbol]);
 }

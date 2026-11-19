@@ -27,9 +27,17 @@ export function trackPriceAxis(
   series: ISeriesApi<SeriesType>,
   wrapper: HTMLElement,
   source?: CountdownSource,
+  onInspect?: () => void,
 ) {
-  const box = document.createElement("div");
-  box.className = "tv-countdown";
+  const box = document.createElement(onInspect ? "button" : "div");
+  if (onInspect) {
+    box.setAttribute("type", "button");
+    box.setAttribute("aria-label", "Show price prediction, support and resistance");
+    box.title = "Price prediction, support and resistance";
+    box.classList.add("tv-countdown-interactive");
+    box.addEventListener("click", onInspect);
+  }
+  box.classList.add("tv-countdown");
   const mousePrice = document.createElement("div");
   mousePrice.className = "tv-mouse-price";
   mousePrice.hidden = true;
@@ -67,7 +75,7 @@ export function trackPriceAxis(
     const remaining = info ? info.closeTime - now : -1;
     const y = info ? series.priceToCoordinate(info.price) : null;
     const paneHeight = chart.panes()[0]?.getHeight() ?? 0;
-    const visible = info && y !== null && remaining > 0 && y > 0 && y + 30 < paneHeight;
+    const visible = info && y !== null && (remaining > 0 || !!onInspect) && y > 0 && y + 30 < paneHeight;
     const showNative = visible ? false : originalLastValueVisible;
     if (showNative !== nativeLabelVisible) {
       series.applyOptions({lastValueVisible: showNative});
@@ -84,7 +92,7 @@ export function trackPriceAxis(
       box.hidden = !visible;
       if (visible) {
         price.textContent = formattedPrice;
-        countdown.textContent = formatCountdown(remaining);
+        countdown.textContent = remaining > 0 ? formatCountdown(remaining) : 'View analysis';
         box.style.top = `${chartTop + top}px`;
         box.style.right = `${scale}px`;
         box.style.background = info!.up ? TV.up : TV.down;
@@ -124,6 +132,7 @@ export function trackPriceAxis(
     if (source) chart.unsubscribeCrosshairMove(crosshairMoved);
     if (nativeLabelVisible !== originalLastValueVisible) series.applyOptions({lastValueVisible: originalLastValueVisible});
     if (crosshairLabelVisible !== originalCrosshairLabelVisible) chart.applyOptions({crosshair: {horzLine: {labelVisible: originalCrosshairLabelVisible}}});
+    if (onInspect) box.removeEventListener("click", onInspect);
     box.remove();
     mousePrice.remove();
   };
