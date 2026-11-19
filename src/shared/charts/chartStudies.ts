@@ -1,5 +1,6 @@
 import {useSyncExternalStore} from 'react';
-import {normalizeIndicatorConfig,readIndicatorSettings,type IndicatorConfig,type IndicatorKind,type OverlayKind,type SettingsKind} from './IndicatorSettings';
+import type {IndicatorConfig,IndicatorKind,OverlayKind,SettingsKind} from './indicatorConfig';
+import {normalizeIndicatorConfig,readIndicatorSettings} from './indicatorSchema';
 
 /** Indicators a chart can show; each can be added any number of times. */
 export type StudyKind='ma'|OverlayKind|IndicatorKind;

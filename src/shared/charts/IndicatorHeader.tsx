@@ -1,5 +1,5 @@
 import {indicatorColor} from './indicatorColors';
-import type {IndicatorKind,IndicatorConfig} from './IndicatorSettings';
+import type {IndicatorKind,IndicatorConfig} from './indicatorConfig';
 import {fmt} from '../types/types';
 import {CloseIcon,EyeIcon,GearIcon} from './ChartLegend';
 
