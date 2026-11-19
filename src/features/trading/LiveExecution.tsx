@@ -1,5 +1,6 @@
 import {ExecutionModeContext,type ExecutionMode} from './ExecutionModeContext';
 import {useMarketLeverage} from '../../shared/api/useMarketLeverage';
+import {useAutoConnectingExchanges} from '../../shared/api/useAutoConnectExchanges';
 import {useContext,useEffect,useRef,useState} from 'react';
 import {api} from '../../shared/api/api';
 import {disconnectExchangeStream,reconnectExchangeStream,syncExchangeConnection} from '../../shared/api/useExchangeStream';
@@ -17,6 +18,7 @@ type Venue=ExchangeVenue;
 export default function LiveExecution({view,settings,onSettingsChange,onConfigure,onManageAccount,onOpenTerminal,profiles,onApplySetup}:{view:'account'|'terminal';settings:BacktestSettings;profiles?:SavedSetup[];onApplySetup?:(setup:SavedSetup)=>void;onSettingsChange?:(settings:BacktestSettings)=>void;onConfigure?:()=>void;onManageAccount?:()=>void;onOpenTerminal?:()=>void}){
   const [statuses,setStatuses]=useState<VenueStatus[]>([]),[bot,setBot]=useState<BotStatus>({running:false,venue:null,timeframe:null,position:null,strategyState:null,error:null,lastProcessed:null});
   const venue=useExchangeVenue();
+  const autoConnecting=useAutoConnectingExchanges().includes(venue);
   const instrument=useExchangeInstrument(),instrumentInfo=instrumentDetails(instrument);
   const [savedVenues,setSavedVenues]=useState<Venue[]>([]);
   const localMode=useState<ExecutionMode>('manual');
@@ -69,7 +71,7 @@ export default function LiveExecution({view,settings,onSettingsChange,onConfigur
   }
 
   return <div className={`live-account-content live-${view}-view`}>
-    {view==='account'&&<ExchangeConnections venue={venue} instrument={instrument} statuses={statuses} savedVenues={savedVenues} busy={busy} onVenueChange={changeVenue} onRun={run} onOpenTerminal={onOpenTerminal}/>}
+    {view==='account'&&<ExchangeConnections venue={venue} instrument={instrument} statuses={statuses} savedVenues={savedVenues} busy={busy||autoConnecting} onVenueChange={changeVenue} onRun={run} onOpenTerminal={onOpenTerminal}/>}
     {view==='terminal'&&<div className="live-method-section">
       <div className="execution-tabs-row"><TabBar className="live-execution-mode-tabs" items={[{value:'manual',label:'Manual',controls:'manual-ticket-panel'},{value:'bot',label:'Bots',controls:'bot-ticket-panel'}] as const} value={mode} onChange={setMode} label="Execution mode" idPrefix="execution-tab"/></div>
       <div className="ticket-connection"><StatusBadge tone={connected?'positive':'warning'} dot>{connected?selected.name+' connected':'Not connected'}</StatusBadge>{!connected&&<Button variant="ghost" onClick={onManageAccount}>Connect API</Button>}</div>

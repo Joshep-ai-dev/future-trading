@@ -8,7 +8,7 @@ import {liveNumber as number,reconnectExchangeStream,useExchangeStream} from '..
 import {useExchangeMarkets,instrumentDetails,saveExchangeInstrument,useExchangeInstrument,type ExchangeInstrument} from '../../shared/api/exchangeInstrument';
 import {api} from '../../shared/api/api';
 
-export default function ExchangeMarketHeader({venue,active=true,botRunning=false,actions}:{venue:ExchangeVenue;active?:boolean;botRunning?:boolean;actions?:ReactNode}){
+export default function ExchangeMarketHeader({venue,timeframe,active=true,botRunning=false,actions}:{venue:ExchangeVenue;timeframe:string;active?:boolean;botRunning?:boolean;actions?:ReactNode}){
   const {data,connected}=useExchangeStream(venue);
   const instrumentId=useExchangeInstrument(),instrument=instrumentDetails(instrumentId);
   const {markets,error:marketError,loading,retry}=useExchangeMarkets(venue);
@@ -61,6 +61,9 @@ export default function ExchangeMarketHeader({venue,active=true,botRunning=false
     }else saveExchangeInstrument(value);
   }
   return <MarketHeader
+    analysisTimeframe={timeframe}
+    analysisSymbol={data?.symbol??`${instrument.base}/${collateral}`}
+    active={active}
     icon={instrument.icon}
     selector={
       <details className="live-symbol-picker" ref={picker} onToggle={()=>{
@@ -100,7 +103,7 @@ export default function ExchangeMarketHeader({venue,active=true,botRunning=false
     metrics={[
       {label:'24h change',value:market?.percentage==null?'\u2014':`${market.percentage>=0?'+':''}${number(market.percentage,2)}%`,tone:(market?.percentage??0)<0?'negative':'positive'},
       {label:'24h high / low',value:`${number(market?.high,priceDigits)} / ${number(market?.low,priceDigits)}`},
-      {label:'24h volume',value:number(market?.quoteVolume,0),unit:collateral},
+      {label:'24h volume',value:formatVolume(market?.quoteVolume),unit:collateral},
     ]}
     actions={actions}
     notice={(switchError||switching||botRunning)&&<div className={`live-header-notice ${switchError?'negative':''}`} role="status">{switchError|| (switching?'Switching market...':'Stop the bot to change markets.')}</div>}

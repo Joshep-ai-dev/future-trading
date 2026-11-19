@@ -7,10 +7,12 @@ import BacktestPanel,{START_FOCUS} from './app/BacktestPanel';
 import {MarketSyncContext,useMarketSync} from './shared/api/useMarketSync';
 import AuthScreen,{type SignedInUser} from './features/auth/AuthScreen';
 import {useExchangeVenue} from './shared/api/exchangeVenue';
+import {useAutoConnectExchanges} from './shared/api/useAutoConnectExchanges';
 import './style.css';
 
 type Range={startDate:string;endDate:string};
 function App({user,onSignedOut}:{user:SignedInUser;onSignedOut:()=>void}) {
+  useAutoConnectExchanges(user.id);
   const [page,setPage]=useState<Page>('paper');
   // A tab opened with ?focus=<time> ("Open in trading chart") shows the paper chart; the saved mode is left unchanged.
   const [accountMode,setAccountMode]=useState<'live'|'paper'>(()=>{if(START_FOCUS)return 'paper';try{return localStorage.getItem('silver.account.mode')==='live'?'live':'paper';}catch{return 'paper';}});

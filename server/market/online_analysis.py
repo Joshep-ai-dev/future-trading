@@ -23,7 +23,9 @@ _ASSETS = {
     'SOL': ('crypto', 'solana', 'SOL_USD', 'Solana · SOL/USD'),
     'XRP': ('crypto', 'ripple', 'XRP_USD', 'XRP · XRP/USD'),
 }
+_FRAMES = {'1m': '1min', '5m': '5min', '15m': '15min', '30m': '30min', '1h': '1H', '4h': '4H', '1d': '1D', '1w': '1W'}
 _RATINGS = {'BUY', 'STRONG_BUY', 'SELL', 'STRONG_SELL', 'NEUTRAL'}
+_ASSET_NAMES = {'BITCOIN': 'BTC', 'ETHEREUM': 'ETH', 'SOLANA': 'SOL'}
 
 
 def resolve_asset(symbol: str) -> tuple[str, str, str, str] | None:
@@ -36,7 +38,7 @@ def resolve_asset(symbol: str) -> tuple[str, str, str, str] | None:
             if base.endswith(quote):
                 base = base[:-len(quote)].rstrip('-_')
                 break
-    return _ASSETS.get(base)
+    return _ASSETS.get(_ASSET_NAMES.get(base, base))
 
 
 def positive(value: object) -> float | None:
@@ -45,7 +47,7 @@ def positive(value: object) -> float | None:
     return float(value) if math.isfinite(value) and value > 0 else None
 
 
-def parse_analysis(html: str, expected_symbol: str) -> dict:
+def parse_analysis(html: str, expected_symbol: str, timeframe: str = '1D') -> dict:
     match = re.search(r'<script\b[^>]*\bid=["\']__NEXT_DATA__["\'][^>]*>(.*?)</script>', html, re.S)
     if not match:
         raise ValueError('Published analysis data is unavailable')
@@ -59,9 +61,9 @@ def parse_analysis(html: str, expected_symbol: str) -> dict:
         if not isinstance(data, dict) or data.get('symbol') != expected_symbol:
             continue
         frames = data.get('timeframes', [])
-        daily = next((row for row in frames if row.get('timeframe') == '1D' and row.get('status') == 'ready'), {})
+        daily = next((row for row in frames if row.get('timeframe', '').upper() == timeframe.upper() and row.get('status') == 'ready'), {})
         full = daily.get('full', {})
-        if full.get('symbol') != expected_symbol or full.get('timeframe') != '1D':
+        if full.get('symbol') != expected_symbol or str(full.get('timeframe', '')).upper() != timeframe.upper():
             continue
         stamp = full.get('computed_at')
         updated = datetime.fromisoformat(stamp.replace('Z', '+00:00')) if isinstance(stamp, str) else None
@@ -84,19 +86,22 @@ def parse_analysis(html: str, expected_symbol: str) -> dict:
                     rangeLow=low if low and high and low <= high else None,
                     rangeHigh=high if low and high and low <= high else None,
                     rangeMethod=weekly.get('source'), freshness=full.get('data_freshness'))
-    raise ValueError('No matching daily analysis published for this symbol')
+    raise ValueError('No matching timeframe analysis published for this symbol')
 
 
-def online_analysis(symbol: str) -> dict:
+def online_analysis(symbol: str, timeframe: str = '1d') -> dict:
+    if timeframe not in _FRAMES:
+        return dict(supported=False, message=f'Source analysis is unavailable for {timeframe}.')
     asset = resolve_asset(symbol)
     if asset is None:
         return dict(supported=False, message='Online analysis is not available for this symbol.')
     group, slug, provider_symbol, label = asset
-    url = f'https://www.fxempire.com/{group}/{slug}/technical-analysis'
+    url = f'https://www.fxempire.com/forecasts/{slug}'
+    cache_key = url
     with _LOCK:
         now = time.time()
-        cached = _CACHE.get(url)
-        if cached and now-cached[0] < 120:
+        cached = _CACHE.get(cache_key)
+        if cached and now-cached[0] < 5:
             result = dict(cached[1])
         else:
             request = Request(url, headers={'User-Agent': 'Mozilla/5.0', 'Accept': 'text/html'})
@@ -105,17 +110,45 @@ def online_analysis(symbol: str) -> dict:
                 if len(raw) > 3_000_000:
                     raise ValueError('Online analysis response is too large')
                 html = raw.decode('utf-8')
-            result = parse_analysis(html, provider_symbol)
+            match = re.search(r'<script\b[^>]*\bid=["\']__NEXT_DATA__["\'][^>]*>(.*?)</script>', html, re.S)
+            if not match:
+                raise ValueError('Published forecast data is unavailable')
+            queries = json.loads(match[1]).get('props', {}).get('pageProps', {}).get('dehydratedState', {}).get('queries', [])
+            snapshot = next((query.get('state', {}).get('data') for query in queries
+                             if 'forecasts%2Fta-snapshot%2F' in str(query.get('queryKey', ''))), None)
+            if not isinstance(snapshot, dict) or snapshot.get('symbol') != provider_symbol:
+                raise ValueError('No matching forecast snapshot published for this symbol')
+            full = {**snapshot, 'pivots': [{'method': 'Classic', **snapshot.get('pivots', {})}]}
+            payload = {'props': {'pageProps': {'dehydratedState': {'queries': [
+                {'state': {'data': {'data': {'symbol': provider_symbol, 'timeframes': [
+                    {'timeframe': '1D', 'status': 'ready', 'rating': snapshot.get('summary', {}).get('rating'),
+                     'computed_at': snapshot.get('computed_at'), 'full': full}
+                ]}}}}
+            ]}}}}
+            result = parse_analysis('<script id="__NEXT_DATA__">'+json.dumps(payload)+'</script>', provider_symbol)
+            result['timeframe'] = '1d'
+            rates = next((query.get('state', {}).get('data') for query in queries
+                          if '%2Frates%3F' in str(query.get('queryKey', ''))), None)
+            quote = (rates or {}).get('data', {}).get('prices', {}).get(slug, {})
+            current_price = positive(quote.get('last'))
+            result['referencePrice'] = current_price
+            result['quoteUpdatedAt'] = quote.get('lastUpdate')
+            result['priceChangePct'] = quote.get('percentChange')
+            result['summary'] = snapshot.get('summary', {})
+            result['signalChange'] = snapshot.get('signalChange')
+            levels = list(result['levels'].values())
+            result['nearestSupport'] = max((level for level in levels if current_price and level < current_price), default=None)
+            result['nextResistance'] = min((level for level in levels if current_price and level > current_price), default=None)
             result.update(supported=True, source='FXEmpire', sourceUrl=url, market=label, fetchedAt=time.time())
-            _CACHE[url] = (time.time(), dict(result))
+            _CACHE[cache_key] = (time.time(), dict(result))
         age = time.time()-datetime.fromisoformat(result['updatedAt']).timestamp()
         result['stale'] = age > 3600 or age < -300 or result['freshness'] not in ('live', 'fresh')
         return result
 
 
 @router.get('/online-analysis')
-def get_online_analysis(symbol: str = Query(..., min_length=1, max_length=80)) -> dict:
+def get_online_analysis(symbol: str = Query(..., min_length=1, max_length=80), timeframe: str = '1d') -> dict:
     try:
-        return online_analysis(symbol)
+        return online_analysis(symbol, timeframe)
     except (OSError, ValueError, KeyError, TypeError, HTTPReadError) as error:
         raise HTTPException(status_code=502, detail='Online analysis could not be loaded from FXEmpire. Please retry.') from error

@@ -13,11 +13,12 @@ type Candle=Analysis['candles'][number];
 const StreamingPriceChart=memo(PaperPriceChart);
 const emptyStops:[]=[];
 const emptyTrades:[]=[];
-export default function LiveMarketChart({venue,settings,overlay,toolbarEnd}:{venue:ExchangeVenue;settings:BacktestSettings;overlay?:ReactNode;toolbarEnd?:ReactNode}){
+export default function LiveMarketChart({venue,settings,overlay,toolbarEnd,onTimeframeChange}:{venue:ExchangeVenue;settings:BacktestSettings;overlay?:ReactNode;toolbarEnd?:ReactNode;onTimeframeChange?:(value:BacktestSettings['entry_timeframe'])=>void}){
   const {data,connected}=useExchangeStream(venue);
   const asset=instrumentDetails(useExchangeInstrument()).base;
   const [timeframe,setTimeframe]=useState<BacktestSettings['entry_timeframe']>(settings.entry_timeframe);
   const [candles,setCandles]=useState<Candle[]>([]),[error,setError]=useState(''),[loaded,setLoaded]=useState(false);
+  useEffect(()=>{onTimeframeChange?.(timeframe);},[timeframe,onTimeframeChange]);
   const duration=TIMEFRAMES[timeframe];
   const available=!!data?.symbol&&!data?.errors.connection;
   useEffect(()=>{setTimeframe(settings.entry_timeframe);},[settings.entry_timeframe]);

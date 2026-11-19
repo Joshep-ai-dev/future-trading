@@ -911,3 +911,21 @@ html::-webkit-scrollbar,body::-webkit-scrollbar { display: none; }
 .econ-card { border: 0 !important; border-radius: 8px; background: #181b22 !important; }
 .econ-card:hover { background: #1d212a !important; }
 .econ-card[aria-pressed=true] { background: #1a2640 !important; box-shadow: inset 0 0 0 1px #2962ff80; }
+
+/* Source outlook uses the same metrics as the 24-hour market statistics. */
+.market-header .market-outlook { flex: 0 0 auto; border-left: 1px solid #30333a; padding-left: 22px; }
+.market-outlook-rating { text-transform: capitalize; }
+.market-outlook[role=button] { cursor: pointer; border-radius: 0; }
+.market-outlook[role=button]:focus-visible { outline: 2px solid var(--accent, #2962ff); outline-offset: 4px; }
+.market-header .market-outlook-status { flex: 0 1 auto; color: #969da9; font-size: 11px; }
+@media(min-width:701px) {
+  .app-shell[data-page=paper] .market-header:has(.market-outlook) { flex-wrap: nowrap; gap: 22px; overflow-x: auto; }
+  .app-shell[data-page=paper] .market-header:has(.live-symbol-picker[open]) { overflow: visible; }
+  .market-header:has(.market-outlook) .live-header-price { min-width: 105px; }
+  .market-header:has(.market-outlook) .live-header-stats > .ui-metric { min-width: 0; }
+  .market-header:has(.market-outlook) .live-header-stats { gap: 22px; }
+}
+@media(max-width:700px) {
+  .market-header .market-outlook,.market-header .market-outlook-status { grid-column: 1 / -1; }
+  .market-header .market-outlook { grid-template-columns: repeat(2,minmax(0,1fr)); border-left: 0; padding-left: 0; }
+}

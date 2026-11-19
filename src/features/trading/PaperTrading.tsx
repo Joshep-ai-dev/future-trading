@@ -180,6 +180,9 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
   return <div id="page-paper" role="tabpanel" aria-labelledby="tab-paper" hidden={!visible}>
     <div className="terminal-grid" data-controls={controlsOpen?'visible':'hidden'}><div className={panels.book?"terminal-main has-order-book":"terminal-main"}>
     <MarketHeader
+      analysisTimeframe={s?chartTimeframe:settings.entry_timeframe}
+      analysisSymbol={paperSymbol}
+      active={visible}
       icon={paperBase==='XAG'?'Ag':paperBase.slice(0,2)}
       selector={<PaperMarketPicker symbol={paperSymbol} market={activeMarket} datasets={datasets} disabled={busy||!!data.session?.running} onChange={market=>onChange({...settings,market})}/>}
       price={fmt(price,3)}

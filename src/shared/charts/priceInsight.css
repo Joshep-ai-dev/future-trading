@@ -6,10 +6,11 @@
 .price-insight-modal header { display: flex; justify-content: space-between; gap: 16px; align-items: start; }
 .price-insight-modal h2 { margin: 4px 0 20px; font-size: 22px; }
 .price-insight-modal header button { border: 0; background: transparent; color: inherit; font-size: 26px; cursor: pointer; padding: 0 8px; }
-.price-insight-modal dl { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 0; }
-.price-insight-modal dl div { background: #222630; border-radius: 8px; padding: 12px; }
-.price-insight-modal dt { font-size: 12px; color: #a9b1c2; }
-.price-insight-modal dd { margin: 5px 0 0; font-size: 21px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.price-insight-modal dl { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; margin: 0; }
+.price-insight-modal dl > div { display: block; min-width: 0; padding: 12px 0; }
+.price-insight-modal dl > .insight-pivot { grid-column: 1 / -1; }
+.price-insight-modal dt { font-size: 14px; color: #a9b1c2; }
+.price-insight-modal dd { margin: 5px 0 0; font-size: clamp(24px, 5vw, 30px); overflow-wrap: anywhere; white-space: normal; font-variant-numeric: tabular-nums; }
 .price-insight-modal .insight-support dd { color: #26a69a; }
 .price-insight-modal .insight-resistance dd { color: #ef7382; }
 .price-insight-modal p,.price-insight-modal small { color: #a9b1c2; }
@@ -20,3 +21,38 @@
 .price-insight-modal footer button { padding: 8px 12px; border: 1px solid #485064; border-radius: 6px; background: #272d39; color: inherit; cursor: pointer; }
 .price-insight-modal footer button:disabled { opacity: .6; cursor: wait; }
 @media(max-width:400px) { .price-insight-modal { padding: 16px; } .price-insight-modal dl { grid-template-columns: 1fr; } }
+
+.price-insight-modal dd { text-transform: capitalize; }
+.price-insight-modal dd.insight-time { white-space: normal; }
+.price-insight-modal .insight-range dd { font-size: clamp(22px, 4.5vw, 28px); }
+
+.price-insight-modal { width: min(720px, calc(100vw - 32px)); }
+.forecast-source { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding-bottom: 18px; border-bottom: 1px solid #30343d; }
+.forecast-source > a { flex-basis: 100%; }
+.forecast-source > strong { font-size: 22px; }
+.forecast-eyebrow { font-size: 12px; margin: 20px 0 12px; }
+.forecast-signal { display: grid; grid-template-columns: 180px minmax(0,1fr); gap: 24px; align-items: center; padding-bottom: 20px; border-bottom: 1px solid #30343d; }
+.forecast-gauge { text-align: center; }
+.forecast-gauge h3 { margin: 0; font-size: 14px; }
+.forecast-gauge svg { width: 180px; display: block; }
+.forecast-gauge path { fill: none; stroke-width: 10; stroke-linecap: round; }
+.forecast-gauge line { stroke: #d1d4dc; stroke-width: 2; }
+.forecast-gauge circle { fill: #d1d4dc; }
+.forecast-gauge > strong { text-transform: capitalize; }
+.forecast-counts { display: flex; justify-content: center; gap: 8px; font-size: 11px; margin-top: 6px; }
+.forecast-signal-copy p { margin: 6px 0; }
+.forecast-signal-copy strong { text-transform: capitalize; }
+.forecast-levels { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 16px; }
+.forecast-levels > div { min-width: 0; text-align: center; padding: 12px 0; }
+.forecast-levels span,.forecast-levels small { display: block; color: #a9b1c2; font-size: 12px; }
+.forecast-levels strong { display: block; margin-top: 4px; font-size: 22px; font-variant-numeric: tabular-nums; }
+.forecast-levels .insight-support strong { color: #26a69a; }
+.forecast-levels .insight-resistance strong { color: #ef7382; }
+.forecast-levels .forecast-weekly { grid-column: 1 / -1; border-top: 1px solid #30343d; }
+@media(max-width:520px) {
+  .forecast-signal { grid-template-columns: 1fr; gap: 8px; }
+  .forecast-gauge { justify-self: center; }
+  .forecast-signal-copy { text-align: center; }
+  .forecast-levels { gap: 8px; }
+  .forecast-levels strong { font-size: 18px; overflow-wrap: anywhere; }
+}
