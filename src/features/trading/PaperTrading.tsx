@@ -4,6 +4,7 @@ import MarketDataInfo from '../../shared/ui/MarketDataInfo';
 import MarketHeader from '../../shared/ui/MarketHeader';
 import PaperMarketPicker from './PaperMarketPicker';
 import {useMarketDatasets} from '../../shared/api/useMarketDatasets';
+import {useDatasetSync} from '../../shared/api/useDatasetSync';
 import {useLiveMarketMinutes} from '../../shared/charts/useLiveMarketMinutes';
 import {adxSupertrendDefaults,stScalperDefaults} from '../strategy/strategyDefaults';
 import {mergeHistory} from '../../shared/charts/candleHistory';
@@ -101,9 +102,9 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
   const revision=useRef(0);
   const [bottomTab,setBottomTab]=useState<'position'|'history'|'equity'|'sessions'|'patterns'>('position');
   const [preview,setPreview]=useState<Analysis['candles']>([]),[previewError,setPreviewError]=useState('');
+  useEffect(()=>{setPreview([]);setPreviewError('');},[settings.market]);
   useEffect(()=>{
     if(!visible||showingSession)return;
-    setPreview([]);
     const abort=new AbortController();
     void api<Analysis>('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},signal:abort.signal,body:JSON.stringify({timeframe:'1m',...(settings.market==='xag'?{}:{market:settings.market})})}).then(value=>{setPreview(value.candles);setPreviewError('');}).catch(e=>{if(!abort.signal.aborted)setPreviewError(String(e));});
     return ()=>abort.abort();
@@ -126,6 +127,7 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
   }
   const s=showingSession?data.session:null;
   const activeMarket=s?.settings.market??settings.market;
+  const datasetSync=useDatasetSync(activeMarket,visible);
   const activeDataset=datasets.find(item=>item.id===activeMarket);
   const paperSymbol=activeDataset?.symbol??(activeMarket==='stable'?'STABLE/USDT':'XAG/USDT');
   const paperBase=paperSymbol.split('/')[0],paperQuote=paperSymbol.split('/')[1]?.split(':')[0]??'USDT';
@@ -188,7 +190,7 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
       price={fmt(price,3)}
       quote={paperQuote}
       direction={ticker.tick}
-      info={<MarketDataInfo source={activeDataset?.venue.toUpperCase()??'OKX'} timestamp={activeDataset?activeDataset.end*1000:marketSync?.lastSuccess?marketSync.lastSuccess*1000:null} label={activeDataset?'Last candle':'Synced'} syncing={!activeDataset&&!!marketSync?.running} error={!activeDataset&&!!marketSync?.error}/>}
+      info={<MarketDataInfo source={activeDataset?.venue.toUpperCase()??'OKX'} timestamp={activeDataset?(datasetSync.lastSuccess??activeDataset.end)*1000:marketSync?.lastSuccess?marketSync.lastSuccess*1000:null} label={activeDataset&&!datasetSync.lastSuccess?'Last candle':'Synced'} syncing={activeDataset?datasetSync.running:!!marketSync?.running} error={activeDataset?datasetSync.error:!!marketSync?.error}/>}
       metrics={[
         {label:'24h change',value:ticker.change===null?'\u2014':`${signed(ticker.change,3)} ${signed(ticker.percent,2)}%`,tone:(ticker.change??0)<0?'negative':'positive'},
         {label:'24h high / low',value:`${fmt(ticker.high,3)} / ${fmt(ticker.low,3)}`},

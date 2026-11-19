@@ -540,6 +540,21 @@ def market_datasets():
     return {'datasets': list_datasets()}
 
 
+class DatasetSyncRequest(BaseModel):
+    market: str = Field(pattern=r'^dataset:[a-f0-9]{64}$')
+
+
+@app.post('/api/market/datasets/sync')
+def sync_paper_dataset(parameters: DatasetSyncRequest):
+    from server.market.dataset_sync import sync_dataset
+    try:
+        return sync_dataset(parameters.market)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(status_code=502, detail='Market sync failed. Saved candles remain available; automatic sync will retry.') from error
+
+
 @app.get('/api/market/datasets/export')
 def export_market_dataset(market: str):
     from server.market.datasets import dataset_path
