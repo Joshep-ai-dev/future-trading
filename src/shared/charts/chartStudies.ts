@@ -5,7 +5,7 @@ import {normalizeIndicatorConfig,readIndicatorSettings,type IndicatorConfig,type
 export type StudyKind='ma'|OverlayKind|IndicatorKind;
 export type ChartStudy={id:string;kind:StudyKind;config:IndicatorConfig;hidden:boolean};
 
-export const STUDY_KINDS:readonly StudyKind[]=['ma','triplema','bollinger','supertrend','rsi','adx','atr'];
+export const STUDY_KINDS:readonly StudyKind[]=['ma','triplema','bollinger','supertrend','zigzag','rsi','adx','atr'];
 export const PANE_KINDS:readonly IndicatorKind[]=['rsi','adx','atr'];
 export const isPaneStudy=(kind:StudyKind):kind is IndicatorKind=>(PANE_KINDS as readonly string[]).includes(kind);
 export const settingsKind=(kind:StudyKind):SettingsKind=>kind==='ma'?'trendsma':kind;

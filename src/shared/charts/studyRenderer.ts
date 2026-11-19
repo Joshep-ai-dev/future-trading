@@ -3,6 +3,7 @@ import {BollingerOverlay} from './BollingerOverlay';
 import {chartBollingerBands} from './bollingerBands';
 import {SupertrendOverlay} from './SupertrendOverlay';
 import {chartSupertrend} from './supertrend';
+import {chartZigZag} from './zigZag';
 import {chartTripleMa,TRIPLE_MA_OPACITY,tripleMaColors} from './tripleMa';
 import {chartOscillators} from './chartOscillators';
 import {indicatorColor} from './indicatorColors';
@@ -79,6 +80,17 @@ export class StudyRenderer{
 
   private create(study:ChartStudy):Item{
     const config=study.config;
+    if(study.kind==='zigzag'){
+      const series=this.line(config.zigzagColor,config.zigzagWidth,0,{lastValueVisible:false,crosshairMarkerVisible:false});
+      return {study,
+        paint:({current},add)=>{
+          const points=chartZigZag(current,config.zigzagDeviation);
+          series.setData(points.map(point=>({time:t(point.time),value:point.value})));
+          for(const point of points)add(point.time,[{text:point.value.toFixed(3),color:config.zigzagColor}]);
+        },
+        setVisible:visible=>series.applyOptions({visible}),
+        dispose:()=>this.chart.removeSeries(series)};
+    }
     if(study.kind==='ma'){
       const series=this.line(config.trendSmaColor,config.trendSmaWidth,0,{lastValueVisible:false,crosshairMarkerVisible:false});
       return {study,
@@ -202,6 +214,7 @@ export function studyLegends(studies:readonly ChartStudy[],actions:{onSettings:(
     const [name,params,color]=study.kind==='ma'?['MA',String(c.trendSmaLength),c.trendSmaColor]
       :study.kind==='triplema'?['Triple MA',`${c.maFast} ${c.maMid} ${c.maSlow}${c.maType==='EMA'?' EMA':''}`,c.maFastColor]
       :study.kind==='bollinger'?['BB',`${c.bbLength} ${c.bbMaType} ${c.bbSource} ${c.bbMultiplier}${c.bbOffset?` ${c.bbOffset}`:''}`,c.bbBasisColor]
+      :study.kind==='zigzag'?['Zig Zag',`${c.zigzagDeviation}%`,c.zigzagColor]
       :['Supertrend',`${c.supertrendLength} ${c.supertrendMultiplier}`,c.stUpColor];
     return {key:study.id,name,params,color,hidden:study.hidden,
       onToggleVisible:()=>actions.onToggleHidden(study.id),

@@ -3,11 +3,12 @@ import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {createPortal} from 'react-dom';
 
 export type IndicatorKind='atr'|'adx'|'rsi';
-export type OverlayKind='supertrend'|'bollinger'|'triplema';
+export type OverlayKind='zigzag'|'supertrend'|'bollinger'|'triplema';
 /** Settings dialogs: chart indicators plus the strategy's Trend SMA line. */
 export type SettingsKind=IndicatorKind|OverlayKind|'trendsma';
 
 export type IndicatorStyle={
+  zigzagColor:string;zigzagWidth:number;
   bbBasisColor:string;bbUpperColor:string;bbLowerColor:string;bbWidth:number;
   stUpColor:string;stDownColor:string;stWidth:number;
   maFastColor:string;maMidColor:string;maSlowColor:string;maWidth:number;
@@ -18,10 +19,11 @@ export type IndicatorStyle={
   diPlusColor:string;diMinusColor:string;adxBullBgColor:string;adxBearBgColor:string;
   trendSmaColor:string;trendSmaWidth:number;
 };
-export type IndicatorConfig=IndicatorStyle&{bbLength:number;bbMaType:BollingerConfig['maType'];bbSource:BollingerConfig['source'];bbMultiplier:number;bbOffset:number;supertrendLength:number;supertrendMultiplier:number;atrLength:number;atrThreshold:number;atrSmoothing:'RMA'|'SMA'|'EMA'|'WMA';adxLength:number;diLength:number;showDi:boolean;showStatus:boolean;adxTrendLevel:number;adxStrongLevel:number;showAdxLevels:boolean;rsiLength:number;rsiUpper:number;rsiLower:number;maFast:number;maMid:number;maSlow:number;maType:'SMA'|'EMA';trendSmaLength:number};
+export type IndicatorConfig=IndicatorStyle&{zigzagDeviation:number;bbLength:number;bbMaType:BollingerConfig['maType'];bbSource:BollingerConfig['source'];bbMultiplier:number;bbOffset:number;supertrendLength:number;supertrendMultiplier:number;atrLength:number;atrThreshold:number;atrSmoothing:'RMA'|'SMA'|'EMA'|'WMA';adxLength:number;diLength:number;showDi:boolean;showStatus:boolean;adxTrendLevel:number;adxStrongLevel:number;showAdxLevels:boolean;rsiLength:number;rsiUpper:number;rsiLower:number;maFast:number;maMid:number;maSlow:number;maType:'SMA'|'EMA';trendSmaLength:number};
 
 /** TradingView built-in defaults (inputs and plot colors). */
 const defaultStyle:IndicatorStyle={
+  zigzagColor:'#2962ff',zigzagWidth:2,
   bbBasisColor:'#2962ff',bbUpperColor:'#f23645',bbLowerColor:'#089981',bbWidth:1,
   stUpColor:'#4caf50',stDownColor:'#f23645',stWidth:1,
   maFastColor:'#00ff00',maMidColor:'#ff0000',maSlowColor:'#ffff00',maWidth:2,
@@ -32,7 +34,7 @@ const defaultStyle:IndicatorStyle={
   diPlusColor:'#00e676',diMinusColor:'#f23645',adxBullBgColor:'#4caf50',adxBearBgColor:'#f23645',
   trendSmaColor:'#ff9800',trendSmaWidth:1,
 };
-export const defaultIndicators:IndicatorConfig={...defaultStyle,bbLength:defaultBollinger.length,bbMaType:defaultBollinger.maType,bbSource:defaultBollinger.source,bbMultiplier:defaultBollinger.multiplier,bbOffset:defaultBollinger.offset,supertrendLength:10,supertrendMultiplier:3,atrLength:14,atrThreshold:0.03,atrSmoothing:'RMA',adxLength:14,diLength:14,showDi:false,showStatus:true,adxTrendLevel:25,adxStrongLevel:50,showAdxLevels:true,rsiLength:14,rsiUpper:70,rsiLower:30,maFast:20,maMid:50,maSlow:100,maType:'SMA',trendSmaLength:30};
+export const defaultIndicators:IndicatorConfig={...defaultStyle,zigzagDeviation:5,bbLength:defaultBollinger.length,bbMaType:defaultBollinger.maType,bbSource:defaultBollinger.source,bbMultiplier:defaultBollinger.multiplier,bbOffset:defaultBollinger.offset,supertrendLength:10,supertrendMultiplier:3,atrLength:14,atrThreshold:0.03,atrSmoothing:'RMA',adxLength:14,diLength:14,showDi:false,showStatus:true,adxTrendLevel:25,adxStrongLevel:50,showAdxLevels:true,rsiLength:14,rsiUpper:70,rsiLower:30,maFast:20,maMid:50,maSlow:100,maType:'SMA',trendSmaLength:30};
 
 const COLOR_KEYS=Object.keys(defaultStyle).filter(key=>key.endsWith('Color')) as (keyof IndicatorStyle)[];
 const WIDTH_KEYS=Object.keys(defaultStyle).filter(key=>key.endsWith('Width')) as (keyof IndicatorStyle)[];
@@ -41,6 +43,7 @@ const storageKey='silver.chart.indicatorSettings';
 
 function validInputs(c:IndicatorConfig){
   return validBollinger({length:c.bbLength,maType:c.bbMaType,source:c.bbSource,multiplier:c.bbMultiplier,offset:c.bbOffset})
+    &&Number.isFinite(c.zigzagDeviation)&&c.zigzagDeviation>0&&c.zigzagDeviation<=100
     &&Number.isFinite(c.supertrendMultiplier)&&c.supertrendMultiplier>=.01&&c.supertrendMultiplier<=100
     &&Number.isFinite(c.atrThreshold)&&c.atrThreshold>=0
     &&[c.atrLength,c.adxLength,c.diLength,c.rsiLength,c.supertrendLength,c.maFast,c.maMid,c.maSlow,c.trendSmaLength].every(v=>Number.isInteger(v)&&v>=1&&v<=1000)
@@ -89,8 +92,9 @@ export function useIndicatorSettings(){
 /** Hex color plus alpha, e.g. alpha('#00ff00', .65). */
 export function alpha(hex:string,opacity:number){return `${hex}${Math.round(opacity*255).toString(16).padStart(2,'0')}`;}
 
-const TITLES:Record<SettingsKind,string>={trendsma:'MA',bollinger:'BB',supertrend:'Supertrend',triplema:'Triple MA',rsi:'RSI',adx:'ADX Trend Strength',atr:'ATR'};
+const TITLES:Record<SettingsKind,string>={zigzag:'Zig Zag',trendsma:'MA',bollinger:'BB',supertrend:'Supertrend',triplema:'Triple MA',rsi:'RSI',adx:'ADX Trend Strength',atr:'ATR'};
 const FIELDS:Record<SettingsKind,(keyof IndicatorConfig)[]>={
+  zigzag:['zigzagDeviation','zigzagColor','zigzagWidth'],
   trendsma:['trendSmaLength','trendSmaColor','trendSmaWidth'],
   bollinger:['bbLength','bbMaType','bbSource','bbMultiplier','bbOffset','bbBasisColor','bbUpperColor','bbLowerColor','bbWidth'],
   supertrend:['supertrendLength','supertrendMultiplier','stUpColor','stDownColor','stWidth'],
@@ -126,6 +130,7 @@ export default function IndicatorSettings({kind,value,onApply,onClose}:{kind:Set
   const color=(key:keyof IndicatorStyle,label:string)=><Row label={label}><span className="tv-color"><input type="color" value={draft[key] as string} onChange={e=>set(key,e.target.value as never)} aria-label={`${label} color`}/></span></Row>;
   const width=(key:keyof IndicatorStyle)=><Row label="Line thickness"><span className="tv-widths" role="radiogroup" aria-label="Line thickness">{[1,2,3,4].map(w=><button type="button" key={w} role="radio" aria-checked={draft[key]===w} title={`${w}px`} onClick={()=>set(key,w as never)}><i style={{height:w}}/></button>)}</span></Row>;
   const inputs:Record<SettingsKind,ReactNode>={
+    zigzag:<><Row label="Reversal (%)">{num('zigzagDeviation',{min:.01,max:100,step:.1})}</Row><p>A close reversing by this percentage confirms a swing. The final leg follows new highs and lows.</p></>,
     trendsma:<>
       <Row label="Length">{num('trendSmaLength',{min:1,max:1000,step:1})}</Row>
       <Row label="Source"><select disabled value="close"><option value="close">Close</option></select></Row>
@@ -169,6 +174,7 @@ export default function IndicatorSettings({kind,value,onApply,onClose}:{kind:Set
     </>,
   };
   const style:Record<SettingsKind,ReactNode>={
+    zigzag:<>{color('zigzagColor','Zig Zag')}{width('zigzagWidth')}</>,
     trendsma:<>{color('trendSmaColor','Plot')}{width('trendSmaWidth')}</>,
     bollinger:<>{color('bbBasisColor','Basis')}{color('bbUpperColor','Upper')}{color('bbLowerColor','Lower')}{width('bbWidth')}</>,
     supertrend:<>{color('stUpColor','Up trend')}{color('stDownColor','Down trend')}{width('stWidth')}</>,
