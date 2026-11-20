@@ -13,7 +13,10 @@ export default function ManualOrderTicket(props:Props){
   return <OrderTicket {...props} data={data} streamConnected={streamConnected}/>;
 }
 
-export function OrderTicket({venue,asset,connected,busy,blocked,botRunning,leverage,minimumLeverage,maximumLeverage,leverageLoading,onLeverageChange,onRun,data,streamConnected,paper=false}:Props&{data:ExchangeSnapshot|null;streamConnected:boolean;paper?:boolean}){
+/** Editable starting funds shown in place of available margin (paper, before a session starts). */
+export type InitialBalance={value:number;onChange:(value:number)=>void};
+
+export function OrderTicket({venue,asset,connected,busy,blocked,botRunning,leverage,minimumLeverage,maximumLeverage,leverageLoading,onLeverageChange,onRun,data,streamConnected,paper=false,initialBalance}:Props&{data:ExchangeSnapshot|null;streamConnected:boolean;paper?:boolean;initialBalance?:InitialBalance}){
   const leverageOptions=Array.from({length:Math.max(0,maximumLeverage-minimumLeverage+1)},(_,index)=>index+minimumLeverage);
   const [action,setAction]=useState<'open'|'close'>('open');
   const [size,setSize]=useState('');
@@ -71,7 +74,8 @@ export function OrderTicket({venue,asset,connected,busy,blocked,botRunning,lever
     {action==='open'?<>
       <div className="ticket-mode-row"><StatusBadge>Isolated margin</StatusBadge><label><span className="sr-only">Order leverage</span><select aria-label="Order leverage" value={leverage} disabled={disabled||leverageLoading||positionOpen} onChange={event=>onLeverageChange(event.target.value)}>{leverageOptions.map(value=><option key={value} value={value}>{value}x</option>)}</select></label></div>
       <div className="ticket-order-type"><strong>Market</strong><span>Immediate execution</span></div>
-      <div className="ticket-available"><span>Available margin</span><strong>{number(data?.balance?.free,4)} <small>{collateral}</small></strong></div>
+      {initialBalance?<label className="ticket-available ticket-initial-balance"><span>Initial balance</span><span><input type="number" aria-label="Initial balance" required min={1} max={1e9} step="any" value={Number.isFinite(initialBalance.value)?initialBalance.value:''} disabled={busy} onChange={event=>initialBalance.onChange(event.target.valueAsNumber)}/><small>{collateral}</small></span></label>
+        :<div className="ticket-available"><span>Available margin</span><strong>{number(data?.balance?.free,4)} <small>{collateral}</small></strong></div>}
       <div className="ticket-market-price"><span>Market price</span><strong>{number(price,priceDigits)} <small>{collateral}</small></strong></div>
       <label className="ticket-size"><span>{unit==='USDT'?'Margin':'Position size'}</span><div><input aria-label="Position size" type="number" min="0" step="any" placeholder="Enter amount" value={size} disabled={disabled||positionOpen} onChange={event=>setSize(event.target.value)}/><select aria-label="Position size unit" value={unit} onChange={event=>{setUnit(event.target.value as 'asset'|'USDT');setSize('');setConfirmed(false);}}><option value="USDT">{collateral}</option><option value="asset">{asset}</option></select></div></label>
       <fieldset className="ticket-tpsl"><legend>TP / SL</legend>

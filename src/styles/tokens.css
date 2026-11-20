@@ -24,3 +24,14 @@
   --space-5: 24px;
   --space-6: 32px;
 }
+
+/* Native dropdown lists: selects with transparent backgrounds otherwise open a white list with light text. */
+select option,
+select optgroup {
+  background-color: var(--field);
+  color: var(--text);
+}
+
+select option:disabled {
+  color: var(--muted);
+}

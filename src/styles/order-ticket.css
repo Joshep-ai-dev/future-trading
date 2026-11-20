@@ -644,3 +644,23 @@
   flex: 0 0 14px;
   margin: 0;
 }
+
+/* Paper, before a session: the available-margin row edits the starting virtual balance. */
+.ticket-initial-balance {
+  align-items: center;
+}
+
+.ticket-initial-balance > span:last-child {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ticket-initial-balance input {
+  width: 110px;
+  min-height: 28px;
+  margin: 0;
+  padding: 4px 8px;
+  text-align: right;
+  font-size: 11px;
+}
