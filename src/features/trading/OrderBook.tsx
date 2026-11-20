@@ -61,12 +61,14 @@ export default function OrderBook({venue}:{venue:ExchangeVenue}){
 }
 
 /** Paper page: real-time public OKX XAG book or trades (selected tab only), streamed while shown. */
-export function PublicOrderBook({active,base,unavailable}:{active:boolean;base:string;unavailable?:string}){
+/** Paper order book: public real-time book and trades for OKX XAG or any downloaded exchange market. */
+export function PublicOrderBook({active,market,symbol,base,unavailable}:{active:boolean;market:string;symbol:string;base:string;unavailable?:string}){
   const [tab,setTab]=useState<Tab>('book');
   const live=active&&!unavailable;
-  const book=useEventStream<OrderBookSnapshot>(live&&tab==='book'?'/api/market/realtime?kind=orderBook':null);
-  const trades=useEventStream<LiveTrade[]>(live&&tab==='trades'?'/api/market/realtime?kind=trades':null);
-  return <OrderBookPanel id="paper-order-book" tab={tab} onTab={setTab} data={{symbol:'XAG/USDT:USDT',book,trades}} base={base} resetKey={base}
+  const source=(kind:'orderBook'|'trades')=>`/api/market/realtime?${new URLSearchParams({kind,market})}`;
+  const book=useEventStream<OrderBookSnapshot>(live&&tab==='book'?source('orderBook'):null);
+  const trades=useEventStream<LiveTrade[]>(live&&tab==='trades'?source('trades'):null);
+  return <OrderBookPanel id="paper-order-book" tab={tab} onTab={setTab} data={{symbol,book,trades}} base={base} resetKey={market}
     emptyBook={unavailable??'Loading order book...'} emptyTrades={unavailable??'Loading trades...'}/>;
 }
 

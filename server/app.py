@@ -3,6 +3,7 @@ from datetime import date, timedelta
 from typing import Literal
 from contextlib import asynccontextmanager
 from queue import Queue
+import asyncio
 import threading
 import time
 from threading import Thread
@@ -76,6 +77,8 @@ async def lifespan(app):
         await workspaces.shutdown()
         from server.market.okx_public_stream import okx_public_stream
         await okx_public_stream.close()
+        from server.market.public_stream import public_streams
+        await public_streams.close()
         history_backfill.shutdown()
         refresh_service.shutdown()
 
@@ -978,10 +981,19 @@ def public_market_order_book(part: Literal['book', 'trades'] = 'book'):
 
 
 @app.get('/api/market/realtime')
-async def public_market_realtime(kind: Literal['ticker', 'orderBook', 'trades']):
-    """Real-time public OKX XAG ticker, order book or trades (display only), streamed while the browser listens."""
-    from server.market.okx_public_stream import okx_public_stream
-    return StreamingResponse(okx_public_stream.events(kind), media_type='text/event-stream',
+async def public_market_realtime(kind: Literal['ticker', 'orderBook', 'trades'], market: str = 'xag'):
+    """Real-time public ticker, order book or trades (display only): OKX XAG, or a downloaded exchange market."""
+    if market == 'xag':
+        from server.market.okx_public_stream import okx_public_stream as stream
+    elif market.startswith('dataset:'):
+        from server.market.public_stream import public_streams
+        try:
+            stream = await asyncio.to_thread(public_streams.get, market)
+        except ValueError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+    else:
+        raise HTTPException(status_code=400, detail='Real-time data is available for live exchange markets only')
+    return StreamingResponse(stream.events(kind), media_type='text/event-stream',
                              headers={'Cache-Control':'no-cache', 'X-Accel-Buffering':'no'})
 
 

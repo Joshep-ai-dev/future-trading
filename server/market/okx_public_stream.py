@@ -1,7 +1,7 @@
 """Real-time public OKX XAG-USDT-SWAP data (ticker, order book, trades) for paper trading.
 
-One shared WebSocket, opened only while a browser subscribes and subscribed only
-to the channels currently wanted. No credentials. Sizes are converted from
+One shared WebSocket (subscriber handling in `BroadcastStream`), opened only while a browser
+subscribes and subscribed only to the channels currently wanted. No credentials. Sizes are converted from
 contracts to XAG with the instrument's contract value.
 """
 import asyncio
@@ -12,6 +12,7 @@ import aiohttp
 
 from server.exchanges.exchange_stream import BOOK_DEPTH, TRADE_HISTORY, apply_bbo, trade_view
 from server.market.public_book import INSTRUMENT, SYMBOL, contract_value, public_order_book
+from server.market.public_stream import BroadcastStream
 
 URL = 'wss://ws.okx.com/ws/v5/public'
 CHANNELS = {'ticker': 'tickers', 'orderBook': 'books', 'trades': 'trades'}
@@ -51,38 +52,7 @@ class LocalBook:
                     timestamp=self.timestamp)
 
 
-class OkxPublicStream:
-    def __init__(self):
-        self.queues: dict[str, set[asyncio.Queue]] = {kind: set() for kind in CHANNELS}
-        self.latest: dict[str, object] = {}
-        self.task: asyncio.Task | None = None
-        self.subscribed: frozenset[str] = frozenset()
-
-    def wanted(self) -> frozenset[str]:
-        return frozenset(kind for kind, queues in self.queues.items() if queues)
-
-    def publish(self, kind: str, value) -> None:
-        self.latest[kind] = value
-        payload = json.dumps(value, allow_nan=False)
-        for queue in tuple(self.queues[kind]):
-            if queue.full():
-                queue.get_nowait()
-            queue.put_nowait(payload)
-
-    def refresh(self) -> None:
-        """(Re)connect with exactly the wanted channels, or stop when nothing is wanted."""
-        wanted = self.wanted()
-        if wanted == self.subscribed and self.task and not self.task.done():
-            return
-        if self.task:
-            self.task.cancel()
-        self.task = None
-        self.subscribed = wanted
-        for kind in set(self.latest) - wanted:
-            self.latest.pop(kind, None)
-        if wanted:
-            self.task = asyncio.create_task(self.run(wanted))
-
+class OkxPublicStream(BroadcastStream):
     async def run(self, kinds: frozenset[str]) -> None:
         size = await asyncio.to_thread(contract_value)
         if 'trades' in kinds and 'trades' not in self.latest:
@@ -144,33 +114,6 @@ class OkxPublicStream:
             except Exception:
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, 30)
-
-    async def events(self, kind: str):
-        queue: asyncio.Queue = asyncio.Queue(maxsize=1)
-        self.queues[kind].add(queue)
-        self.refresh()
-        try:
-            yield 'retry: 2000\n\n'
-            if kind in self.latest:
-                yield 'data: ' + json.dumps(self.latest[kind], allow_nan=False) + '\n\n'
-            while True:
-                try:
-                    payload = await asyncio.wait_for(queue.get(), timeout=15)
-                except asyncio.TimeoutError:
-                    yield ': keep-alive\n\n'
-                else:
-                    yield 'data: ' + payload + '\n\n'
-        finally:
-            self.queues[kind].discard(queue)
-            self.refresh()
-
-    async def close(self) -> None:
-        for queues in self.queues.values():
-            queues.clear()
-        if self.task:
-            self.task.cancel()
-            await asyncio.gather(self.task, return_exceptions=True)
-        self.task = None
 
 
 okx_public_stream = OkxPublicStream()

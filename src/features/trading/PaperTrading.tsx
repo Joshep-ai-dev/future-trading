@@ -204,7 +204,7 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
         <div className="chart-legend"><span><b style={{color:FILL_COLORS.buy}}>↑</b> Buy / close short</span><span><b style={{color:FILL_COLORS.sell}}>↓</b> Sell / close long</span><span><i className="legend-line" style={{borderColor:STOP_COLORS.initial}}/> Stop loss</span><span><i className="legend-line" style={{borderColor:STOP_COLORS.trailing}}/> Trailing stop / TRAIL activation</span></div>
         {!s&&(liveMarket.error||liveMarket.stale)&&<p className="chart-history-status" role="status">{liveMarket.error||'Waiting for fresh public market candles. Existing history remains visible.'}</p>}
       </section>
-      {panels.book&&<PublicOrderBook active={visible} base={paperBase} unavailable={settings.market!=='xag'||s?.mode==='replay'?'The order book is available for live XAG paper trading only.':undefined}/>}
+      {panels.book&&<PublicOrderBook key={activeMarket} active={visible} market={activeMarket} symbol={paperSymbol} base={paperBase} unavailable={s?.mode==='replay'||activeMarket==='stable'?'The order book is available for live exchange markets, not historical replay.':undefined}/>}
       <TerminalSplitter/>
       <section className="terminal-panel activity-panel exchange-activity">
         <TabBar items={[

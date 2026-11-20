@@ -19,7 +19,8 @@ function applyTick(minutes:Candle[],tick:Tick|null):Candle[]{
 }
 
 /** Public display feed, independent of paper sessions and strategy execution.
- *  Completed OHLCV comes from polling; the forming minute follows the real-time OKX ticker. */
+ *  Completed OHLCV comes from polling; the forming minute follows the real-time exchange ticker
+ *  (OKX XAG, or the downloaded market's own exchange). */
 export function useLiveMarketMinutes(enabled:boolean,market='xag'){
   const [state,setState]=useState<{minutes:Candle[];checkedAt:number|null;stale:boolean;error:string}>({minutes:[],checkedAt:null,stale:true,error:''});
   const tick=useRef<Tick|null>(null);
@@ -37,7 +38,8 @@ export function useLiveMarketMinutes(enabled:boolean,market='xag'){
       }finally{if(!disposed)timer=setTimeout(poll,market==='xag'?2000:5000);}
     }
     void poll();
-    const ticker=market==='xag'?new EventSource('/api/market/realtime?kind=ticker'):null;
+    const realtime=market==='xag'||market.startsWith('dataset:');
+    const ticker=realtime?new EventSource(`/api/market/realtime?${new URLSearchParams({kind:'ticker',market})}`):null;
     if(ticker)ticker.onmessage=event=>{
       try{
         const next=JSON.parse(event.data) as Tick;
