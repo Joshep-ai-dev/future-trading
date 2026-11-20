@@ -13,7 +13,7 @@ import {useDatasetSync} from '../../shared/api/useDatasetSync';
 import {useLiveMarketMinutes} from '../../shared/charts/useLiveMarketMinutes';
 import {mergeHistory} from '../../shared/charts/candleHistory';
 import {useMarketDataRevision} from '../../shared/charts/marketDataRevision';
-import {Metric,StatusBadge,TabBar,TableFrame} from '../../shared/ui/ui';
+import {StatusBadge,TabBar,TableFrame} from '../../shared/ui/ui';
 import {useChartTimeframe} from '../../shared/charts/useChartTimeframe';
 import {TIMEFRAMES,chartPosition} from '../../shared/charts/chartTimeframe';
 import TradeView from '../../shared/ui/TradeView';
@@ -155,7 +155,6 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
   const chartTrades=replay?.closed??s?.trades??[];
   const balance=replay?.balance??s?.balance??settings.capital;
   const equity=replay?.equity??(s?(s.displayEquity??s.equity):settings.capital);
-  const pnl=s?equity-s.settings.capital:0;
   const active=s?.settings??settings;
   const botRunning=!!s?.running&&s.executionMode!=='manual';
   const sessionError=error||data.error||s?.quoteError;
@@ -225,7 +224,6 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
       </section>
     </div>
     <aside id="paper-execution-sidebar" className="terminal-sidebar" aria-label="Paper trading controls" hidden={!controlsOpen}>
-      <section className="terminal-panel trading-account-summary" aria-label="Paper account summary"><header><div className="account-summary-heading"><h2>Account overview</h2></div><span>Virtual funds</span></header><div className="account-equity"><span>Equity</span><strong>{fmt(equity,2)} <small>{paperQuote}</small></strong></div><div className="account-summary-metrics"><Metric label="Balance" value={fmt(balance,2)} unit={paperQuote}/><Metric label="Session P&L" value={`${pnl>=0?'+':''}${fmt(pnl,2)}`} unit={paperQuote} tone={pnl>=0?'positive':'negative'}/></div><div className="account-summary-time"><span>{s?(s.mode==='replay'?'Replay clock':'Session clock'):'Last market candle'}</span><time>{date(s?(s.mode==='replay'?displayClock:s.virtualTime??s.lastProcessed):liveMarket.minutes.at(-1)?.time??preview.at(-1)?.time??null,tradingTimeZone)}</time></div></section>
       <ExecutionPanel prefix="paper-execution" className="terminal-panel" mode={executionMode} onModeChange={setExecutionMode}
         manual={<>
           <p className="ticket-help">Virtual funds · Market prices from {activeDataset?.venue.toUpperCase()??'OKX'}</p>
