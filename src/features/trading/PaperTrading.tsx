@@ -3,7 +3,7 @@ import {MarketSyncContext} from '../../shared/api/useMarketSync';
 import MarketDataInfo from '../../shared/ui/MarketDataInfo';
 import MarketHeader from '../../shared/ui/MarketHeader';
 import PaperMarketPicker from './PaperMarketPicker';
-import ExecutionPanel from './ExecutionPanel';
+import ExecutionPanel,{ExecutionMessage} from './ExecutionPanel';
 import BotPanel from './BotPanel';
 import PaperOrderTicket from './PaperOrderTicket';
 import type {ExchangeVenue} from '../../shared/api/exchangeVenue';
@@ -224,21 +224,20 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
       </section>
     </div>
     <aside id="paper-execution-sidebar" className="terminal-sidebar" aria-label="Paper trading controls" hidden={!controlsOpen}>
-      <ExecutionPanel prefix="paper-execution" className="terminal-panel" mode={executionMode} onModeChange={setExecutionMode}
-        manual={<>
-          <p className="ticket-help">Virtual funds · Market prices from {activeDataset?.venue.toUpperCase()??'OKX'}</p>
-          {!s&&<label className="ui-field"><span>Starting virtual balance</span><input type="number" min={1} max={1e9} value={settings.capital} onChange={event=>onChange({...settings,capital:Number(event.target.value)})}/></label>}
-          <PaperOrderTicket key={activeMarket} asset={paperBase} venue={(activeDataset?.venue??'okx') as ExchangeVenue} price={price} balance={balance} position={p} busy={busy} botRunning={botRunning||s?.mode==='replay'} fresh={!liveMarket.stale&&!liveMarket.error&&liveMarket.checkedAt!=null&&Date.now()/1000-liveMarket.checkedAt<20} leverage={manualLeverage} onLeverageChange={setManualLeverage} onRun={manualAction}/>
-        </>}
-        bot={<BotPanel heading={{title:'Paper bot',status}} settings={config} onSettingsChange={onChange} profiles={profiles} onApplySetup={onApplySetup} onConfigure={onConfigure}
+      <ExecutionPanel prefix="paper-execution" mode={executionMode} onModeChange={setExecutionMode}
+        status={<div className="ticket-connection"><StatusBadge tone="positive" dot>Virtual funds · {(activeDataset?.venue??'okx').toUpperCase()} prices</StatusBadge></div>}
+        manual={<PaperOrderTicket key={activeMarket} asset={paperBase} venue={(activeDataset?.venue??'okx') as ExchangeVenue} price={price} balance={balance} position={p} busy={busy} botRunning={botRunning||s?.mode==='replay'} fresh={!liveMarket.stale&&!liveMarket.error&&liveMarket.checkedAt!=null&&Date.now()/1000-liveMarket.checkedAt<20} leverage={manualLeverage} onLeverageChange={setManualLeverage} onRun={manualAction}/>}
+        bot={<BotPanel settings={config} onSettingsChange={onChange} profiles={profiles} onApplySetup={onApplySetup} onConfigure={onConfigure}
           running={botRunning} busy={busy} locked={busy||botRunning}
           funds={{label:'Starting balance',value:config.capital,unit:paperQuote,onChange:capital=>onChange({...settings,capital})}}
           leverage={{value:String(config.max_leverage),min:1,max:100,step:.5,onChange:value=>onChange({...settings,max_leverage:Number(value)})}}
           allocation={{amountLabel:'Amount per trade',amountCap:config.capital,amountHint:'Allocation before leverage. Capped at available balance.'}}
           canStart={!busy} startLabel={s?'＋ Start new session':'▶ Start virtual bot'} stopLabel="Ⅱ Pause bot" onStart={()=>void action('start')} onStop={()=>void action('pause')}
           secondaryActions={s&&s.executionMode!=='manual'&&!s.halted&&!s.completed&&<button type="button" className="secondary resume-button" disabled={busy} onClick={()=>void action('resume')}>Resume saved session</button>}
-          emptyText="The market chart and account history remain available. Automated paper trading is disabled." emptyStopLabel="Pause existing session"/>}
-        footer={sessionError&&<p className="error" role="alert">{sessionError}</p>}/>
+          emptyText="The market chart and account history remain available. Automated paper trading is disabled." emptyStopLabel="Pause existing session">
+          <p className="ticket-help">Paper session: {status}</p>
+        </BotPanel>}
+        footer={sessionError&&<ExecutionMessage text={sessionError} error/>}/>
     <BotStatusPanel state={s?.strategyState} running={!!s?.running&&s.executionMode!=='manual'} timeLabel={s?.strategyState?.timestamp?date(s.strategyState.timestamp+duration,tradingTimeZone):undefined} emptyHint={settings.strategy==='none'?'No automated strategy is configured. The market chart and past sessions remain available.':s?'Readiness appears after the bot processes its first completed candle.':'Start a virtual session to see buy and sell readiness.'}/>
     <details className="terminal-help"><summary>How this simulation works</summary><p>OKX prices update continuously; HTX and Hyperliquid prices refresh every 5 seconds. Bots use completed execution candles.</p><p>Keep the backend running. Live catches up missed candles. A balance at or below zero halts trading.</p><p>Manual fills and TP/SL use received exchange prices, with isolated virtual liquidation. Fees, slippage and funding are not modeled. Keep the backend running for position updates.</p>{s&&<p>Last execution check: {date(s.lastCheck,tradingTimeZone)}<br/>Last completed candle: {date(s.lastProcessed,tradingTimeZone)}</p>}</details>
     </aside></div>

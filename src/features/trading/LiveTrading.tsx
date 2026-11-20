@@ -6,7 +6,7 @@ import OrderBook from './OrderBook';
 import ExchangeOverview from './ExchangeOverview';
 import LiveMarketChart from './LiveMarketChart';
 import {useExchangeVenue} from '../../shared/api/exchangeVenue';
-import {Button,Panel} from '../../shared/ui/ui';
+import {Button} from '../../shared/ui/ui';
 import LiveAssets from './LiveAssets';
 import TerminalSplitter from '../../shared/ui/TerminalSplitter';
 import BotStatusPanel,{BotChartBadge} from './BotStatusPanel';
@@ -61,7 +61,7 @@ export default function LiveTrading({settings,controls,visible}:{settings:Backte
   return <ExecutionModeContext.Provider value={executionMode}><div id="page-paper" role="tabpanel" aria-labelledby="tab-paper">
     <div className="terminal-grid live-terminal-grid" data-controls={controlsOpen?'visible':'hidden'}>
       <div className={panels.book?"terminal-main has-order-book":"terminal-main"}><ExchangeMarketHeader timeframe={chartTimeframe} active={visible} venue={venue} botRunning={!!bot?.running} actions={<TradingWorkspaceTools showSidebarToggle={false} mode="live" open={controlsOpen} onToggle={()=>togglePanel('order')} panelId="live-execution-sidebar"/>}/><LiveMarketChart onTimeframeChange={setChartTimeframe} key={venue} venue={venue} settings={settings} toolbarEnd={<PanelToggles panels={panels} onToggle={togglePanel} bookId="live-order-book" actionId="live-execution-sidebar"/>} overlay={<BotChartBadge state={botHere?bot?.strategyState:null} running={botHere}/>}/>{panels.book&&<OrderBook venue={venue}/>}<TerminalSplitter/><ExchangeOverview venue={venue}/></div>
-      <aside id="live-execution-sidebar" className="terminal-sidebar" aria-label="Live execution" hidden={!controlsOpen}><PaperSessionNotice/><Panel className="live-terminal-controls">{controls}</Panel><BotStatusPanel state={botHere?bot?.strategyState:null} running={botHere} timeLabel={botHere&&bot?.strategyState?.timestamp?new Date(bot.strategyState.timestamp*1000).toISOString().slice(0,16).replace('T',' ')+' UTC':undefined} emptyHint={bot?.running?`The strategy is running on ${bot.venue?.toUpperCase()}. Switch to that exchange to see its status.`:settings.strategy==='none'?'No automated strategy is configured. The market chart and manual order ticket are available.':'Start the strategy in the Bots tab to see live buy and sell readiness.'}/><LiveAssets venue={venue}/></aside>
+      <aside id="live-execution-sidebar" className="terminal-sidebar" aria-label="Live execution" hidden={!controlsOpen}><PaperSessionNotice/>{controls}<BotStatusPanel state={botHere?bot?.strategyState:null} running={botHere} timeLabel={botHere&&bot?.strategyState?.timestamp?new Date(bot.strategyState.timestamp*1000).toISOString().slice(0,16).replace('T',' ')+' UTC':undefined} emptyHint={bot?.running?`The strategy is running on ${bot.venue?.toUpperCase()}. Switch to that exchange to see its status.`:settings.strategy==='none'?'No automated strategy is configured. The market chart and manual order ticket are available.':'Start the strategy in the Bots tab to see live buy and sell readiness.'}/><LiveAssets venue={venue}/></aside>
     </div>
   </div></ExecutionModeContext.Provider>;
 }

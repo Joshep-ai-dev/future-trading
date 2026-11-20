@@ -60,8 +60,6 @@ function AllocationControl({settings,onChange,amountLabel,amountCap,amountHint}:
 }
 
 export type BotPanelProps={
-  /** Optional heading with a status pill (paper shows "Paper bot · Running"). */
-  heading?:{title:string;status:string};
   /** Settings shown in the form (a running session's settings while it runs). */
   settings:BacktestSettings;
   onSettingsChange?:(settings:BacktestSettings)=>void;
@@ -97,10 +95,9 @@ export type BotPanelProps={
 
 /** Bot controls shared by paper and live trading: strategy, timeframe, funds, leverage, sizing and start/stop. */
 export default function BotPanel(props:BotPanelProps){
-  const {heading,settings,onSettingsChange,profiles=[],onApplySetup,onConfigure,running,busy,locked,funds,leverage,allocation,confirmation,canStart,startLabel,stopLabel,canStop=true,onStart,onStop,secondaryActions,emptyText,emptyStopLabel,strategyNote,children}=props;
+  const {settings,onSettingsChange,profiles=[],onApplySetup,onConfigure,running,busy,locked,funds,leverage,allocation,confirmation,canStart,startLabel,stopLabel,canStop=true,onStart,onStop,secondaryActions,emptyText,emptyStopLabel,strategyNote,children}=props;
   const change=(next:BacktestSettings)=>onSettingsChange?.(next);
   return <div className="bot-control live-bot-panel">
-    {heading&&<div className="panel-heading"><h2>{heading.title}</h2><span className={`bot-state ${running?'is-running':''}`}><i className="status-dot"/>{heading.status}</span></div>}
     {settings.strategy==='none'?<div className="bot-form">
       <h3>No strategy configured</h3><p>{emptyText}</p>
       {running&&<button type="button" disabled={busy||!canStop} onClick={onStop}>{emptyStopLabel}</button>}
