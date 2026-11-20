@@ -66,7 +66,7 @@ export function OrderTicket({venue,asset,connected,busy,blocked,botRunning,lever
     await onRun(paper?'/api/paper/manual/close':'/api/exchange/close',paper?{}:{venue,side:position.side,margin_mode:position.marginMode,confirmation:'CLOSE LIVE POSITION'});
   }
 
-  return <div className="order-ticket" id={paper?"paper-execution-manual-panel":"execution-manual-panel"} role="tabpanel" aria-labelledby={paper?"paper-execution-tab-manual":"execution-tab-manual"}>
+  return <div className="order-ticket">
     <div className="ticket-segment" role="group" aria-label="Order action">{(['open','close'] as const).map(value=><button key={value} type="button" aria-pressed={action===value} onClick={()=>{setAction(value);setConfirmed(false);}}>{value==='open'?'Open':'Close'}</button>)}</div>
     {action==='open'?<>
       <div className="ticket-mode-row"><StatusBadge>Isolated margin</StatusBadge><label><span className="sr-only">Order leverage</span><select aria-label="Order leverage" value={leverage} disabled={disabled||leverageLoading||positionOpen} onChange={event=>onLeverageChange(event.target.value)}>{leverageOptions.map(value=><option key={value} value={value}>{value}x</option>)}</select></label></div>
