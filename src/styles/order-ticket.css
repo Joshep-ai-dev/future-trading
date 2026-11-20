@@ -916,3 +916,35 @@
   padding: 2px 8px;
   font-size: 10px;
 }
+
+/* Buy / Sell: exchange green and red with white text; hover only lightens. Specific enough to beat the generic
+   primary-button hover (blue / lift) and the older dark-text rule in terminal.css. */
+.order-ticket .ticket-submit-row .ui-button.ticket-buy,
+.order-ticket .ticket-submit-row .ui-button.ticket-sell {
+  border: 0 !important;
+  color: #fff !important;
+  transform: none !important;
+  transition: background-color .15s, opacity .15s;
+}
+
+.order-ticket .ticket-submit-row .ui-button.ticket-buy {
+  background: #089981 !important;
+}
+
+.order-ticket .ticket-submit-row .ui-button.ticket-sell {
+  background: #f23645 !important;
+}
+
+.order-ticket .ticket-submit-row .ui-button.ticket-buy:hover:not(:disabled) {
+  background: #0bb294 !important;
+}
+
+.order-ticket .ticket-submit-row .ui-button.ticket-sell:hover:not(:disabled) {
+  background: #ff4d5c !important;
+}
+
+.order-ticket .ticket-submit-row .ui-button.ticket-buy:disabled,
+.order-ticket .ticket-submit-row .ui-button.ticket-sell:disabled {
+  opacity: .4;
+  cursor: not-allowed;
+}
