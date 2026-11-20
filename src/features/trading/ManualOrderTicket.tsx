@@ -1,4 +1,4 @@
-import {useState} from 'react';
+import {useState,type CSSProperties} from 'react';
 import type {ExchangeVenue} from '../../shared/api/exchangeVenue';
 import {liveNumber as number,useExchangeStream,type ExchangeSnapshot,type LiveOrder} from '../../shared/api/useExchangeStream';
 import {Button,StatusBadge} from '../../shared/ui/ui';
@@ -18,7 +18,7 @@ export default function ManualOrderTicket(props:Props){
 /** Editable starting funds shown in place of available margin (paper, before a session starts). */
 export type InitialBalance={value:number;onChange:(value:number)=>void};
 
-const SIZE_STEPS=[25,50,75,100] as const;
+const SIZE_MARKS=[0,25,50,75,100] as const;
 const positive=(text:string)=>Number.isFinite(Number(text))&&Number(text)>0;
 /** Resting entry orders the ticket can cancel; TP/SL triggers are managed with the position. */
 export const isEntryOrder=(order:LiveOrder)=>order.type==='limit'&&order.triggerPrice==null&&order.status!=='closed'&&order.status!=='canceled';
@@ -85,6 +85,7 @@ export function OrderTicket({venue,asset,connected,busy,blocked,botRunning,lever
   // Protection is checked against the entry price: the limit price, or the market for a market order.
   const stopWrongSide=(direction:Direction)=>validPrice&&stopOn&&(direction==='long'?Number(stop)>=entryPrice:Number(stop)<=entryPrice);
   const takeProfitWrongSide=(direction:Direction)=>validPrice&&takeProfitOn&&(direction==='long'?Number(takeProfit)<=entryPrice:Number(takeProfit)>=entryPrice);
+  const shareDisabled=inputsDisabled||!available||!validPrice;
   const sideDisabled=(direction:Direction)=>openDisabled||stopWrongSide(direction)||takeProfitWrongSide(direction);
 
   function resetConfirmation(){setConfirmed(false);}
@@ -120,10 +121,13 @@ export function OrderTicket({venue,asset,connected,busy,blocked,botRunning,lever
         </div></label>
         :<div className="ticket-market-price"><span>Market price</span><strong>{number(marketPrice,priceDigits)} <small>{collateral}</small></strong></div>}
       <label className="ticket-size"><span>{unit==='USDT'?'Margin':'Size'}</span><div><input aria-label="Order size" type="number" min="0" step="any" placeholder="Enter amount" value={size} disabled={inputsDisabled} onChange={event=>{setSize(event.target.value);resetConfirmation();}}/><select aria-label="Order size unit" value={unit} onChange={event=>{setUnit(event.target.value as SizeUnit);setSize('');resetConfirmation();}}><option value="USDT">{collateral}</option><option value="asset">{asset}</option></select></div></label>
-      <div className="ticket-share">
-        <input type="range" aria-label="Margin share of available funds" min={0} max={100} step={1} value={sizeShare} disabled={inputsDisabled||!available||!validPrice} onChange={event=>chooseShare(Number(event.target.value))}/>
+      <div className="ticket-share" style={{'--share':`${sizeShare}%`} as CSSProperties}>
+        <div className="ticket-share-track">
+          <input type="range" aria-label="Margin share of available funds" min={0} max={100} step={1} value={sizeShare} disabled={shareDisabled} onChange={event=>chooseShare(Number(event.target.value))}/>
+          {SIZE_MARKS.map(mark=><i key={mark} aria-hidden="true" className={sizeShare>=mark?'is-filled':''} style={{'--mark':mark} as CSSProperties}/>)}
+        </div>
         <output>{sizeShare}%</output>
-        <div className="ticket-share-steps">{SIZE_STEPS.map(step=><button key={step} type="button" aria-pressed={sizeShare===step} disabled={inputsDisabled||!available||!validPrice} onClick={()=>chooseShare(step)}>{step}%</button>)}</div>
+        <div className="ticket-share-labels">{SIZE_MARKS.map(mark=><button key={mark} type="button" style={{'--mark':mark} as CSSProperties} aria-pressed={sizeShare===mark} disabled={shareDisabled} onClick={()=>chooseShare(mark)}>{mark}%</button>)}</div>
       </div>
       {protectionAvailable?<fieldset className="ticket-tpsl"><legend>TP / SL</legend>
         <label className="ticket-option"><input type="checkbox" checked={useStop} disabled={inputsDisabled} onChange={event=>{setUseStop(event.target.checked);resetConfirmation();}}/><span>Stop loss</span><small>{paper?'Simulated trigger on market updates':'Reduce-only trigger at the exchange'}</small></label>

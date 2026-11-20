@@ -725,53 +725,147 @@
   cursor: default;
 }
 
+/* Margin share slider: thin filled track, dots at 0/25/50/75/100 and clickable labels (exchange style). */
 .ticket-share {
+  --thumb: 14px;
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr 40px;
   align-items: center;
-  gap: 8px 10px;
-  margin: -6px 0 16px;
+  column-gap: 12px;
+  margin: -4px 0 18px;
 }
 
-.ticket-share input[type=range] {
+.ticket-share-track {
+  position: relative;
+  height: 18px;
+}
+
+.ticket-share-track input[type=range] {
+  position: relative;
+  z-index: 1;
+  display: block;
   width: 100%;
+  height: 18px;
   margin: 0;
-  accent-color: #76a9ef;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+
+.ticket-share-track input[type=range]:disabled {
+  cursor: default;
+}
+
+.ticket-share-track input[type=range]::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(to right, #76a9ef var(--share), #2f343c var(--share));
+}
+
+.ticket-share-track input[type=range]::-moz-range-track {
+  height: 3px;
+  border-radius: 2px;
+  background: #2f343c;
+}
+
+.ticket-share-track input[type=range]::-moz-range-progress {
+  height: 3px;
+  border-radius: 2px;
+  background: #76a9ef;
+}
+
+.ticket-share-track input[type=range]::-webkit-slider-thumb {
+  width: var(--thumb);
+  height: var(--thumb);
+  margin-top: calc((3px - var(--thumb)) / 2);
+  border: 2px solid #76a9ef;
+  border-radius: 50%;
+  background: #0f1115;
+  -webkit-appearance: none;
+}
+
+.ticket-share-track input[type=range]::-moz-range-thumb {
+  box-sizing: border-box;
+  width: var(--thumb);
+  height: var(--thumb);
+  border: 2px solid #76a9ef;
+  border-radius: 50%;
+  background: #0f1115;
+}
+
+.ticket-share-track input[type=range]:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px #76a9ef40;
+}
+
+.ticket-share-track input[type=range]:disabled::-webkit-slider-thumb {
+  border-color: #4a5160;
+}
+
+/* Dots sit on the track centre; the thumb's half-width keeps 0 % and 100 % under the thumb's centre. */
+.ticket-share-track > i {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--thumb) / 2 + (100% - var(--thumb)) * var(--mark) / 100);
+  width: 7px;
+  height: 7px;
+  border: 1px solid #3a404b;
+  border-radius: 50%;
+  background: #15181d;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.ticket-share-track > i.is-filled {
+  border-color: #76a9ef;
+  background: #76a9ef;
 }
 
 .ticket-share output {
-  min-width: 36px;
   color: var(--text);
   font-size: 11px;
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-.ticket-share-steps {
-  display: grid;
-  grid-column: 1 / -1;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
+.ticket-share-labels {
+  position: relative;
+  height: 16px;
+  margin-top: 4px;
 }
 
-.ticket-share-steps button {
-  min-height: 24px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
+.ticket-share-labels button {
+  position: absolute;
+  top: 0;
+  left: calc(var(--thumb) / 2 + (100% - var(--thumb)) * var(--mark) / 100);
+  padding: 0 2px;
+  border: 0;
   background: transparent;
   color: var(--muted);
   font-size: 10px;
+  line-height: 16px;
+  transform: translateX(-50%);
   cursor: pointer;
 }
 
-.ticket-share-steps button[aria-pressed=true] {
-  border-color: #76a9ef;
+.ticket-share-labels button:first-child {
+  transform: translateX(-30%);
+}
+
+.ticket-share-labels button:last-child {
+  transform: translateX(-70%);
+}
+
+.ticket-share-labels button:hover:not(:disabled),
+.ticket-share-labels button[aria-pressed=true] {
   color: var(--text);
 }
 
-.ticket-share-steps button:disabled {
-  opacity: .5;
+.ticket-share-labels button:disabled {
   cursor: default;
+  opacity: .5;
 }
 
 .ticket-tpsl-note {
