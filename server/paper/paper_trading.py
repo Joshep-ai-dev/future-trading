@@ -13,6 +13,7 @@ from server.market.data import TIMEFRAMES, load_bars
 from server.market.market_refresh import refresh_service
 from server.market.forming_candle import forming_candle, fetch_live_minutes
 from server.paper.session_store import FileSessionStore
+from server.paper.manual_trading import ManualPaperTrading
 
 def session_request(cfg: dict):
     """Attribute view of a saved session's settings for the strategy runner."""
@@ -37,7 +38,7 @@ def quote_error_text(error: Exception, source: str = 'Live price update') -> str
         return 'Could not connect to the OKX price server. Retrying automatically.'
     return f'{source} failed: {text[:160]}. Retrying automatically.'
 
-class PaperTrading:
+class PaperTrading(ManualPaperTrading):
     def __init__(self, path=STATE, loader=load_bars, refresh=refresh_service, now=time.time, store=None, live_fetch=None):
         self.path, self.loader, self.refresh, self.now = Path(path), loader, refresh, now
         self.store = store or FileSessionStore(self.path)
@@ -53,7 +54,7 @@ class PaperTrading:
         try:
             self.state = self.store.load()
             if self.state:
-                if self.state['settings'].get('strategy', 'bb_outer_reversal') not in STRATEGIES:
+                if self.state.get('executionMode') != 'manual' and self.state['settings'].get('strategy', 'bb_outer_reversal') not in STRATEGIES:
                     self.state['running'] = False
                     self.error = 'This session uses a removed strategy. Start a new virtual session; the previous session will be archived.'
                 old_settings = self.state['settings']['bb_reversal']
@@ -76,7 +77,7 @@ class PaperTrading:
         with self.lock:
             if self.state is None:
                 return dict(session=None, error=self.error)
-            if self.state['settings'].get('strategy', 'bb_outer_reversal') not in STRATEGIES or self.state['settings']['bb_reversal'].get('hedge_mode'):
+            if (self.state.get('executionMode') != 'manual' and self.state['settings'].get('strategy', 'bb_outer_reversal') not in STRATEGIES) or self.state['settings']['bb_reversal'].get('hedge_mode'):
                 return dict(session=None, error=self.error)
             session = {k:v for k,v in self.state.items() if k not in ('candles','replayCandles','minuteCandles')}
             session['chartCandles'] = self.state['candles'][-1000:]
@@ -102,14 +103,17 @@ class PaperTrading:
         with self.lock:
             if self.state and self.state['running']:
                 raise ValueError('Pause the current paper session before starting a new one')
+            if self.state and self.state.get('openPosition'):
+                raise ValueError('Close the existing paper position before starting a new session')
+            manual = getattr(request, 'execution_mode', 'bot') == 'manual'
             duration = TIMEFRAMES[request.entry_timeframe]
             now = int(self.now())
             first = ((now+duration-1)//duration)*duration
-            runner = get_strategy(request.strategy)
+            runner = None if manual else get_strategy(request.strategy)
             history, _ = self.market_bars(request.entry_timeframe, getattr(request, 'market', 'xag'))
             history = history.dropna(subset=['open','high','low','close'])
             history = history.loc[history.index + pd.Timedelta(seconds=duration) <= pd.Timestamp(now,unit='s',tz='UTC')]
-            warmup = runner.warmup_bars(request)
+            warmup = 1000 if manual else runner.warmup_bars(request)
             candles = self.encode(history.tail(warmup))
             mode = getattr(request, 'paper_mode', 'live')
             replay_end, replay_candles = None, []
@@ -134,7 +138,7 @@ class PaperTrading:
             if replay_end is not None:
                 minutes = minutes.loc[minutes.index < pd.Timestamp(replay_end,unit='s',tz='UTC')]
             self.store.archive(self.state)
-            self.state = dict(running=True, startedAt=now, tradingFrom=first,
+            self.state = dict(running=True, executionMode='manual' if manual else 'bot', startedAt=now, tradingFrom=first,
                 settings=request.model_dump(mode='json'), candles=candles,
                 lastProcessed=None, lastCheck=None, balance=float(request.capital),
                 equity=float(request.capital), openPosition=None, trades=[], equityHistory=[],
@@ -157,7 +161,7 @@ class PaperTrading:
         with self.lock:
             if not self.state:
                 raise ValueError('Start a paper session first')
-            if running and self.state.get('settings', {}).get('strategy', 'bb_outer_reversal') not in STRATEGIES:
+            if running and self.state.get('executionMode') != 'manual' and self.state.get('settings', {}).get('strategy', 'bb_outer_reversal') not in STRATEGIES:
                 raise ValueError('This strategy was removed. Start a new virtual session.')
             if self.state.get('settings', {}).get('bb_reversal', {}).get('hedge_mode'):
                 raise ValueError('Hedge mode was removed. Start a new virtual session.')
@@ -274,13 +278,39 @@ class PaperTrading:
                 mode = self.state.get('mode','live') if self.state else 'live'
             if not active:
                 return
+            if self.state.get('executionMode') == 'manual':
+                if self.now()-self.live_check >= 30:
+                    self.live_check = self.now()
+                    with self.lock:
+                        original = self.state
+                        market = original['settings']['market']
+                        timeframe = original['settings']['entry_timeframe']
+                    if market.startswith('dataset:'):
+                        from server.market.dataset_sync import sync_dataset
+                        sync_dataset(market)
+                    else:
+                        self.refresh.refresh()
+                    frame, _ = self.market_bars(timeframe, market)
+                    with self.lock:
+                        if self.state is not original:
+                            return
+                        self.state['candles'] = self.encode(frame.dropna(subset=['open','high','low','close']).tail(1000))
+                        self.error = None
+                        self.save()
+                return
             if mode == 'replay':
                 self.advance()
                 return
             if self.now()-self.live_check < 30:
                 return
             self.live_check = self.now()
-            status = self.refresh.refresh()
+            market = self.state.get('settings', {}).get('market', 'xag')
+            if market.startswith('dataset:'):
+                from server.market.dataset_sync import sync_dataset
+                sync_dataset(market)
+                status = dict(running=False, error=None)
+            else:
+                status = self.refresh.refresh()
             if status['running']:
                 return  # Another download owns the cache; retry on the next cycle.
             if status['error']:
@@ -295,14 +325,18 @@ class PaperTrading:
 
     def update_quote(self):
         with self.lock:
-            if not self.state or not self.state['running'] or self.state.get('mode','live') != 'live':
+            if not self.state or (not self.state['running'] and not (self.state.get('executionMode') == 'manual' and self.state.get('openPosition'))) or self.state.get('mode','live') != 'live':
                 return
+            original = self.state
             identity = self.state['startedAt']
             limit = 2 if self.state.get('quoteTime') else 300
+            market = self.state['settings'].get('market', 'xag')
         try:
-            rows = self.live_fetch(limit)
+            rows = self.price_minutes(market, limit)
+            if not rows or self.now()-rows[-1]['time'] > 120:
+                raise ValueError('Waiting for fresh market candles')
             with self.lock:
-                if not self.state or self.state['startedAt'] != identity or not self.state['running'] or self.state.get('mode','live') != 'live':
+                if self.state is not original or (not self.state['running'] and not (self.state.get('executionMode') == 'manual' and self.state.get('openPosition'))) or self.state.get('mode','live') != 'live':
                     return
                 now = int(self.now())
                 duration = TIMEFRAMES[self.state['settings']['entry_timeframe']]
@@ -311,11 +345,14 @@ class PaperTrading:
                 merged.update({r['time']:r for r in rows if bucket<=r['time']<=now})
                 self.state.update(minuteCandles=sorted(merged.values(),key=lambda r:r['time']),
                                   quoteTime=now,quoteError=None)
+                if self.state.get('executionMode') == 'manual' and rows:
+                    self.mark_manual(float(rows[-1]['close']), now)
                 self.save()
         except Exception as error:
             with self.lock:
                 if self.state and self.state['startedAt']==identity:
-                    self.state['quoteError']=quote_error_text(error)
+                    message = quote_error_text(error)
+                    self.state['quoteError'] = message.replace('OKX', 'selected exchange') if market.startswith('dataset:') else message
 
     def start(self):
         def loop():

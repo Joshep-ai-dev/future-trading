@@ -53,16 +53,17 @@ export function defaultInstrumentForVenue(venue:string):ExchangeInstrument{
   return venue==='hyperliquid'?'silver':'xag';
 }
 
-export function useExchangeMarkets(venue:string){
+export function useExchangeMarkets(venue:string,enabled=true){
   const [state,setState]=useState<{venue:string;markets:MarketInstrument[];error:string;loading:boolean}>({venue,markets:[],error:'',loading:true});
   const [revision,setRevision]=useState(0);
   useEffect(()=>{
     let cancelled=false;
+    if(!enabled)return;
     setState({venue,markets:[],error:'',loading:true});
     api<{markets:MarketInstrument[]}>(`/api/exchange/markets?venue=${encodeURIComponent(venue)}`)
       .then(result=>{if(!cancelled)setState({venue,markets:result.markets,error:'',loading:false});})
       .catch(error=>{if(!cancelled)setState({venue,markets:[],error:String(error),loading:false});});
     return()=>{cancelled=true;};
-  },[venue,revision]);
+  },[venue,revision,enabled]);
   return {...(state.venue===venue?state:{markets:[],error:'',loading:true}),retry:()=>setRevision(value=>value+1)};
 }

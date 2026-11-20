@@ -3,6 +3,10 @@ import {MarketSyncContext} from '../../shared/api/useMarketSync';
 import MarketDataInfo from '../../shared/ui/MarketDataInfo';
 import MarketHeader from '../../shared/ui/MarketHeader';
 import PaperMarketPicker from './PaperMarketPicker';
+import ExecutionTabs from './ExecutionTabs';
+import PaperOrderTicket from './PaperOrderTicket';
+import type {ExchangeVenue} from '../../shared/api/exchangeVenue';
+import type {ExecutionMode} from './ExecutionModeContext';
 import {useMarketDatasets} from '../../shared/api/useMarketDatasets';
 import {useDatasetSync} from '../../shared/api/useDatasetSync';
 import {useLiveMarketMinutes} from '../../shared/charts/useLiveMarketMinutes';
@@ -34,9 +38,9 @@ import type {StrategyState} from '../../shared/api/exchangeTypes';
 import TradingWorkspaceTools,{PanelToggles,useWorkspacePanels} from './TradingWorkspaceTools';
 import {PublicOrderBook} from './OrderBook';
 
-export type Position={direction:number;entry_time:number;entry_price:number;quantity:number;stop:number;initial_stop?:number;trailing_active:boolean;stop_history?:StopPoint[]};
+export type Position={direction:number;entry_time:number;entry_price:number;quantity:number;stop:number;initial_stop?:number;trailing_active:boolean;stop_history?:StopPoint[];margin?:number;leverage?:number;take_profit?:number|null};
 export type PaperTrade=Position&{id:number;exit_time:number;exit_price:number;exit_reason:string;pnl:number};
-type Session={animationMinutes?:Candle[];formingCandle?:Candle|null;displayPrice?:number|null;displayEquity?:number;quoteError?:string|null;quoteTime?:number|null;chartCandles?:Candle[];chartIndicators?:{time:number;bbBasis:number|null;bbUpper:number|null;bbLower:number|null;trendSma:number|null}[];chartStops?:{time:number;price:number|null}[];mode?:'live'|'replay';speed?:number;virtualTime?:number;replayEnd?:number|null;completed?:boolean;running:boolean;startedAt:number;tradingFrom:number;lastProcessed:number|null;lastCheck:number|null;balance:number;equity:number;openPosition:Position|null;trades:PaperTrade[];equityHistory:{time:number;value:number}[];halted:boolean;latestPrice:number|null;signals:number;settings:BacktestSettings;strategyState?:StrategyState|null};
+type Session={executionMode?:ExecutionMode;animationMinutes?:Candle[];formingCandle?:Candle|null;displayPrice?:number|null;displayEquity?:number;quoteError?:string|null;quoteTime?:number|null;chartCandles?:Candle[];chartIndicators?:{time:number;bbBasis:number|null;bbUpper:number|null;bbLower:number|null;trendSma:number|null}[];chartStops?:{time:number;price:number|null}[];mode?:'live'|'replay';speed?:number;virtualTime?:number;replayEnd?:number|null;completed?:boolean;running:boolean;startedAt:number;tradingFrom:number;lastProcessed:number|null;lastCheck:number|null;balance:number;equity:number;openPosition:Position|null;trades:PaperTrade[];equityHistory:{time:number;value:number}[];halted:boolean;latestPrice:number|null;signals:number;settings:BacktestSettings;strategyState?:StrategyState|null};
 type Response={session:Session|null;error:string|null};
 const date=(t:number|null,timeZone:TradingTimeZone)=>t===null?'Waiting':formatTradingTime(t,timeZone);
 
@@ -92,13 +96,17 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
   const marketDataRevision=useMarketDataRevision();
   const [chartTimeframe,setChartTimeframe]=useState<BacktestSettings['entry_timeframe']>(settings.entry_timeframe);
   const [data,setData]=useState<Response>({session:null,error:null});
-  const showingSession=!!data.session&&(data.session.running||data.session.settings.market===settings.market);
+  const showingSession=!!data.session&&(data.session.running&&data.session.executionMode!=='manual'||data.session.settings.market===settings.market);
   const [error,setError]=useState(''),[busy,setBusy]=useState(false);
   const [panels,togglePanel]=useWorkspacePanels('silver.paper.panels');
   const controlsOpen=panels.order;
+  const [executionMode,setExecutionMode]=useState<ExecutionMode>('manual');
+  const [manualLeverage,setManualLeverage]=useState('1');
+  useEffect(()=>{if(data.session?.executionMode==='manual')setManualLeverage(String(data.session.settings.max_leverage));},[data.session?.startedAt]);
+  useEffect(()=>{if(data.session?.running&&data.session.executionMode!=='manual')setExecutionMode('bot');},[data.session?.startedAt]);
   // Public real-time XAG feed: the preview chart, and the display of a running live XAG session.
-  const liveSession=showingSession&&data.session?.mode==='live'&&data.session.settings.market==='xag';
-  const liveMarket=useLiveMarketMinutes(visible&&settings.market==='xag'&&(!showingSession||liveSession));
+  const liveSession=showingSession&&data.session?.mode==='live'&&data.session.settings.market===settings.market;
+  const liveMarket=useLiveMarketMinutes(visible&&(settings.market==='xag'||settings.market.startsWith('dataset:'))&&(!showingSession||!!liveSession),settings.market);
   const revision=useRef(0);
   const [bottomTab,setBottomTab]=useState<'position'|'history'|'equity'|'sessions'|'patterns'>('position');
   const [preview,setPreview]=useState<Analysis['candles']>([]),[previewError,setPreviewError]=useState('');
@@ -122,8 +130,27 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
   async function action(action:'start'|'pause'|'resume') {
     if(settings.strategy==='none'&&action!=='pause')return;
     revision.current++;setBusy(true);setError('');
-    try{setData(await api<Response>(`/api/paper/${action}`,{method:'POST',headers:{'Content-Type':'application/json'},...(action==='start'?{body:JSON.stringify({...settings,paper_mode:settings.market==='xag'?'live':'replay',...(settings.market==='xag'?{}:{replay_start:chosenDataset?.startDate??settings.start_date,replay_end:chosenDataset?.endDate??settings.end_date})})}:{})}));}
+    try{
+      if(action==='start'&&data.session?.openPosition)throw new Error('Close the existing paper position before starting a new session.');
+      if(action==='start'&&data.session?.executionMode==='manual'&&data.session.running)await api('/api/paper/pause',{method:'POST'});
+      setData(await api<Response>(`/api/paper/${action}`,{method:'POST',headers:{'Content-Type':'application/json'},...(action==='start'?{body:JSON.stringify({...settings,execution_mode:'bot',paper_mode:settings.market==='stable'?'replay':'live',...(settings.market!=='stable'?{}:{replay_start:chosenDataset?.startDate??settings.start_date,replay_end:chosenDataset?.endDate??settings.end_date})})}:{})}));}
     catch(e){setError(String(e));}finally{revision.current++;setBusy(false);}
+  }
+  async function manualAction(path:string,body:unknown){
+    if(busy)return false;
+    setBusy(true);setError('');revision.current++;
+    try{
+      let current=data.session;
+      if(path.endsWith('/order')&&(!current||current.executionMode!=='manual'||current.settings.market!==settings.market)){
+        if(current?.openPosition||current?.running&&current.executionMode!=='manual')throw new Error('Pause the bot and close its position before manual trading.');
+        if(current?.running)await api('/api/paper/pause',{method:'POST'});
+        const started=await api<Response>('/api/paper/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...settings,strategy:'none',execution_mode:'manual',paper_mode:'live',max_leverage:Number(manualLeverage)})});
+        current=started.session;setData(started);
+      }
+      const result=await api<Response>(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      setData(result);return true;
+    }catch(reason){setError(String(reason));return false;}
+    finally{revision.current++;setBusy(false);}
   }
   const s=showingSession?data.session:null;
   const activeMarket=s?.settings.market??settings.market;
@@ -131,9 +158,10 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
   const activeDataset=datasets.find(item=>item.id===activeMarket);
   const paperSymbol=activeDataset?.symbol??(activeMarket==='stable'?'STABLE/USDT':'XAG/USDT');
   const paperBase=paperSymbol.split('/')[0],paperQuote=paperSymbol.split('/')[1]?.split(':')[0]??'USDT';
-  const previewMinutes=useMemo(()=>mergeHistory(preview,settings.market==='xag'?liveMarket.minutes:[]),[preview,liveMarket.minutes,settings.market]);
+  const previewMinutes=useMemo(()=>mergeHistory(preview,liveMarket.minutes),[preview,liveMarket.minutes,settings.market]);
   const durations=TIMEFRAMES;
   const duration=durations[s?.settings.entry_timeframe??settings.entry_timeframe];
+  const tradeDuration=s?.executionMode==='manual'?0:duration;
   const displayClock=useReplayAnimation(visible&&s?.mode==='replay',s?.startedAt??0,s?.virtualTime??0);
   // Display only: a live session's forming candle follows the real-time ticker between session polls.
   const tick=liveSession?liveMarket.minutes.at(-1):undefined;
@@ -146,7 +174,7 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
   const chartStops=(s?.chartStops??[]).filter(row=>s?.mode!=='replay'||row.time+duration<=displayClock);
   useEffect(()=>{if(s)setChartTimeframe(s.settings.entry_timeframe);},[s?.startedAt]);
   const config=s?.running?s.settings:settings;
-  const price=s?(s.mode==='replay'?(animated?.close??chartCandles.at(-1)?.close??null):(tick&&sessionForming!==s.formingCandle?tick.close:(s.displayPrice??s.latestPrice))):(settings.market==='xag'?liveMarket.minutes.at(-1)?.close:undefined)??preview.at(-1)?.close??null;
+  const price=s?(s.mode==='replay'?(animated?.close??chartCandles.at(-1)?.close??null):(tick&&sessionForming!==s.formingCandle?tick.close:(s.displayPrice??s.latestPrice))):liveMarket.minutes.at(-1)?.close??preview.at(-1)?.close??null;
 
   const replay=s?.mode==='replay'?accountAt(s.trades,s.openPosition,s.settings.capital,displayClock,duration,price,chartStops):null;
   const p=replay?.open??(replay?null:s?.openPosition??null);
@@ -176,7 +204,7 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
   const hasChart=visibleCandles.length>0;
   const ticker=useMemo(()=>tickerStats(visibleCandles,chartDuration,price),[visibleCandles,chartDuration,price]);
   function changeChartTimeframe(value:BacktestSettings['entry_timeframe']){setChartTimeframe(value);if(!s){onChange({...settings,entry_timeframe:value});}}
-  const chartHeader=<TradingChartHeader symbol={paperSymbol} timeframe={s?chartTimeframe:settings.entry_timeframe} onTimeframeChange={value=>changeChartTimeframe(value as BacktestSettings['entry_timeframe'])} mode={s?s.mode==='replay'?'HISTORICAL REPLAY':'PAPER SESSION':'MARKET PREVIEW'} caption={s?`Bot executes on ${s.settings.entry_timeframe} candles`:'Choose a timeframe to view the market chart'}/>;
+  const chartHeader=<TradingChartHeader symbol={paperSymbol} timeframe={s?chartTimeframe:settings.entry_timeframe} onTimeframeChange={value=>changeChartTimeframe(value as BacktestSettings['entry_timeframe'])} mode={s?s.executionMode==='manual'?'MANUAL PAPER':s.mode==='replay'?'HISTORICAL REPLAY':'PAPER SESSION':'MARKET PREVIEW'} caption={s?.executionMode==='manual'?'Manual orders use virtual funds and current exchange prices':s?`Bot executes on ${s.settings.entry_timeframe} candles`:'Choose a timeframe to view the market chart'}/>;
   useMarketTitle(visible,price==null?null:fmt(price,3),`${paperBase}/${paperQuote}`);
   const panelToggles=<PanelToggles panels={panels} onToggle={togglePanel} bookId="paper-order-book" actionId="paper-execution-sidebar"/>;
   return <div id="page-paper" role="tabpanel" aria-labelledby="tab-paper" hidden={!visible}>
@@ -186,7 +214,7 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
       analysisSymbol={paperSymbol}
       active={visible}
       icon={paperBase==='XAG'?'Ag':paperBase.slice(0,2)}
-      selector={<PaperMarketPicker symbol={paperSymbol} market={activeMarket} datasets={datasets} disabled={busy||!!data.session?.running} onChange={market=>onChange({...settings,market})}/>}
+      selector={<PaperMarketPicker symbol={paperSymbol} market={activeMarket} datasets={datasets} disabled={busy||!!data.session?.openPosition||!!data.session?.running&&data.session.executionMode!=='manual'} onChange={market=>onChange({...settings,market})}/>}
       price={fmt(price,3)}
       quote={paperQuote}
       direction={ticker.tick}
@@ -198,11 +226,11 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
       ]}
       actions={<TradingWorkspaceTools mode="paper" open={controlsOpen} onToggle={()=>togglePanel('order')} panelId="paper-execution-sidebar"/>}
     />
-      <section className="terminal-panel price-panel">{!hasChart&&<div className="chart-actions tv-toolbar compact-chart-toolbar chart-loading-toolbar"><div className="chart-toolbar-heading">{chartHeader}</div><div className="chart-toolbar-end">{panelToggles}</div></div>}<BotChartBadge state={s?.strategyState} running={!!s?.running}/>
+      <section className="terminal-panel price-panel">{!hasChart&&<div className="chart-actions tv-toolbar compact-chart-toolbar chart-loading-toolbar"><div className="chart-toolbar-heading">{chartHeader}</div><div className="chart-toolbar-end">{panelToggles}</div></div>}<BotChartBadge state={s?.strategyState} running={!!s?.running&&s.executionMode!=='manual'}/>
         {hasChart?<PaperPriceChart key={`${activeMarket}-${s?.startedAt??0}`} market={activeMarket} symbol={paperSymbol} toolbarEnd={panelToggles} header={chartHeader} focus={focus} atrLength={(s?.settings??settings).bb_reversal.atr_length} adxLength={(s?.settings??settings).bb_reversal.adx_length} indicatorClock={s?(s.mode==='replay'?displayClock:s.quoteTime??s.virtualTime??0):Date.now()/1000} timeframe={s?chartTimeframe:settings.entry_timeframe} sessionId={s?.startedAt??0} candles={visibleCandles} indicators={visibleIndicators} stops={alternate?[]:chartStops} trades={visibleTrades} position={visiblePosition??null} showSma={settings.strategy!=='none'&&(s?.settings??settings).bb_reversal.use_sma_trend_adjustment!==false}/>:<div className="chart-empty"><span className="empty-chart-icon">⌁</span><h3>{chartView.error||previewError?'Chart unavailable':'Preparing your chart'}</h3><p>{previewError||'Loading downloaded market candles…'}</p></div>}
         {alternate&&chartView.error&&hasChart&&<p className="chart-history-status error" role="alert">{chartView.error}</p>}
         <div className="chart-legend"><span><b style={{color:FILL_COLORS.buy}}>↑</b> Buy / close short</span><span><b style={{color:FILL_COLORS.sell}}>↓</b> Sell / close long</span><span><i className="legend-line" style={{borderColor:STOP_COLORS.initial}}/> Stop loss</span><span><i className="legend-line" style={{borderColor:STOP_COLORS.trailing}}/> Trailing stop / TRAIL activation</span></div>
-        {!s&&settings.market==='xag'&&(liveMarket.error||liveMarket.stale)&&<p className="chart-history-status" role="status">{liveMarket.error||'Waiting for fresh public market candles. Existing history remains visible.'}</p>}
+        {!s&&(liveMarket.error||liveMarket.stale)&&<p className="chart-history-status" role="status">{liveMarket.error||'Waiting for fresh public market candles. Existing history remains visible.'}</p>}
       </section>
       {panels.book&&<PublicOrderBook active={visible} base={paperBase} unavailable={settings.market!=='xag'||s?.mode==='replay'?'The order book is available for live XAG paper trading only.':undefined}/>}
       <TerminalSplitter/>
@@ -219,9 +247,9 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
           <td>{fmt(price,3)}</td><td>{fmt(p.entry_price,3)}</td><td>{fmt(margin,4)}</td>
           <td className={unrealized<0?'negative':'positive'}>{unrealized>=0?'+':''}{fmt(unrealized,4)} <small>{paperQuote}</small></td>
           <td className={unrealized<0?'negative':'positive'}>{margin?fmt(unrealized/margin*100,2):'—'}%</td>
-          <td>{fmt(p.stop,3)}</td><td>{fmt(p.quantity,4)}</td><td>{date(p.entry_time+duration,tradingTimeZone)}</td>
+          <td>{p.stop?fmt(p.stop,3):'Off'}</td><td>{fmt(p.quantity,4)}</td><td>{date(p.entry_time+tradeDuration,tradingTimeZone)}</td>
         </tr></TableFrame>:<div className="empty-position"><span className="empty-state-symbol">◇</span><h3>{s?.running?'Watching for your next setup':'No open position'}</h3><p>{s?.running?(active.strategy==='adx_supertrend'?'The bot opens a trade when ADX confirms a Supertrend trend and every enabled filter passes.':active.strategy==='st_scalper'?'The bot enters at the next open after a filtered SuperTrend flip.':'The bot is scanning each completed candle for its next entry.'):settings.strategy==='none'?'No automated strategy is configured. Market viewing and past sessions remain available.':'Start a virtual session to see entries, stops and position P&L here.'}</p></div>}</div>
-        <div id="activity-history" role="tabpanel" aria-labelledby="activity-tab-history" hidden={bottomTab!=='history'}><TradeView key={s?.startedAt??0} scope="Session" capital={s?.settings.capital??settings.capital} timeZone={tradingTimeZone} unrealized={equity-balance} trades={chartTrades.map(t=>({id:t.id,direction:t.direction,pnl:t.pnl,entry:t.entry_price,exit:t.exit_price,quantity:t.quantity,exitTime:t.exit_time+duration}))}>{chartTrades.length?<div className="table-scroll"><table><thead><tr>{['ID','Side','Leverage',`Entry time (${tradingTimeZone})`,'Entry','Exit','Quantity','P&L','Exit reason'].map(label=><th key={label}>{label}</th>)}</tr></thead><tbody>{chartTrades.slice(-100).reverse().map(t=><tr key={t.id}><td>#{t.id}</td><td><span className={`side-badge ${t.direction===1?'long':'short'}`}>{t.direction===1?'LONG':'SHORT'}</span></td><td>{fmt(leverage,1)}x</td><td>{date(t.entry_time+duration,tradingTimeZone)}</td><td>{fmt(t.entry_price,3)}</td><td>{fmt(t.exit_price,3)}</td><td>{fmt(t.quantity,4)}</td><td className={t.pnl>=0?'positive':'negative'}>{t.pnl>=0?'+':''}{fmt(t.pnl)}</td><td>{t.exit_reason==='rsi_price_exit'?'RSI + price exit':t.exit_reason.replaceAll('_',' ')}</td></tr>)}</tbody></table></div>:<div className="empty-position"><h3>Your trade history starts here</h3><p>Closed virtual trades appear automatically as the bot runs.</p></div>}</TradeView></div>
+        <div id="activity-history" role="tabpanel" aria-labelledby="activity-tab-history" hidden={bottomTab!=='history'}><TradeView key={s?.startedAt??0} scope="Session" capital={s?.settings.capital??settings.capital} timeZone={tradingTimeZone} unrealized={equity-balance} trades={chartTrades.map(t=>({id:t.id,direction:t.direction,pnl:t.pnl,entry:t.entry_price,exit:t.exit_price,quantity:t.quantity,exitTime:t.exit_time+tradeDuration}))}>{chartTrades.length?<div className="table-scroll"><table><thead><tr>{['ID','Side','Leverage',`Entry time (${tradingTimeZone})`,'Entry','Exit','Quantity','P&L','Exit reason'].map(label=><th key={label}>{label}</th>)}</tr></thead><tbody>{chartTrades.slice(-100).reverse().map(t=><tr key={t.id}><td>#{t.id}</td><td><span className={`side-badge ${t.direction===1?'long':'short'}`}>{t.direction===1?'LONG':'SHORT'}</span></td><td>{fmt(leverage,1)}x</td><td>{date(t.entry_time+tradeDuration,tradingTimeZone)}</td><td>{fmt(t.entry_price,3)}</td><td>{fmt(t.exit_price,3)}</td><td>{fmt(t.quantity,4)}</td><td className={t.pnl>=0?'positive':'negative'}>{t.pnl>=0?'+':''}{fmt(t.pnl)}</td><td>{t.exit_reason==='rsi_price_exit'?'RSI + price exit':t.exit_reason.replaceAll('_',' ')}</td></tr>)}</tbody></table></div>:<div className="empty-position"><h3>Your trade history starts here</h3><p>Closed virtual trades appear automatically as the bot runs.</p></div>}</TradeView></div>
         <div id="activity-equity" role="tabpanel" aria-labelledby="activity-tab-equity" hidden={bottomTab!=='equity'}>{chartTrades.length?<EquityChart key={s?.startedAt??0} period={{name:'Paper trading'}} initialValue={s?.settings.capital??settings.capital} trades={chartTrades.map(t=>({pnl:t.pnl}))}/>:<div className="empty-position"><h3>No closed trades yet</h3><p>The balance curve adds one point after each trade closes.</p></div>}</div>
         <div id="activity-patterns" role="tabpanel" aria-labelledby="activity-tab-patterns" hidden={bottomTab!=='patterns'}>{bottomTab==='patterns'&&<PatternPanel key={activeMarket} market={activeMarket} defaultTimeframe={(s?.settings??settings).entry_timeframe}/>}</div>
         <div id="activity-sessions" role="tabpanel" aria-labelledby="activity-tab-sessions" hidden={bottomTab!=='sessions'}>{bottomTab==='sessions'&&<PaperSessionHistory refreshKey={s?.startedAt}/>}</div>
@@ -229,22 +257,30 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
     </div>
     <aside id="paper-execution-sidebar" className="terminal-sidebar" aria-label="Paper trading controls" hidden={!controlsOpen}>
       <section className="terminal-panel trading-account-summary" aria-label="Paper account summary"><header><div className="account-summary-heading"><h2>Account overview</h2></div><span>Virtual funds</span></header><div className="account-equity"><span>Equity</span><strong>{fmt(equity,2)} <small>{paperQuote}</small></strong></div><div className="account-summary-metrics"><Metric label="Balance" value={fmt(balance,2)} unit={paperQuote}/><Metric label="Session P&L" value={`${pnl>=0?'+':''}${fmt(pnl,2)}`} unit={paperQuote} tone={pnl>=0?'positive':'negative'}/></div><div className="account-summary-time"><span>{s?(s.mode==='replay'?'Replay clock':'Session clock'):'Last market candle'}</span><time>{date(s?(s.mode==='replay'?displayClock:s.virtualTime??s.lastProcessed):liveMarket.minutes.at(-1)?.time??preview.at(-1)?.time??null,tradingTimeZone)}</time></div></section>
-      <section className="terminal-panel bot-control"><div className="panel-heading"><h2>Paper bot</h2><span className={`bot-state ${s?.running?'is-running':''}`}><i className="status-dot"/>{status}</span></div>
-      {settings.strategy==='none'?<div className="bot-form"><h3>No strategy configured</h3><p>The market chart and account history remain available. Automated paper trading is disabled.</p>{s?.running&&<button type="button" disabled={busy} onClick={()=>void action('pause')}>Pause existing session</button>}</div>:<form className="bot-form" onSubmit={e=>{e.preventDefault();void action('start');}}><fieldset disabled={busy||s?.running}>
+      <section className="terminal-panel live-method-section"><ExecutionTabs prefix="paper-execution" mode={executionMode} onChange={setExecutionMode}/>
+      {executionMode==='manual'?<>
+        <p className="ticket-help">Virtual funds ? Market prices from {activeDataset?.venue.toUpperCase()??'OKX'}</p>
+        {!s&&<label className="ui-field"><span>Starting virtual balance</span><input type="number" min={1} max={1e9} value={settings.capital} onChange={event=>onChange({...settings,capital:Number(event.target.value)})}/></label>}
+        <PaperOrderTicket key={activeMarket} asset={paperBase} venue={(activeDataset?.venue??'okx') as ExchangeVenue} price={price} balance={balance} position={p} busy={busy} botRunning={!!data.session?.running&&data.session.executionMode!=='manual'||s?.mode==='replay'} fresh={!liveMarket.stale&&!liveMarket.error&&liveMarket.checkedAt!=null&&Date.now()/1000-liveMarket.checkedAt<20} leverage={manualLeverage} onLeverageChange={setManualLeverage} onRun={manualAction}/>
+        {(error||data.error||s?.quoteError)&&<p className="error" role="alert">{error||data.error||s?.quoteError}</p>}
+      </>:<div id="paper-execution-bot-panel" role="tabpanel" aria-labelledby="paper-execution-tab-bot">
+      <section className="terminal-panel bot-control"><div className="panel-heading"><h2>Paper bot</h2><span className={`bot-state ${(s?.running&&s.executionMode!=='manual')?'is-running':''}`}><i className="status-dot"/>{status}</span></div>
+      {settings.strategy==='none'?<div className="bot-form"><h3>No strategy configured</h3><p>The market chart and account history remain available. Automated paper trading is disabled.</p>{(s?.running&&s.executionMode!=='manual')&&<button type="button" disabled={busy} onClick={()=>void action('pause')}>Pause existing session</button>}</div>:<form className="bot-form" onSubmit={e=>{e.preventDefault();void action('start');}}><fieldset disabled={busy||(s?.running&&s.executionMode!=='manual')}>
         <BotSelector strategy={config.strategy} onStrategyChange={key=>onChange({...settings,strategy:key})} profiles={profiles} onApplySetup={onApplySetup} setupLabel="Saved parameters"/>
         <label>Timeframe<select value={config.entry_timeframe} onChange={e=>onChange({...settings,entry_timeframe:e.target.value as BacktestSettings['entry_timeframe']})}>{['1m','3m','5m','10m','15m','30m','1h','4h','1d'].map(tf=><option key={tf} value={tf}>{tf}</option>)}</select></label>
         <div className="control-row"><label>Starting balance<div className="input-with-unit"><input type="number" required min={1} max={1e9} step="any" value={config.capital} onChange={e=>onChange({...settings,capital:Number(e.target.value)})}/><span>{paperQuote}</span></div></label><label>Leverage<div className="input-with-unit"><input type="number" required min={1} max={100} step={.5} value={config.max_leverage} onChange={e=>onChange({...settings,max_leverage:Number(e.target.value)})}/><span>×</span></div></label></div>
         {scalper?<div className="allocation-control"><label>Risk per trade<div className="input-with-unit"><input type="number" required min={.01} max={10} step="any" value={(config.st_scalper??stScalperDefaults).risk_pct} onChange={e=>onChange({...settings,st_scalper:{...stScalperDefaults,...settings.st_scalper,risk_pct:Number(e.target.value)}})}/><span>%</span></div></label><small>Equity lost if the initial ATR stop is hit. Position size is capped by leverage.</small></div>:directional?<div className="allocation-control"><label>Risk per trade<div className="input-with-unit"><input type="number" required min={.01} max={10} step="any" value={config.ml_directional.risk_per_trade_pct} onChange={e=>onChange({...settings,ml_directional:{...settings.ml_directional,risk_per_trade_pct:Number(e.target.value)}})}/><span>%</span></div></label><small>Balance lost if the stop is hit. Position size is capped by leverage.</small></div>:<div className="allocation-control"><label>Amount per trade<div className="input-with-unit"><input type="number" required min={.01} step="any" max={sizing.amount_unit==='percent'?100:config.capital} value={sizing.amount_per_trade} onChange={e=>setSizing({amount_per_trade:Number(e.target.value)})}/><select aria-label="Amount unit" value={sizing.amount_unit} onChange={e=>setSizing({amount_unit:e.target.value as 'price'|'percent'})}><option value="percent">%</option><option value="price">$</option></select></div></label><small>Allocation before leverage. Capped at available balance.</small></div>}
       </fieldset>
-      {s?.running?<button className="bot-pause" type="button" disabled={busy} onClick={()=>void action('pause')}>Ⅱ Pause bot</button>:<><button className="bot-start" type="submit" disabled={busy}>{busy?'Starting…':s?'＋ Start new session':'▶ Start virtual bot'}</button>{s&&!s.halted&&!s.completed&&<button type="button" className="secondary resume-button" disabled={busy} onClick={()=>void action('resume')}>Resume saved session</button>}</>}
+      {(s?.running&&s.executionMode!=='manual')?<button className="bot-pause" type="button" disabled={busy} onClick={()=>void action('pause')}>Ⅱ Pause bot</button>:<><button className="bot-start" type="submit" disabled={busy}>{busy?'Starting…':s?'＋ Start new session':'▶ Start virtual bot'}</button>{s&&s.executionMode!=='manual'&&!s.halted&&!s.completed&&<button type="button" className="secondary resume-button" disabled={busy} onClick={()=>void action('resume')}>Resume saved session</button>}</>}
       </form>}
       {(error||data.error||s?.quoteError)&&<p className="error" role="alert">{error||data.error||s?.quoteError}</p>}
       <div className="strategy-card"><header><strong>{settings.strategy==='none'?'No strategy configured':active.strategy==='adx_supertrend'?'ADX + Supertrend rules':active.strategy==='st_scalper'?'SuperTrend Scalper rules':activeDirectional?'ML Directional':'BB Outer Band Reversal'}</strong><button type="button" className="text-button" onClick={onConfigure}>Edit ↗</button></header>
         {(active.strategy==='adx_supertrend'||active.strategy==='st_scalper')&&settings.strategy!=='none'?<dl className="strategy-rules">{(active.strategy==='st_scalper'?scalperRules(active):adxSupertrendRules(active)).map(([label,value])=><div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
         :<small>{settings.strategy==='none'?'Market viewing only':activeDirectional&&ml?`TP ${ml.take_profit_atr} / SL ${ml.stop_atr} × ATR · ${ml.max_hold_bars}-bar hold · ${ml.trade_mode}`:'Trailing SL / Both directions'}</small>}</div>
     </section>
-    <BotStatusPanel state={s?.strategyState} running={!!s?.running} timeLabel={s?.strategyState?.timestamp?date(s.strategyState.timestamp+duration,tradingTimeZone):undefined} emptyHint={settings.strategy==='none'?'No automated strategy is configured. The market chart and past sessions remain available.':s?'Readiness appears after the bot processes its first completed candle.':'Start a virtual session to see buy and sell readiness.'}/>
-    <details className="terminal-help"><summary>How this simulation works</summary><p>Live quotes refresh approximately every second. Trading decisions use completed execution candles.</p><p>Keep the backend running. Live catches up missed candles. A balance at or below zero halts trading.</p><p>Fees, slippage, funding and liquidation are not modeled. Current equity follows the displayed price; the equity curve uses completed closes.</p>{s&&<p>Last execution check: {date(s.lastCheck,tradingTimeZone)}<br/>Last completed candle: {date(s.lastProcessed,tradingTimeZone)}</p>}</details>
+      </div>}</section>
+    <BotStatusPanel state={s?.strategyState} running={!!s?.running&&s.executionMode!=='manual'} timeLabel={s?.strategyState?.timestamp?date(s.strategyState.timestamp+duration,tradingTimeZone):undefined} emptyHint={settings.strategy==='none'?'No automated strategy is configured. The market chart and past sessions remain available.':s?'Readiness appears after the bot processes its first completed candle.':'Start a virtual session to see buy and sell readiness.'}/>
+    <details className="terminal-help"><summary>How this simulation works</summary><p>OKX prices update continuously; HTX and Hyperliquid prices refresh every 5 seconds. Bots use completed execution candles.</p><p>Keep the backend running. Live catches up missed candles. A balance at or below zero halts trading.</p><p>Manual fills and TP/SL use received exchange prices, with isolated virtual liquidation. Fees, slippage and funding are not modeled. Keep the backend running for position updates.</p>{s&&<p>Last execution check: {date(s.lastCheck,tradingTimeZone)}<br/>Last completed candle: {date(s.lastProcessed,tradingTimeZone)}</p>}</details>
     </aside></div>
 
   </div>;

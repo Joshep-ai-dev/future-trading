@@ -67,8 +67,8 @@ class DatasetTests(unittest.TestCase):
         self.assertEqual(service.state['replayCandles'][0]['close'], 100)
         self.assertEqual(len(service.state['replayCandles']), 10)
         self.assertEqual(response['session']['balance'], request.capital)
-        with self.assertRaises(ValueError):
-            PaperStartRequest(strategy='adx_supertrend', market=saved['id'], paper_mode='live')
+        live = PaperStartRequest(strategy='adx_supertrend', market=saved['id'], paper_mode='live')
+        self.assertEqual(live.market, saved['id'])
 
     def test_forward_pagination_honors_smaller_exchange_page_caps(self) -> None:
         rows = [[self.start+i*60000, 100, 101, 99, 100, 1] for i in range(600)]

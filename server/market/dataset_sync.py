@@ -12,6 +12,20 @@ _guard = threading.Lock()
 _success: dict[str, tuple[float, dict]] = {}
 
 
+def prepare_dataset(venue: str, symbol: str) -> dict:
+    if venue not in ('htx', 'hyperliquid'):
+        raise ValueError('Choose HTX or Hyperliquid for public paper markets')
+    if not any(row['id'] == symbol for row in market_catalog(venue)):
+        raise ValueError('Choose an exact perpetual symbol from the exchange market list')
+    exchange = public_exchange(venue)
+    try:
+        return download_minutes(exchange, {'symbol': symbol}, venue, days=1)
+    finally:
+        close = getattr(exchange, 'close', None)
+        if callable(close):
+            close()
+
+
 def public_exchange(venue: str):
     import ccxt
     market_catalog(venue)

@@ -6,27 +6,28 @@ import {liveNumber as number} from '../../shared/api/useExchangeStream';
 import {Button,StatusBadge} from '../../shared/ui/ui';
 
 type Protection={stop:number|null;takeProfit:number|null};
-type Props={venue:ExchangeVenue;asset?:string;side:'long'|'short';quantity?:number|null;entryPrice?:number|null;price:number|null|undefined;
+type Props={paper?:boolean;venue:ExchangeVenue;asset?:string;side:'long'|'short';quantity?:number|null;entryPrice?:number|null;price:number|null|undefined;
   disabled:boolean;onRun:(path:string,body:unknown)=>Promise<boolean>;onClose:()=>void};
 
 /** Modal to set, change or remove the stop loss and take profit of the open position. */
-export default function PositionProtection({venue,asset='XAG',side,quantity,entryPrice,price,disabled,onRun,onClose}:Props){
+export default function PositionProtection({paper=false,venue,asset='XAG',side,quantity,entryPrice,price,disabled,onRun,onClose}:Props){
   const dialog=useRef<HTMLDialogElement>(null);
   const [current,setCurrent]=useState<Protection|null>(null);
   const [loadError,setLoadError]=useState('');
   const [stop,setStop]=useState(''),[takeProfit,setTakeProfit]=useState('');
   const [saving,setSaving]=useState(false);
+  const collateral=venue==='hyperliquid'?'USDC':'USDT';
   const priceDigits=asset==='STABLE'?5:3;
 
   useEffect(()=>{const element=dialog.current,previous=document.activeElement as HTMLElement|null;element?.showModal();return ()=>{element?.close();previous?.focus();};},[]);
   useEffect(()=>{
     let live=true;
-    api<Protection>(`/api/exchange/protection?venue=${venue}&side=${side}`).then(value=>{
+    api<Protection>(paper?'/api/paper/manual/protection':`/api/exchange/protection?venue=${venue}&side=${side}`).then(value=>{
       if(!live)return;
       setCurrent(value);setStop(value.stop!=null?String(value.stop):'');setTakeProfit(value.takeProfit!=null?String(value.takeProfit):'');
     }).catch(reason=>live&&setLoadError(String(reason)));
     return ()=>{live=false;};
-  },[venue,side]);
+  },[venue,side,paper]);
 
   const parse=(text:string)=>text.trim()?Number(text):null;
   const stopValue=parse(stop),takeProfitValue=parse(takeProfit);
@@ -43,7 +44,8 @@ export default function PositionProtection({venue,asset='XAG',side,quantity,entr
 
   async function save(nextStop:number|null,nextTakeProfit:number|null){
     setSaving(true);
-    const ok=await onRun('/api/exchange/protection',{venue,side,stop_price:nextStop,take_profit_price:nextTakeProfit,confirmation:'UPDATE LIVE TPSL'});
+    const protection={stop_price:nextStop,take_profit_price:nextTakeProfit};
+    const ok=await onRun(paper?'/api/paper/manual/protection':'/api/exchange/protection',paper?protection:{...protection,venue,side,confirmation:'UPDATE LIVE TPSL'});
     setSaving(false);
     if(ok)onClose();
   }
@@ -55,11 +57,11 @@ export default function PositionProtection({venue,asset='XAG',side,quantity,entr
       <div className="tpsl-input">
         <input type="number" min="0" step="any" inputMode="decimal" aria-label={`${label} price`} placeholder="Not set" value={value} disabled={busy} onChange={event=>setValue(event.target.value)}/>
         {value&&<button type="button" className="tpsl-clear" aria-label={`Remove ${label.toLowerCase()}`} disabled={busy} onClick={()=>setValue('')}>×</button>}
-        <span>USDT</span>
+        <span>{collateral}</span>
       </div>
       <div className="tpsl-row-foot">
         {wrong?<span className="negative">Must be {rule} the mark price</span>:<span>{rule} {number(price,priceDigits)}{gap!=null?` · ${gap>=0?'+':''}${gap.toFixed(2)}%`:''}</span>}
-        {pnl!=null&&!wrong&&<span className={pnl<0?'negative':'positive'}>≈ {pnl>=0?'+':''}{pnl.toFixed(2)} USDT</span>}
+        {pnl!=null&&!wrong&&<span className={pnl<0?'negative':'positive'}>≈ {pnl>=0?'+':''}{pnl.toFixed(2)} {collateral}</span>}
       </div>
     </div>;
   }
@@ -68,7 +70,7 @@ export default function PositionProtection({venue,asset='XAG',side,quantity,entr
     onClick={event=>{if(event.target===event.currentTarget)onClose();}}>
     <form className="tpsl-dialog" onSubmit={event=>{event.preventDefault();if(canSave)void save(stopValue,takeProfitValue);}}>
       <header className="tpsl-header">
-        <div><h3 id="tpsl-title">TP / SL</h3><p>{asset}USDT Perpetual · {venue.toUpperCase()}</p></div>
+        <div><h3 id="tpsl-title">TP / SL</h3><p>{asset}/{collateral} Perpetual · {venue.toUpperCase()}</p></div>
         <button type="button" className="text-button" aria-label="Close" onClick={onClose}>×</button>
       </header>
       <dl className="tpsl-summary">
@@ -81,7 +83,7 @@ export default function PositionProtection({venue,asset='XAG',side,quantity,entr
       {row('Take profit',takeProfit,setTakeProfit,current?.takeProfit,takeProfitValue,takeProfitWrong,long?'Above':'Below')}
       {row('Stop loss',stop,setStop,current?.stop,stopValue,stopWrong,long?'Below':'Above')}
       {stopValue==null&&current!=null&&<p className="ticket-warning">No stop loss: losses are not limited and the position can be liquidated.</p>}
-      <p className="tpsl-note">Market orders for the whole position, triggered at the exchange. Confirm replaces the existing TP/SL; an empty field removes it.</p>
+      <p className="tpsl-note">{paper?'Virtual triggers evaluated on received market prices.':'Market orders for the whole position, triggered at the exchange.'} Confirm replaces the existing TP/SL; an empty field removes it.</p>
       <footer className="tpsl-footer">
         <Button variant="ghost" className="tpsl-remove" disabled={busy||(current?.stop==null&&current?.takeProfit==null)} onClick={()=>{if(window.confirm('Remove both the stop loss and the take profit?'))void save(null,null);}}>Remove all</Button>
         <span/>

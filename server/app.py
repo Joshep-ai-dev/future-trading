@@ -90,7 +90,7 @@ AUTH_COOKIE = 'silver_session'
 TRADER_PATHS = ('/api/exchange/connect', '/api/exchange/disconnect', '/api/exchange/reconnect',
                 '/api/exchange/forget', '/api/exchange/order', '/api/exchange/close', '/api/exchange/protection',
                 '/api/exchange/auto/', '/api/paper/start', '/api/paper/speed', '/api/paper/pause',
-                '/api/paper/resume', '/api/profiles', '/api/market-refresh', '/api/market-backfill',
+                '/api/paper/resume', '/api/paper/manual/', '/api/profiles', '/api/market-refresh', '/api/market-backfill',
                 '/api/news/refresh')
 
 
@@ -544,6 +544,22 @@ class DatasetSyncRequest(BaseModel):
     market: str = Field(pattern=r'^dataset:[a-f0-9]{64}$')
 
 
+class PaperMarketRequest(BaseModel):
+    venue: Literal['htx','hyperliquid']
+    symbol: str = Field(min_length=1, max_length=120)
+
+
+@app.post('/api/market/datasets/prepare')
+def prepare_paper_market(parameters: PaperMarketRequest):
+    from server.market.dataset_sync import prepare_dataset
+    try:
+        return prepare_dataset(parameters.venue, parameters.symbol)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(status_code=502, detail='Could not load this public paper market. Retry when exchange history is available.') from error
+
+
 @app.post('/api/market/datasets/sync')
 def sync_paper_dataset(parameters: DatasetSyncRequest):
     from server.market.dataset_sync import sync_dataset
@@ -669,6 +685,7 @@ def exchange_auto_stop(request: Request):
 
 class PaperStartRequest(BBBacktestRequest):
     """Reuse strategy validation while excluding historical date restrictions."""
+    execution_mode: Literal['manual','bot'] = 'bot'
     paper_mode: Literal['live','replay'] = 'live'
     replay_start: str | None = None
     replay_end: str | None = None
@@ -676,8 +693,8 @@ class PaperStartRequest(BBBacktestRequest):
 
     @model_validator(mode='after')
     def replay_dates(self):
-        if self.market.startswith('dataset:') and self.paper_mode != 'replay':
-            raise ValueError('Downloaded exchange datasets must use historical replay')
+        if self.execution_mode == 'manual' and self.paper_mode != 'live':
+            raise ValueError('Manual paper trading requires live market prices')
         if self.paper_mode == 'replay':
             from datetime import date
             try:
@@ -698,13 +715,78 @@ class PaperStartRequest(BBBacktestRequest):
 
 @app.post('/api/paper/start')
 def paper_start(parameters: PaperStartRequest, request: Request):
-    require_trading_strategy()
+    if parameters.execution_mode == 'bot':
+        require_trading_strategy()
     bind_forecast_owner(parameters, request)
     ws = workspace(request)
     try:
         return ws.paper.begin(parameters)
     except (ValueError, OSError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.get('/api/paper/market')
+def paper_market_prices(market: str = Query(default='xag', pattern=r'^(xag|dataset:[a-f0-9]{64})$'), *, request: Request):
+    try:
+        candles = workspace(request).paper.price_minutes(market)
+        now = time.time()
+        return dict(candles=candles, checkedAt=now, stale=not candles or now-candles[-1]['time'] > 120)
+    except Exception as error:
+        raise HTTPException(status_code=502, detail='Public paper market feed unavailable. Retrying automatically.') from error
+
+
+class ManualPaperOrder(BaseModel):
+    model_config = ConfigDict(extra='forbid', allow_inf_nan=False)
+    direction: Literal['long','short']
+    quantity: float = Field(gt=0, le=1e12)
+    leverage: int = Field(default=1, ge=1, le=100)
+    stop_price: float | None = Field(default=None, gt=0)
+    take_profit_price: float | None = Field(default=None, gt=0)
+    request_id: str = Field(min_length=1, max_length=80)
+
+
+class ManualPaperProtection(BaseModel):
+    model_config = ConfigDict(extra='forbid', allow_inf_nan=False)
+    stop_price: float | None = Field(default=None, gt=0)
+    take_profit_price: float | None = Field(default=None, gt=0)
+
+
+@app.get('/api/paper/manual/protection')
+def read_manual_paper_protection(request: Request):
+    try:
+        return workspace(request).paper.manual_protection()
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.post('/api/paper/manual/protection')
+def update_manual_paper_protection(parameters: ManualPaperProtection, request: Request):
+    try:
+        return workspace(request).paper.set_manual_protection(parameters)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(status_code=502, detail='Could not update virtual protection. Retry when market data is available.') from error
+
+
+@app.post('/api/paper/manual/order')
+def manual_paper_order(parameters: ManualPaperOrder, request: Request):
+    try:
+        return workspace(request).paper.manual_order(parameters)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(status_code=502, detail='Paper order could not obtain a current exchange price. No live order is sent.') from error
+
+
+@app.post('/api/paper/manual/close')
+def manual_paper_close(request: Request):
+    try:
+        return workspace(request).paper.manual_close()
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(status_code=502, detail='Paper close could not obtain a current exchange price. Retry when the feed recovers.') from error
 
 
 class ReplaySpeed(BaseModel):

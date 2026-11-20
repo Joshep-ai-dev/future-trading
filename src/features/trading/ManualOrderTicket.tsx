@@ -4,12 +4,17 @@ import {liveNumber as number,useExchangeStream} from '../../shared/api/useExchan
 import {Button,StatusBadge} from '../../shared/ui/ui';
 import {estimateOrderSize} from './orderSizing';
 import PositionProtection from './PositionProtection';
+import type {ExchangeSnapshot} from '../../shared/api/useExchangeStream';
 
 type Props={venue:ExchangeVenue;asset:string;connected:boolean;busy:boolean;blocked:boolean;botRunning:boolean;leverage:string;minimumLeverage:number;maximumLeverage:number;leverageLoading:boolean;onLeverageChange:(value:string)=>void;onRun:(path:string,body:unknown)=>Promise<boolean>};
 
-export default function ManualOrderTicket({venue,asset,connected,busy,blocked,botRunning,leverage,minimumLeverage,maximumLeverage,leverageLoading,onLeverageChange,onRun}:Props){
+export default function ManualOrderTicket(props:Props){
+  const {data,connected:streamConnected}=useExchangeStream(props.venue);
+  return <OrderTicket {...props} data={data} streamConnected={streamConnected}/>;
+}
+
+export function OrderTicket({venue,asset,connected,busy,blocked,botRunning,leverage,minimumLeverage,maximumLeverage,leverageLoading,onLeverageChange,onRun,data,streamConnected,paper=false}:Props&{data:ExchangeSnapshot|null;streamConnected:boolean;paper?:boolean}){
   const leverageOptions=Array.from({length:Math.max(0,maximumLeverage-minimumLeverage+1)},(_,index)=>index+minimumLeverage);
-  const {data,connected:streamConnected}=useExchangeStream(venue);
   const [action,setAction]=useState<'open'|'close'>('open');
   const [size,setSize]=useState('');
   const [unit,setUnit]=useState<'asset'|'USDT'>('USDT');
@@ -52,37 +57,38 @@ export default function ManualOrderTicket({venue,asset,connected,busy,blocked,bo
 
   async function open(direction:'long'|'short'){
     if(openDisabled||stopWrongSide(direction)||takeProfitWrongSide(direction))return;
-    const ok=await onRun('/api/exchange/order',{venue,direction,quantity,stop_price:useStop?Number(stop):null,take_profit_price:useTakeProfit?Number(takeProfit):null,leverage:Number(leverage),confirmation:'PLACE LIVE ORDER'});
+    const order={direction,quantity,stop_price:useStop?Number(stop):null,take_profit_price:useTakeProfit?Number(takeProfit):null,leverage:Number(leverage)};
+    const ok=await onRun(paper?'/api/paper/manual/order':'/api/exchange/order',paper?{...order,request_id:crypto.randomUUID()}:{...order,venue,confirmation:'PLACE LIVE ORDER'});
     if(ok){setConfirmed(false);setSize('');}
   }
   async function close(){
-    if(!position||!window.confirm(`Close the entire ${position.side} ${asset}/${collateral} position with a reduce-only market order?`))return;
-    await onRun('/api/exchange/close',{venue,side:position.side,margin_mode:position.marginMode,confirmation:'CLOSE LIVE POSITION'});
+    if(!position||(!paper&&!window.confirm(`Close the entire ${position.side} ${asset}/${collateral} position with a reduce-only market order?`)))return;
+    await onRun(paper?'/api/paper/manual/close':'/api/exchange/close',paper?{}:{venue,side:position.side,margin_mode:position.marginMode,confirmation:'CLOSE LIVE POSITION'});
   }
 
-  return <div className="order-ticket" id="manual-ticket-panel" role="tabpanel" aria-labelledby="execution-tab-manual">
+  return <div className="order-ticket" id={paper?"paper-execution-manual-panel":"execution-manual-panel"} role="tabpanel" aria-labelledby={paper?"paper-execution-tab-manual":"execution-tab-manual"}>
     <div className="ticket-segment" role="group" aria-label="Order action">{(['open','close'] as const).map(value=><button key={value} type="button" aria-pressed={action===value} onClick={()=>{setAction(value);setConfirmed(false);}}>{value==='open'?'Open':'Close'}</button>)}</div>
     {action==='open'?<>
       <div className="ticket-mode-row"><StatusBadge>Isolated margin</StatusBadge><label><span className="sr-only">Order leverage</span><select aria-label="Order leverage" value={leverage} disabled={disabled||leverageLoading||positionOpen} onChange={event=>onLeverageChange(event.target.value)}>{leverageOptions.map(value=><option key={value} value={value}>{value}x</option>)}</select></label></div>
       <div className="ticket-order-type"><strong>Market</strong><span>Immediate execution</span></div>
       <div className="ticket-available"><span>Available margin</span><strong>{number(data?.balance?.free,4)} <small>{collateral}</small></strong></div>
       <div className="ticket-market-price"><span>Market price</span><strong>{number(price,priceDigits)} <small>{collateral}</small></strong></div>
-      <label className="ticket-size"><span>{unit==='USDT'?'Margin':'Position size'}</span><div><input aria-label="Position size" type="number" min="0" step="any" placeholder="Enter amount" value={size} disabled={disabled||positionOpen} onChange={event=>setSize(event.target.value)}/><select aria-label="Position size unit" value={unit} onChange={event=>{setUnit(event.target.value as 'asset'|'USDT');setSize('');setConfirmed(false);}}><option value="USDT">USDT</option><option value="asset">{asset}</option></select></div></label>
+      <label className="ticket-size"><span>{unit==='USDT'?'Margin':'Position size'}</span><div><input aria-label="Position size" type="number" min="0" step="any" placeholder="Enter amount" value={size} disabled={disabled||positionOpen} onChange={event=>setSize(event.target.value)}/><select aria-label="Position size unit" value={unit} onChange={event=>{setUnit(event.target.value as 'asset'|'USDT');setSize('');setConfirmed(false);}}><option value="USDT">{collateral}</option><option value="asset">{asset}</option></select></div></label>
       <fieldset className="ticket-tpsl"><legend>TP / SL</legend>
-        <label className="ticket-option"><input type="checkbox" checked={useStop} disabled={disabled||positionOpen} onChange={event=>{setUseStop(event.target.checked);setConfirmed(false);}}/><span>Stop loss</span><small>Reduce-only trigger at the exchange</small></label>
-        {useStop&&<label className="ui-field ticket-stop"><span>Stop loss price <small>USDT</small></span><input type="number" aria-label="Stop loss price" min="0" step="any" placeholder={price?`Long: below ${price} · Short: above`:'Stop loss price'} value={stop} disabled={disabled||positionOpen} onChange={event=>setStop(event.target.value)}/></label>}
+        <label className="ticket-option"><input type="checkbox" checked={useStop} disabled={disabled||positionOpen} onChange={event=>{setUseStop(event.target.checked);setConfirmed(false);}}/><span>Stop loss</span><small>{paper?'Simulated trigger on market updates':'Reduce-only trigger at the exchange'}</small></label>
+        {useStop&&<label className="ui-field ticket-stop"><span>Stop loss price <small>{collateral}</small></span><input type="number" aria-label="Stop loss price" min="0" step="any" placeholder={price?`Long: below ${price} · Short: above`:'Stop loss price'} value={stop} disabled={disabled||positionOpen} onChange={event=>setStop(event.target.value)}/></label>}
         <label className="ticket-option"><input type="checkbox" checked={useTakeProfit} disabled={disabled||positionOpen} onChange={event=>{setUseTakeProfit(event.target.checked);setConfirmed(false);}}/><span>Take profit</span><small>Closes the whole position at the target</small></label>
-        {useTakeProfit&&<label className="ui-field ticket-stop"><span>Take profit price <small>USDT</small></span><input type="number" aria-label="Take profit price" min="0" step="any" placeholder="Take profit price" value={takeProfit} disabled={disabled||positionOpen} onChange={event=>setTakeProfit(event.target.value)}/></label>}
+        {useTakeProfit&&<label className="ui-field ticket-stop"><span>Take profit price <small>{collateral}</small></span><input type="number" aria-label="Take profit price" min="0" step="any" placeholder="Take profit price" value={takeProfit} disabled={disabled||positionOpen} onChange={event=>setTakeProfit(event.target.value)}/></label>}
         {!useStop&&<p className="ticket-warning">No stop loss: losses are not limited. Leveraged positions can be liquidated.</p>}
       </fieldset>
       <div className="ticket-estimates"><div><span>Estimated size</span><b>{number(quantity)} {asset}</b></div><div><span>Position value</span><b>{number(notional,2)} {collateral}</b></div><div><span>Estimated margin</span><b>{number(margin,4)} {collateral}</b></div></div>
-      <label className="ticket-confirm"><input type="checkbox" checked={confirmed} disabled={disabled||positionOpen} onChange={event=>setConfirmed(event.target.checked)}/><span>I confirm this places a real market order.</span></label>
+      <label className="ticket-confirm"><input type="checkbox" checked={confirmed} disabled={disabled||positionOpen} onChange={event=>setConfirmed(event.target.checked)}/><span>{paper?'Use virtual funds for this paper order.':'I confirm this places a real market order.'}</span></label>
       <div className="ticket-submit-row"><Button className="ticket-buy" disabled={openDisabled||stopWrongSide('long')||takeProfitWrongSide('long')} onClick={()=>void open('long')}>{busy?'Submitting...':'Open Long'}</Button><Button className="ticket-sell" disabled={openDisabled||stopWrongSide('short')||takeProfitWrongSide('short')} onClick={()=>void open('short')}>{busy?'Submitting...':'Open Short'}</Button></div>
       {positionOpen&&<p className="ticket-help">A {asset} position is already open. Select Close to manage it.</p>}
       {!busy&&openBlockReason&&<p className="ticket-help">{openBlockReason}</p>}
     </>:<div className="ticket-close-panel">
       <div className="ticket-order-type"><strong>Market close</strong><StatusBadge>Reduce only</StatusBadge></div>
-      {position?<><div className="ticket-position"><StatusBadge tone={position.side==='long'?'positive':'negative'}>{position.side.toUpperCase()}</StatusBadge><strong>{number(position.quantity)} {asset}</strong></div><dl><div><dt>Entry price</dt><dd>{number(position.entryPrice,3)}</dd></div><div><dt>Mark price</dt><dd>{number(position.markPrice,3)}</dd></div><div><dt>Unrealized PnL</dt><dd className={(position.unrealizedPnl??0)<0?'negative':'positive'}>{number(position.unrealizedPnl,4)} USDT</dd></div></dl><Button variant="danger" disabled={closeDisabled} onClick={()=>void close()}>Close entire {position.side} position</Button>{(position.side==='long'||position.side==='short')&&<><Button variant="secondary" disabled={disabled} onClick={()=>setEditingProtection(true)}>Edit TP/SL</Button>{editingProtection&&<PositionProtection venue={venue} asset={asset} side={position.side} quantity={position.quantity} entryPrice={position.entryPrice} price={position.markPrice??price} disabled={disabled} onRun={onRun} onClose={()=>setEditingProtection(false)}/>}</>}</>:<p className="ticket-help">{!accountVerified?'Waiting for verified position data.':positionOpen?'Multiple positions detected. Use the Close button on each row in Positions.':`No open ${asset} position to close.`}</p>}
+      {position?<><div className="ticket-position"><StatusBadge tone={position.side==='long'?'positive':'negative'}>{position.side.toUpperCase()}</StatusBadge><strong>{number(position.quantity)} {asset}</strong></div><dl><div><dt>Entry price</dt><dd>{number(position.entryPrice,3)}</dd></div><div><dt>Mark price</dt><dd>{number(position.markPrice,3)}</dd></div><div><dt>Unrealized PnL</dt><dd className={(position.unrealizedPnl??0)<0?'negative':'positive'}>{number(position.unrealizedPnl,4)} {collateral}</dd></div></dl><Button variant="danger" disabled={closeDisabled} onClick={()=>void close()}>Close entire {position.side} position</Button>{(position.side==='long'||position.side==='short')&&<><Button variant="secondary" disabled={disabled} onClick={()=>setEditingProtection(true)}>Edit TP/SL</Button>{editingProtection&&<PositionProtection paper={paper} venue={venue} asset={asset} side={position.side} quantity={position.quantity} entryPrice={position.entryPrice} price={position.markPrice??price} disabled={disabled} onRun={onRun} onClose={()=>setEditingProtection(false)}/>}</>}</>:<p className="ticket-help">{!accountVerified?'Waiting for verified position data.':positionOpen?'Multiple positions detected. Use the Close button on each row in Positions.':`No open ${asset} position to close.`}</p>}
     </div>}
     {botRunning&&<p className="ticket-help">Stop the running strategy to enable manual orders.</p>}
   </div>;

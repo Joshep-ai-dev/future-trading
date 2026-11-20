@@ -30,18 +30,20 @@ export default function LiveMarketChart({venue,settings,overlay,toolbarEnd,onTim
   useEffect(()=>{
     const abort=new AbortController();setLoaded(false);setCandles([]);setError('');
     if(!available)return()=>abort.abort();
+    let retry:ReturnType<typeof setTimeout>|undefined;
     async function load(){
       try{
         const result=await api<{candles:number[][]}>(`/api/exchange/candles?venue=${venue}&timeframe=${timeframe}`,{signal:abort.signal});
+        if(!result.candles.length)throw new Error('Waiting for exchange candle history. Retrying automatically.');
         const buckets=new Map<number,Candle>();
         for(const [timestamp,open,high,low,close,volume=0] of result.candles){
           const time=Math.floor(timestamp/1000/duration)*duration,previous=buckets.get(time);
           buckets.set(time,previous?{...previous,high:Math.max(previous.high,high),low:Math.min(previous.low,low),close,volume:(previous.volume??0)+volume}:{time,open,high,low,close,volume});
         }
-        if(!abort.signal.aborted){setCandles([...buckets.values()].sort((a,b)=>a.time-b.time));setLoaded(true);}
-      }catch(reason){if(!abort.signal.aborted)setError(String(reason));}
+        if(!abort.signal.aborted){setCandles([...buckets.values()].sort((a,b)=>a.time-b.time));setLoaded(true);setError('');}
+      }catch(reason){if(!abort.signal.aborted){setError(String(reason));retry=setTimeout(()=>void load(),5000);}}
     }
-    void load();return()=>abort.abort();
+    void load();return()=>{abort.abort();if(retry)clearTimeout(retry);};
   },[venue,timeframe,duration,available,data?.symbol]);
   useEffect(()=>{
     if(!loaded||!data?.candle)return;
