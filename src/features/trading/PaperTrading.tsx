@@ -13,7 +13,8 @@ import {useDatasetSync} from '../../shared/api/useDatasetSync';
 import {useLiveMarketMinutes} from '../../shared/charts/useLiveMarketMinutes';
 import {mergeHistory} from '../../shared/charts/candleHistory';
 import {useMarketDataRevision} from '../../shared/charts/marketDataRevision';
-import {StatusBadge,TabBar,TableFrame} from '../../shared/ui/ui';
+import {Button,StatusBadge,TabBar,TableFrame} from '../../shared/ui/ui';
+import PositionProtection from './PositionProtection';
 import {useChartTimeframe} from '../../shared/charts/useChartTimeframe';
 import {TIMEFRAMES,chartPosition} from '../../shared/charts/chartTimeframe';
 import TradeView from '../../shared/ui/TradeView';
@@ -78,6 +79,7 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
   const controlsOpen=panels.order;
   const [executionMode,setExecutionMode]=useState<ExecutionMode>('manual');
   const [manualLeverage,setManualLeverage]=useState('1');
+  const [editingProtection,setEditingProtection]=useState(false);
   useEffect(()=>{if(data.session?.executionMode==='manual')setManualLeverage(String(data.session.settings.max_leverage));},[data.session?.startedAt]);
   useEffect(()=>{if(data.session?.running&&data.session.executionMode!=='manual')setExecutionMode('bot');},[data.session?.startedAt]);
   // Public real-time XAG feed: the preview chart, and the display of a running live XAG session.
@@ -212,12 +214,16 @@ export default function PaperTrading({settings,onChange,onConfigure,visible,prof
           {value:'sessions',label:'Past sessions',controls:'activity-sessions'},
           {value:'patterns',label:'Patterns',controls:'activity-patterns'},
         ] as const} value={bottomTab} onChange={setBottomTab} label="Paper account activity" idPrefix="activity-tab" trailing={<StatusBadge>Paper account</StatusBadge>}/>
-        <div id="activity-position" role="tabpanel" aria-labelledby="activity-tab-position" hidden={bottomTab!=='position'}>{p?<TableFrame label={`Open ${paperBase} paper position`} columns={['Contract','Mark price','Entry price',`Margin (${paperQuote})`,'Unrealized PnL','PnL (%)','Stop price',`Size (${paperBase})`,'Opened']}><tr>
+        <div id="activity-position" role="tabpanel" aria-labelledby="activity-tab-position" hidden={bottomTab!=='position'}>{p?<TableFrame label={`Open ${paperBase} paper position`} columns={['Contract','Mark price','Entry price',`Margin (${paperQuote})`,'Unrealized PnL','PnL (%)','TP / SL',`Size (${paperBase})`,'Opened','Action']}><tr>
           <td><strong>{paperBase}/{paperQuote} <small>Perpetual</small></strong><div className="exchange-position-tags"><StatusBadge tone={p.direction===1?'positive':'negative'}>{p.direction===1?'LONG':'SHORT'}</StatusBadge><StatusBadge>{fmt(leverage,1)}x</StatusBadge><StatusBadge>{p.trailing_active?'Trailing':'Initial stop'}</StatusBadge></div></td>
           <td>{fmt(price,3)}</td><td>{fmt(p.entry_price,3)}</td><td>{fmt(margin,4)}</td>
           <td className={unrealized<0?'negative':'positive'}>{unrealized>=0?'+':''}{fmt(unrealized,4)} <small>{paperQuote}</small></td>
           <td className={unrealized<0?'negative':'positive'}>{margin?fmt(unrealized/margin*100,2):'—'}%</td>
-          <td>{p.stop?fmt(p.stop,3):'Off'}</td><td>{fmt(p.quantity,4)}</td><td>{date(p.entry_time+tradeDuration,tradingTimeZone)}</td>
+          <td><div className="position-tpsl"><span className="positive">{p.take_profit?fmt(p.take_profit,3):'--'}</span><span className="negative">{p.stop?fmt(p.stop,3):'--'}</span></div></td><td>{fmt(p.quantity,4)}</td><td>{date(p.entry_time+tradeDuration,tradingTimeZone)}</td>
+          <td><div className="exchange-position-actions">
+            {s?.executionMode==='manual'&&<Button variant="secondary" disabled={busy} onClick={()=>setEditingProtection(true)}>TP/SL</Button>}
+            <Button variant="danger" disabled={busy||botRunning||s?.mode==='replay'} onClick={()=>void manualAction('/api/paper/manual/close',{})}>Close</Button>
+          </div>{editingProtection&&<PositionProtection paper venue={(activeDataset?.venue??'okx') as ExchangeVenue} asset={paperBase} side={p.direction===1?'long':'short'} quantity={p.quantity} entryPrice={p.entry_price} price={price} disabled={busy} onRun={manualAction} onClose={()=>setEditingProtection(false)}/>}</td>
         </tr></TableFrame>:<div className="empty-position"><span className="empty-state-symbol">◇</span><h3>{s?.running?'Watching for your next setup':'No open position'}</h3><p>{s?.running?(active.strategy==='adx_supertrend'?'The bot opens a trade when ADX confirms a Supertrend trend and every enabled filter passes.':active.strategy==='st_scalper'?'The bot enters at the next open after a filtered SuperTrend flip.':'The bot is scanning each completed candle for its next entry.'):settings.strategy==='none'?'No automated strategy is configured. Market viewing and past sessions remain available.':'Start a virtual session to see entries, stops and position P&L here.'}</p></div>}</div>
         <div id="activity-history" role="tabpanel" aria-labelledby="activity-tab-history" hidden={bottomTab!=='history'}><TradeView key={s?.startedAt??0} scope="Session" capital={s?.settings.capital??settings.capital} timeZone={tradingTimeZone} unrealized={equity-balance} trades={chartTrades.map(t=>({id:t.id,direction:t.direction,pnl:t.pnl,entry:t.entry_price,exit:t.exit_price,quantity:t.quantity,exitTime:t.exit_time+tradeDuration}))}>{chartTrades.length?<div className="table-scroll"><table><thead><tr>{['ID','Side','Leverage',`Entry time (${tradingTimeZone})`,'Entry','Exit','Quantity','P&L','Exit reason'].map(label=><th key={label}>{label}</th>)}</tr></thead><tbody>{chartTrades.slice(-100).reverse().map(t=><tr key={t.id}><td>#{t.id}</td><td><span className={`side-badge ${t.direction===1?'long':'short'}`}>{t.direction===1?'LONG':'SHORT'}</span></td><td>{fmt(leverage,1)}x</td><td>{date(t.entry_time+tradeDuration,tradingTimeZone)}</td><td>{fmt(t.entry_price,3)}</td><td>{fmt(t.exit_price,3)}</td><td>{fmt(t.quantity,4)}</td><td className={t.pnl>=0?'positive':'negative'}>{t.pnl>=0?'+':''}{fmt(t.pnl)}</td><td>{t.exit_reason==='rsi_price_exit'?'RSI + price exit':t.exit_reason.replaceAll('_',' ')}</td></tr>)}</tbody></table></div>:<div className="empty-position"><h3>Your trade history starts here</h3><p>Closed virtual trades appear automatically as the bot runs.</p></div>}</TradeView></div>
         <div id="activity-equity" role="tabpanel" aria-labelledby="activity-tab-equity" hidden={bottomTab!=='equity'}>{chartTrades.length?<EquityChart key={s?.startedAt??0} period={{name:'Paper trading'}} initialValue={s?.settings.capital??settings.capital} trades={chartTrades.map(t=>({pnl:t.pnl}))}/>:<div className="empty-position"><h3>No closed trades yet</h3><p>The balance curve adds one point after each trade closes.</p></div>}</div>

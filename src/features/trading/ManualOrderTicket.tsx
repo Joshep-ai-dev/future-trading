@@ -3,7 +3,6 @@ import type {ExchangeVenue} from '../../shared/api/exchangeVenue';
 import {liveNumber as number,useExchangeStream,type ExchangeSnapshot,type LiveOrder} from '../../shared/api/useExchangeStream';
 import {Button,StatusBadge} from '../../shared/ui/ui';
 import {estimateOrderSize,sizeForMarginShare} from './orderSizing';
-import PositionProtection from './PositionProtection';
 
 type Props={venue:ExchangeVenue;asset:string;connected:boolean;busy:boolean;blocked:boolean;botRunning:boolean;leverage:string;minimumLeverage:number;maximumLeverage:number;leverageLoading:boolean;onLeverageChange:(value:string)=>void;onRun:(path:string,body:unknown)=>Promise<boolean>};
 type Direction='long'|'short';
@@ -25,11 +24,10 @@ export const isEntryOrder=(order:LiveOrder)=>order.type==='limit'&&order.trigger
 
 /**
  * Exchange-style order ticket (HTX / Hyperliquid layout) shared by paper and live trading:
- * Open/Close, margin mode and leverage, Market/Limit, size with a margin slider, TP/SL, Buy/Long and Sell/Short.
+ * margin mode and leverage, Market/Limit, size with a margin slider, TP/SL, Buy/Long and Sell/Short.
  */
 export function OrderTicket({venue,asset,connected,busy,blocked,botRunning,leverage,minimumLeverage,maximumLeverage,leverageLoading,onLeverageChange,onRun,data,streamConnected,paper=false,initialBalance}:Props&{data:ExchangeSnapshot|null;streamConnected:boolean;paper?:boolean;initialBalance?:InitialBalance}){
   const leverageOptions=Array.from({length:Math.max(0,maximumLeverage-minimumLeverage+1)},(_,index)=>index+minimumLeverage);
-  const [action,setAction]=useState<'open'|'close'>('open');
   const [orderType,setOrderType]=useState<OrderType>('market');
   const [limitPrice,setLimitPrice]=useState('');
   const [size,setSize]=useState('');
@@ -38,7 +36,6 @@ export function OrderTicket({venue,asset,connected,busy,blocked,botRunning,lever
   const [takeProfit,setTakeProfit]=useState('');
   const [useStop,setUseStop]=useState(true),[useTakeProfit,setUseTakeProfit]=useState(false);
   const [confirmed,setConfirmed]=useState(false);
-  const [editingProtection,setEditingProtection]=useState(false);
 
   const collateral=venue==='hyperliquid'?'USDC':'USDT';
   const priceDigits=asset==='STABLE'?5:3;
@@ -51,13 +48,11 @@ export function OrderTicket({venue,asset,connected,busy,blocked,botRunning,lever
   const lever=Number(leverage);
   const {quantity,notional,margin}=estimateOrderSize(size,unit,entryPrice,lever);
   const sizeShare=margin!=null&&available!=null&&available>0?Math.min(100,Math.round(margin/available*100)):0;
-  const position=data?.positions?.length===1?data.positions[0]:null;
   const positionOpen=(data?.positions?.length??0)>0;
   const entryOrders=(data?.orders??[]).filter(isEntryOrder);
   const accountVerified=streamConnected&&data?.positions!=null&&!data.errors.positions&&!data.errors.connection;
   const disabled=!connected||busy||blocked||botRunning||!accountVerified;
   const inputsDisabled=disabled||positionOpen;
-  const closeDisabled=!connected||busy||botRunning||!accountVerified||(venue!=='htx'&&blocked);
   const validPrice=entryPrice!=null&&Number.isFinite(entryPrice)&&entryPrice>0;
   const stopOn=protectionAvailable&&useStop,takeProfitOn=protectionAvailable&&useTakeProfit;
   const stopValid=!stopOn||positive(stop);
@@ -100,18 +95,12 @@ export function OrderTicket({venue,asset,connected,busy,blocked,botRunning,lever
     const ok=await onRun(paper?'/api/paper/manual/order':'/api/exchange/order',paper?{...order,request_id:crypto.randomUUID()}:{...order,venue,confirmation:'PLACE LIVE ORDER'});
     if(ok){resetConfirmation();setSize('');}
   }
-  async function close(){
-    if(!position||(!paper&&!window.confirm(`Close the entire ${position.side} ${asset}/${collateral} position with a reduce-only market order?`)))return;
-    await onRun(paper?'/api/paper/manual/close':'/api/exchange/close',paper?{}:{venue,side:position.side,margin_mode:position.marginMode,confirmation:'CLOSE LIVE POSITION'});
-  }
   async function cancel(order:LiveOrder){
     await onRun(paper?'/api/paper/manual/cancel':'/api/exchange/cancel',paper?{}:{venue,order_id:order.id});
   }
 
   return <div className="order-ticket">
-    <div className="ticket-segment" role="group" aria-label="Order action">{(['open','close'] as const).map(value=><button key={value} type="button" aria-pressed={action===value} onClick={()=>{setAction(value);resetConfirmation();}}>{value==='open'?'Open':'Close'}</button>)}</div>
     <div className="ticket-mode-row"><StatusBadge>Isolated</StatusBadge><label><span className="sr-only">Order leverage</span><select aria-label="Order leverage" value={leverage} disabled={inputsDisabled||leverageLoading} onChange={event=>onLeverageChange(event.target.value)}>{leverageOptions.map(value=><option key={value} value={value}>{value}x</option>)}</select></label></div>
-    {action==='open'?<>
       <div className="ticket-type-tabs" role="tablist" aria-label="Order type">{(['market','limit'] as const).map(value=><button key={value} type="button" role="tab" aria-selected={orderType===value} onClick={()=>{setOrderType(value);resetConfirmation();}}>{value==='market'?'Market':'Limit'}</button>)}</div>
       {initialBalance?<label className="ticket-available ticket-initial-balance"><span>Initial balance</span><span><input type="number" aria-label="Initial balance" required min={1} max={1e9} step="any" value={Number.isFinite(initialBalance.value)?initialBalance.value:''} disabled={busy} onChange={event=>initialBalance.onChange(event.target.valueAsNumber)}/><small>{collateral}</small></span></label>
         :<div className="ticket-available"><span>Available to trade</span><strong>{number(available,4)} <small>{collateral}</small></strong></div>}
@@ -139,12 +128,8 @@ export function OrderTicket({venue,asset,connected,busy,blocked,botRunning,lever
       <div className="ticket-estimates"><div><span>Order value</span><b>{number(notional,2)} {collateral}</b></div><div><span>Margin required</span><b>{number(margin,4)} {collateral}</b></div><div><span>Size</span><b>{number(quantity)} {asset}</b></div></div>
       <label className="ticket-confirm"><input type="checkbox" checked={confirmed} disabled={inputsDisabled||pendingEntry} onChange={event=>setConfirmed(event.target.checked)}/><span>{paper?'Use virtual funds for this paper order.':`I confirm this places a real ${limit?'limit':'market'} order.`}</span></label>
       <div className="ticket-submit-row"><Button className="ticket-buy" disabled={sideDisabled('long')} onClick={()=>void open('long')}>{busy?'Submitting...':'Buy / Long'}</Button><Button className="ticket-sell" disabled={sideDisabled('short')} onClick={()=>void open('short')}>{busy?'Submitting...':'Sell / Short'}</Button></div>
-      {positionOpen&&<p className="ticket-help">A {asset} position is already open. Select Close to manage it.</p>}
+      {positionOpen&&<p className="ticket-help">A {asset} position is open. Update its TP/SL or close it from the position row below the chart.</p>}
       {!busy&&openBlockReason&&<p className="ticket-help">{openBlockReason}</p>}
-    </>:<div className="ticket-close-panel">
-      <div className="ticket-order-type"><strong>Market close</strong><StatusBadge>Reduce only</StatusBadge></div>
-      {position?<><div className="ticket-position"><StatusBadge tone={position.side==='long'?'positive':'negative'}>{position.side.toUpperCase()}</StatusBadge><strong>{number(position.quantity)} {asset}</strong></div><dl><div><dt>Entry price</dt><dd>{number(position.entryPrice,priceDigits)}</dd></div><div><dt>Mark price</dt><dd>{number(position.markPrice,priceDigits)}</dd></div><div><dt>Unrealized PnL</dt><dd className={(position.unrealizedPnl??0)<0?'negative':'positive'}>{number(position.unrealizedPnl,4)} {collateral}</dd></div></dl><Button variant="danger" disabled={closeDisabled} onClick={()=>void close()}>Close entire {position.side} position</Button>{(position.side==='long'||position.side==='short')&&<><Button variant="secondary" disabled={disabled} onClick={()=>setEditingProtection(true)}>Edit TP/SL</Button>{editingProtection&&<PositionProtection paper={paper} venue={venue} asset={asset} side={position.side} quantity={position.quantity} entryPrice={position.entryPrice} price={position.markPrice??marketPrice} disabled={disabled} onRun={onRun} onClose={()=>setEditingProtection(false)}/>}</>}</>:<p className="ticket-help">{!accountVerified?'Waiting for verified position data.':positionOpen?'Multiple positions detected. Use the Close button on each row in Positions.':`No open ${asset} position to close.`}</p>}
-    </div>}
     {entryOrders.length>0&&<section className="ticket-open-orders" aria-label="Open orders">
       <h3>Open orders <small>{entryOrders.length}</small></h3>
       <ul>{entryOrders.map(order=><li key={order.id}>

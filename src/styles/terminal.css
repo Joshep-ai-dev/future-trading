@@ -688,23 +688,6 @@ table tbody tr:hover td {
   height: 38px;
 }
 
-.ticket-segment {
-  padding: 3px;
-  border-radius: 7px;
-  background: var(--field);
-}
-
-.ticket-segment button {
-  border-radius: 5px;
-  background: transparent !important;
-  color: var(--muted) !important;
-}
-
-.ticket-segment button[aria-pressed=true] {
-  background: var(--surface-raised) !important;
-  color: var(--text) !important;
-}
-
 .ticket-market-price,
 .ticket-available {
   border-radius: 6px;
