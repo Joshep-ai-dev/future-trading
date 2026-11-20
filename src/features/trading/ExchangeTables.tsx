@@ -16,10 +16,12 @@ export function PositionTable({asset,positions,disabled,closeDisabled=disabled,o
   </TableFrame>;
 }
 
-export function OrderTable({asset,orders,collateral='USDT'}:{asset:string;orders:LiveOrder[];collateral?:string}){
+/** `onCancel` adds a Cancel button to rows that `canCancel` accepts (standard orders; triggers are edited via TP/SL). */
+export function OrderTable({asset,orders,collateral='USDT',disabled=false,canCancel,onCancel}:{asset:string;orders:LiveOrder[];collateral?:string;disabled?:boolean;canCancel?:(order:LiveOrder)=>boolean;onCancel?:(order:LiveOrder)=>void}){
   const priceDigits=asset==='STABLE'?5:3;
-  return <TableFrame label={`Open ${asset} orders`} columns={['Contract','Side','Margin','Type',`Size (${asset})`,'Filled','Price','Trigger','Status']}>
-    {orders.map((order,index)=><tr key={order.id??index}><td><strong>{asset}{collateral}</strong></td><td><StatusBadge tone={order.side==='buy'?'positive':'negative'}>{order.side?.toUpperCase()}</StatusBadge></td><td>{order.marginMode??'--'}</td><td>{order.type??'—'}</td><td>{number(order.quantity)}</td><td>{number(order.filled)}</td><td>{number(order.price,priceDigits)}</td><td>{number(order.triggerPrice,priceDigits)}</td><td>{order.status??'—'}</td></tr>)}
+  return <TableFrame label={`Open ${asset} orders`} columns={['Contract','Side','Margin','Type',`Size (${asset})`,'Filled','Price','Trigger','Status',...(onCancel?['Action']:[])]}>
+    {orders.map((order,index)=><tr key={order.id??index}><td><strong>{asset}{collateral}</strong></td><td><StatusBadge tone={order.side==='buy'?'positive':'negative'}>{order.side?.toUpperCase()}</StatusBadge></td><td>{order.marginMode??'--'}</td><td>{order.type??'—'}</td><td>{number(order.quantity)}</td><td>{number(order.filled)}</td><td>{number(order.price,priceDigits)}</td><td>{number(order.triggerPrice,priceDigits)}</td><td>{order.status??'—'}</td>
+      {onCancel&&<td>{(canCancel?.(order)??true)&&<Button variant="secondary" disabled={disabled} onClick={()=>onCancel(order)}>Cancel</Button>}</td>}</tr>)}
   </TableFrame>;
 }
 

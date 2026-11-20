@@ -68,6 +68,51 @@ class ManualPaperTests(unittest.TestCase):
         self.assertEqual(self.service.state['balance'], 888)
         self.assertEqual(self.service.state['trades'][-1]['exit_reason'], 'liquidation')
 
+    def limit(self, price, **values):
+        request = dict(direction='long', quantity=2, leverage=2, order_type='limit', limit_price=price, request_id='limit')
+        request.update(values)
+        return self.service.manual_order(ManualPaperOrder(**request))
+
+    def test_limit_order_rests_then_fills_at_its_price_with_protection(self) -> None:
+        session = self.limit(95, stop_price=90, take_profit_price=105)['session']
+        self.assertIsNone(session['openPosition'])
+        self.assertEqual(session['pendingOrder']['price'], 95)
+        self.price = 96
+        self.service.update_quote()
+        self.assertIsNotNone(self.service.state['pendingOrder'])
+        self.price = 94
+        self.service.update_quote()
+        position = self.service.state['openPosition']
+        self.assertIsNone(self.service.state['pendingOrder'])
+        self.assertEqual((position['entry_price'], position['stop'], position['take_profit']), (95, 90, 105))
+        self.price = 106
+        self.service.update_quote()
+        self.assertEqual(self.service.state['trades'][0]['exit_reason'], 'take_profit')
+        self.assertEqual(self.service.state['balance'], 1022)  # TP closes at the received price, as before
+
+    def test_marketable_limit_fills_now_at_market_and_short_limit_rests_above(self) -> None:
+        self.assertEqual(self.limit(110)['session']['openPosition']['entry_price'], 100)
+        self.service.manual_close()
+        session = self.limit(105, direction='short', request_id='short')['session']
+        self.assertEqual(session['pendingOrder']['direction'], -1)
+        self.price = 105
+        self.service.update_quote()
+        self.assertEqual(self.service.state['openPosition']['entry_price'], 105)
+
+    def test_limit_cancel_one_pending_order_and_protection_against_limit_price(self) -> None:
+        with self.assertRaises(ValueError):
+            self.limit(95, stop_price=96)
+        self.limit(95)
+        with self.assertRaises(ValueError):
+            self.limit(94, request_id='second')
+        self.assertIsNone(self.service.manual_cancel()['session']['pendingOrder'])
+        with self.assertRaises(ValueError):
+            self.service.manual_cancel()
+        with self.assertRaises(ValidationError):
+            ManualPaperOrder(direction='long', quantity=1, order_type='limit', request_id='x')
+        with self.assertRaises(ValidationError):
+            ManualPaperOrder(direction='long', quantity=1, limit_price=90, request_id='x')
+
     def test_duplicate_retry_does_not_open_another_trade(self) -> None:
         self.order()
         self.order()

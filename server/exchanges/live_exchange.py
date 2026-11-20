@@ -318,13 +318,23 @@ class LiveExchange:
 
     def market_order(self, venue: str, side: Literal['buy', 'sell'], quantity: float,
                      *, reduce_only: bool = False, margin_mode: str | None = None):
+        return self.place_order(venue, side, quantity, reduce_only=reduce_only, margin_mode=margin_mode)
+
+    def place_order(self, venue: str, side: Literal['buy', 'sell'], quantity: float, *, price: float | None = None,
+                    reduce_only: bool = False, margin_mode: str | None = None):
+        """Market order, or a limit order when `price` is given; quantity is in base units."""
         if side not in ('buy', 'sell') or not isinstance(quantity, (int, float)) or quantity <= 0:
             raise ValueError('Order side and quantity must be valid and positive')
+        if price is not None and (not math.isfinite(price) or price <= 0):
+            raise ValueError('Limit price must be positive')
         exchange, market = self.execution_client(venue)
         size = float(quantity) / float(market.get('contractSize') or 1)
         amount = float(exchange.amount_to_precision(market['symbol'], size))
         if amount <= 0 or amount < float(market.get('limits', {}).get('amount', {}).get('min') or 0):
             raise ValueError('Quantity is below this contract’s minimum order size')
+        order_type = 'market' if price is None else 'limit'
+        if price is not None:
+            price = float(exchange.price_to_precision(market['symbol'], price))
         params = {**margin_params(venue), **({'reduceOnly': True} if reduce_only else {})}
         if margin_mode is not None:
             if margin_mode not in ('isolated', 'cross'):
@@ -335,9 +345,9 @@ class LiveExchange:
             hedge_side = ('long' if side == 'buy' else 'short') if not reduce_only else ('short' if side == 'buy' else 'long')
             order = self._htx_with_position_side(
                 exchange, hedge_side, lambda position_side: exchange.create_order(
-                    market['symbol'], 'market', side, amount, None, {**params, 'position_side': position_side}))
+                    market['symbol'], order_type, side, amount, price, {**params, 'position_side': position_side}))
         else:
-            order = exchange.create_order(market['symbol'], 'market', side, amount, None, params)
+            order = exchange.create_order(market['symbol'], order_type, side, amount, price, params)
         if not order.get('id'):
             raise RuntimeError(f'The exchange returned no order id, so the order was not placed. Exchange reply: {_reply(exchange, order)}')
         self.invalidate_reads(venue)
@@ -345,9 +355,33 @@ class LiveExchange:
             self.on_execution(venue)
         if not reduce_only:
             self.last_entry_id = order.get('id')
-        return dict(id=order.get('id'), status=order.get('status'), side=side,
+        return dict(id=order.get('id'), status=order.get('status'), side=side, type=order_type, price=price,
                     amount=order.get('amount'), filled=order.get('filled'), average=order.get('average'),
                     symbol=market['symbol'], reduceOnly=reduce_only)
+
+    def open_limit(self, venue: str, direction: Literal['long', 'short'], quantity: float, price: float,
+                   *, leverage: int | None = None):
+        """Resting limit entry. TP/SL are added once it fills, because reduce-only orders need a position."""
+        with self.trade_lock:
+            if any(float(position.get('contracts') or 0) != 0 for position in self.positions(venue)):
+                raise ValueError('Close the existing position before opening another from this terminal')
+            if leverage is not None:
+                self.prepare_account(venue, leverage)
+            try:
+                order = self.place_order(venue, 'buy' if direction == 'long' else 'sell', quantity, price=price)
+            except ValueError:
+                raise
+            except Exception as error:
+                raise OrderStepError('Limit entry order', error) from error
+            return dict(order=order, direction=direction, quantity=quantity, limitPrice=order['price'])
+
+    def cancel_order(self, venue: str, order_id: str):
+        exchange, market = self.execution_client(venue)
+        result = exchange.cancel_order(order_id, market['symbol'], margin_params(venue))
+        self.invalidate_reads(venue)
+        if self.on_execution is not None:
+            self.on_execution(venue)
+        return dict(message=f'Order {order_id} cancelled.', order=dict(id=order_id, status=(result or {}).get('status') or 'canceled'))
 
     def prepare_account(self, venue: str, leverage: int) -> None:
         """Isolated margin and leverage, tolerating 'already set' answers. Call only when flat."""

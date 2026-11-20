@@ -88,7 +88,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 logger = logging.getLogger(__name__)
 AUTH_COOKIE = 'silver_session'
 TRADER_PATHS = ('/api/exchange/connect', '/api/exchange/disconnect', '/api/exchange/reconnect',
-                '/api/exchange/forget', '/api/exchange/order', '/api/exchange/close', '/api/exchange/protection',
+                '/api/exchange/forget', '/api/exchange/order', '/api/exchange/cancel', '/api/exchange/close', '/api/exchange/protection',
                 '/api/exchange/auto/', '/api/paper/start', '/api/paper/speed', '/api/paper/pause',
                 '/api/paper/resume', '/api/paper/manual/', '/api/profiles', '/api/market-refresh', '/api/market-backfill',
                 '/api/news/refresh')
@@ -332,7 +332,25 @@ class ExchangeOrderRequest(BaseModel):
     stop_price: float | None = Field(default=None,gt=0,le=1e9)
     take_profit_price: float | None = Field(default=None,gt=0,le=1e9)
     leverage: int = Field(ge=1,le=100)
+    order_type: Literal['market','limit'] = 'market'
+    limit_price: float | None = Field(default=None,gt=0,le=1e9)
     confirmation: Literal['PLACE LIVE ORDER']
+
+    @model_validator(mode='after')
+    def check_limit(self):
+        if self.order_type == 'limit' and self.limit_price is None:
+            raise ValueError('A limit order needs a limit price')
+        if self.order_type == 'market' and self.limit_price is not None:
+            raise ValueError('A market order cannot carry a limit price')
+        if self.order_type == 'limit' and (self.stop_price is not None or self.take_profit_price is not None):
+            raise ValueError('Add TP/SL after the limit order fills')
+        return self
+
+
+class ExchangeCancelRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    venue: Literal['okx','htx','mexc','binance','hyperliquid']
+    order_id: str = Field(min_length=1,max_length=120)
 
 
 class ExchangeDisconnectRequest(BaseModel):
@@ -614,6 +632,9 @@ def exchange_forget(parameters: ExchangeDisconnectRequest, request: Request):
 def exchange_order(parameters: ExchangeOrderRequest, request: Request):
     ws = workspace(request)
     try:
+        if parameters.order_type == 'limit':
+            return ws.exchange.open_limit(parameters.venue,parameters.direction,parameters.quantity,
+                                          parameters.limit_price,leverage=parameters.leverage)
         return ws.exchange.open_with_stop(parameters.venue,parameters.direction,parameters.quantity,
                                             parameters.stop_price,parameters.take_profit_price,
                                             leverage=parameters.leverage)
@@ -625,6 +646,20 @@ def exchange_order(parameters: ExchangeOrderRequest, request: Request):
     except Exception as error:
         logger.exception('Live order failed')
         raise HTTPException(status_code=502,detail=f'Live order failed ({safe_exchange_error(error)}). Check the exchange order and position status before retrying.') from error
+    finally:
+        ws.streams.refresh(parameters.venue)
+
+
+@app.post('/api/exchange/cancel')
+def exchange_cancel(parameters: ExchangeCancelRequest, request: Request):
+    ws = workspace(request)
+    try:
+        return ws.exchange.cancel_order(parameters.venue, parameters.order_id)
+    except ValueError as error:
+        raise HTTPException(status_code=400,detail=str(error)) from error
+    except Exception as error:
+        logger.warning('Order cancel failed for user %s: %s', request.state.user['id'], error)
+        raise HTTPException(status_code=502,detail=f'Cancel failed ({safe_exchange_error(error)}). Check the order at the exchange.') from error
     finally:
         ws.streams.refresh(parameters.venue)
 
@@ -742,7 +777,15 @@ class ManualPaperOrder(BaseModel):
     leverage: int = Field(default=1, ge=1, le=100)
     stop_price: float | None = Field(default=None, gt=0)
     take_profit_price: float | None = Field(default=None, gt=0)
+    order_type: Literal['market','limit'] = 'market'
+    limit_price: float | None = Field(default=None, gt=0)
     request_id: str = Field(min_length=1, max_length=80)
+
+    @model_validator(mode='after')
+    def check_limit(self):
+        if (self.order_type == 'limit') != (self.limit_price is not None):
+            raise ValueError('Only a limit order carries a limit price, and it needs one')
+        return self
 
 
 class ManualPaperProtection(BaseModel):
@@ -777,6 +820,14 @@ def manual_paper_order(parameters: ManualPaperOrder, request: Request):
         raise HTTPException(status_code=400, detail=str(error)) from error
     except Exception as error:
         raise HTTPException(status_code=502, detail='Paper order could not obtain a current exchange price. No live order is sent.') from error
+
+
+@app.post('/api/paper/manual/cancel')
+def manual_paper_cancel(request: Request):
+    try:
+        return workspace(request).paper.manual_cancel()
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
 
 @app.post('/api/paper/manual/close')

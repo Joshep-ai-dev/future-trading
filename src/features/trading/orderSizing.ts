@@ -12,3 +12,12 @@ export function estimateOrderSize(input:string,unit:'asset'|'USDT',price:number|
   const margin=notional!=null&&Number.isFinite(leverage)&&leverage>0?notional/leverage:null;
   return {quantity,notional,margin};
 }
+
+/** Size input for a share (0-100 %) of available margin, in the ticket's unit; '' when it cannot be computed. */
+export function sizeForMarginShare(share:number,available:number|null|undefined,unit:'asset'|'USDT',price:number|null|undefined,leverage:number){
+  if(available==null||!Number.isFinite(available)||available<=0||share<=0)return '';
+  const margin=available*Math.min(100,share)/100;
+  if(unit==='USDT')return String(Math.floor(margin*1e4)/1e4);
+  if(price==null||!Number.isFinite(price)||price<=0||!Number.isFinite(leverage)||leverage<=0)return '';
+  return String(Math.floor(margin*leverage/price*1e6)/1e6);
+}

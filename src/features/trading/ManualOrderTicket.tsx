@@ -1,12 +1,14 @@
 import {useState} from 'react';
 import type {ExchangeVenue} from '../../shared/api/exchangeVenue';
-import {liveNumber as number,useExchangeStream} from '../../shared/api/useExchangeStream';
+import {liveNumber as number,useExchangeStream,type ExchangeSnapshot,type LiveOrder} from '../../shared/api/useExchangeStream';
 import {Button,StatusBadge} from '../../shared/ui/ui';
-import {estimateOrderSize} from './orderSizing';
+import {estimateOrderSize,sizeForMarginShare} from './orderSizing';
 import PositionProtection from './PositionProtection';
-import type {ExchangeSnapshot} from '../../shared/api/useExchangeStream';
 
 type Props={venue:ExchangeVenue;asset:string;connected:boolean;busy:boolean;blocked:boolean;botRunning:boolean;leverage:string;minimumLeverage:number;maximumLeverage:number;leverageLoading:boolean;onLeverageChange:(value:string)=>void;onRun:(path:string,body:unknown)=>Promise<boolean>};
+type Direction='long'|'short';
+type OrderType='market'|'limit';
+type SizeUnit='asset'|'USDT';
 
 export default function ManualOrderTicket(props:Props){
   const {data,connected:streamConnected}=useExchangeStream(props.venue);
@@ -16,31 +18,55 @@ export default function ManualOrderTicket(props:Props){
 /** Editable starting funds shown in place of available margin (paper, before a session starts). */
 export type InitialBalance={value:number;onChange:(value:number)=>void};
 
+const SIZE_STEPS=[25,50,75,100] as const;
+const positive=(text:string)=>Number.isFinite(Number(text))&&Number(text)>0;
+/** Resting entry orders the ticket can cancel; TP/SL triggers are managed with the position. */
+export const isEntryOrder=(order:LiveOrder)=>order.type==='limit'&&order.triggerPrice==null&&order.status!=='closed'&&order.status!=='canceled';
+
+/**
+ * Exchange-style order ticket (HTX / Hyperliquid layout) shared by paper and live trading:
+ * Open/Close, margin mode and leverage, Market/Limit, size with a margin slider, TP/SL, Buy/Long and Sell/Short.
+ */
 export function OrderTicket({venue,asset,connected,busy,blocked,botRunning,leverage,minimumLeverage,maximumLeverage,leverageLoading,onLeverageChange,onRun,data,streamConnected,paper=false,initialBalance}:Props&{data:ExchangeSnapshot|null;streamConnected:boolean;paper?:boolean;initialBalance?:InitialBalance}){
   const leverageOptions=Array.from({length:Math.max(0,maximumLeverage-minimumLeverage+1)},(_,index)=>index+minimumLeverage);
   const [action,setAction]=useState<'open'|'close'>('open');
+  const [orderType,setOrderType]=useState<OrderType>('market');
+  const [limitPrice,setLimitPrice]=useState('');
   const [size,setSize]=useState('');
-  const [unit,setUnit]=useState<'asset'|'USDT'>('USDT');
+  const [unit,setUnit]=useState<SizeUnit>('USDT');
   const [stop,setStop]=useState('');
   const [takeProfit,setTakeProfit]=useState('');
   const [useStop,setUseStop]=useState(true),[useTakeProfit,setUseTakeProfit]=useState(false);
   const [confirmed,setConfirmed]=useState(false);
   const [editingProtection,setEditingProtection]=useState(false);
-  const price=data?.market?.last;
+
   const collateral=venue==='hyperliquid'?'USDC':'USDT';
   const priceDigits=asset==='STABLE'?5:3;
-  const {quantity,notional,margin}=estimateOrderSize(size,unit,price,Number(leverage));
+  const marketPrice=data?.market?.last;
+  const limit=orderType==='limit';
+  // Live exchanges need an open position for reduce-only TP/SL, so a live limit entry adds them after it fills.
+  const protectionAvailable=!limit||paper;
+  const entryPrice=limit?(positive(limitPrice)?Number(limitPrice):null):marketPrice;
+  const available=initialBalance?initialBalance.value:data?.balance?.free;
+  const lever=Number(leverage);
+  const {quantity,notional,margin}=estimateOrderSize(size,unit,entryPrice,lever);
+  const sizeShare=margin!=null&&available!=null&&available>0?Math.min(100,Math.round(margin/available*100)):0;
   const position=data?.positions?.length===1?data.positions[0]:null;
   const positionOpen=(data?.positions?.length??0)>0;
+  const entryOrders=(data?.orders??[]).filter(isEntryOrder);
   const accountVerified=streamConnected&&data?.positions!=null&&!data.errors.positions&&!data.errors.connection;
   const disabled=!connected||busy||blocked||botRunning||!accountVerified;
+  const inputsDisabled=disabled||positionOpen;
   const closeDisabled=!connected||busy||botRunning||!accountVerified||(venue!=='htx'&&blocked);
-  const validPrice=price!=null&&Number.isFinite(price)&&price>0;
-  const stopValid=!useStop||(Number.isFinite(Number(stop))&&Number(stop)>0);
-  const takeProfitValid=!useTakeProfit||(Number.isFinite(Number(takeProfit))&&Number(takeProfit)>0);
-  const validLeverage=Number.isInteger(Number(leverage))&&Number(leverage)>=minimumLeverage&&Number(leverage)<=maximumLeverage;
-  const openDisabled=leverageLoading||!validLeverage||disabled||positionOpen||!confirmed||quantity==null||!stopValid||!takeProfitValid||!validPrice||data?.streams.market!=='live';
-  // Why Open Long/Short are unavailable, first reason that applies.
+  const validPrice=entryPrice!=null&&Number.isFinite(entryPrice)&&entryPrice>0;
+  const stopOn=protectionAvailable&&useStop,takeProfitOn=protectionAvailable&&useTakeProfit;
+  const stopValid=!stopOn||positive(stop);
+  const takeProfitValid=!takeProfitOn||positive(takeProfit);
+  const validLeverage=Number.isInteger(lever)&&lever>=minimumLeverage&&lever<=maximumLeverage;
+  const marketLive=data?.streams.market==='live';
+  const pendingEntry=paper&&entryOrders.length>0;
+  const openDisabled=leverageLoading||!validLeverage||disabled||positionOpen||pendingEntry||!confirmed||quantity==null||!stopValid||!takeProfitValid||!validPrice||!marketLive;
+  // Why Buy/Sell are unavailable, first reason that applies.
   const openBlockReason=!connected?'Connect the exchange account first.'
     :leverageLoading?'Reading market leverage from the exchange.'
     :!validLeverage?'Choose supported leverage for this market.'
@@ -48,52 +74,81 @@ export function OrderTicket({venue,asset,connected,busy,blocked,botRunning,lever
     :blocked?'Live trading is blocked for this account.'
     :!accountVerified?'Waiting for verified account and position data from the exchange.'
     :positionOpen?null
-    :data?.streams.market!=='live'?'No live price from the exchange: the market may be closed or the price feed is reconnecting.'
-    :!validPrice?'No current market price yet.'
+    :pendingEntry?'Cancel the open order below before placing another.'
+    :!marketLive?'No live price from the exchange: the market may be closed or the price feed is reconnecting.'
+    :!validPrice?(limit?'Enter the limit price.':'No current market price yet.')
     :quantity==null?'Enter the order size.'
     :!stopValid?'Enter a stop loss price or turn Stop loss off.'
     :!takeProfitValid?'Enter a take profit price or turn Take profit off.'
     :!confirmed?'Tick the confirmation box to enable the order buttons.'
     :null;
-  const stopWrongSide=(direction:'long'|'short')=>useStop&&(direction==='long'?Number(stop)>=price!:Number(stop)<=price!);
-  const takeProfitWrongSide=(direction:'long'|'short')=>useTakeProfit&&(direction==='long'?Number(takeProfit)<=price!:Number(takeProfit)>=price!);
+  // Protection is checked against the entry price: the limit price, or the market for a market order.
+  const stopWrongSide=(direction:Direction)=>validPrice&&stopOn&&(direction==='long'?Number(stop)>=entryPrice:Number(stop)<=entryPrice);
+  const takeProfitWrongSide=(direction:Direction)=>validPrice&&takeProfitOn&&(direction==='long'?Number(takeProfit)<=entryPrice:Number(takeProfit)>=entryPrice);
+  const sideDisabled=(direction:Direction)=>openDisabled||stopWrongSide(direction)||takeProfitWrongSide(direction);
 
-  async function open(direction:'long'|'short'){
-    if(openDisabled||stopWrongSide(direction)||takeProfitWrongSide(direction))return;
-    const order={direction,quantity,stop_price:useStop?Number(stop):null,take_profit_price:useTakeProfit?Number(takeProfit):null,leverage:Number(leverage)};
+  function resetConfirmation(){setConfirmed(false);}
+  function chooseShare(share:number){
+    setSize(sizeForMarginShare(share,available,unit,entryPrice,lever));
+    resetConfirmation();
+  }
+  async function open(direction:Direction){
+    if(sideDisabled(direction))return;
+    const order={direction,quantity,leverage:lever,order_type:orderType,limit_price:limit?entryPrice:null,
+      stop_price:stopOn?Number(stop):null,take_profit_price:takeProfitOn?Number(takeProfit):null};
     const ok=await onRun(paper?'/api/paper/manual/order':'/api/exchange/order',paper?{...order,request_id:crypto.randomUUID()}:{...order,venue,confirmation:'PLACE LIVE ORDER'});
-    if(ok){setConfirmed(false);setSize('');}
+    if(ok){resetConfirmation();setSize('');}
   }
   async function close(){
     if(!position||(!paper&&!window.confirm(`Close the entire ${position.side} ${asset}/${collateral} position with a reduce-only market order?`)))return;
     await onRun(paper?'/api/paper/manual/close':'/api/exchange/close',paper?{}:{venue,side:position.side,margin_mode:position.marginMode,confirmation:'CLOSE LIVE POSITION'});
   }
+  async function cancel(order:LiveOrder){
+    await onRun(paper?'/api/paper/manual/cancel':'/api/exchange/cancel',paper?{}:{venue,order_id:order.id});
+  }
 
   return <div className="order-ticket">
-    <div className="ticket-segment" role="group" aria-label="Order action">{(['open','close'] as const).map(value=><button key={value} type="button" aria-pressed={action===value} onClick={()=>{setAction(value);setConfirmed(false);}}>{value==='open'?'Open':'Close'}</button>)}</div>
+    <div className="ticket-segment" role="group" aria-label="Order action">{(['open','close'] as const).map(value=><button key={value} type="button" aria-pressed={action===value} onClick={()=>{setAction(value);resetConfirmation();}}>{value==='open'?'Open':'Close'}</button>)}</div>
+    <div className="ticket-mode-row"><StatusBadge>Isolated</StatusBadge><label><span className="sr-only">Order leverage</span><select aria-label="Order leverage" value={leverage} disabled={inputsDisabled||leverageLoading} onChange={event=>onLeverageChange(event.target.value)}>{leverageOptions.map(value=><option key={value} value={value}>{value}x</option>)}</select></label></div>
     {action==='open'?<>
-      <div className="ticket-mode-row"><StatusBadge>Isolated margin</StatusBadge><label><span className="sr-only">Order leverage</span><select aria-label="Order leverage" value={leverage} disabled={disabled||leverageLoading||positionOpen} onChange={event=>onLeverageChange(event.target.value)}>{leverageOptions.map(value=><option key={value} value={value}>{value}x</option>)}</select></label></div>
-      <div className="ticket-order-type"><strong>Market</strong><span>Immediate execution</span></div>
+      <div className="ticket-type-tabs" role="tablist" aria-label="Order type">{(['market','limit'] as const).map(value=><button key={value} type="button" role="tab" aria-selected={orderType===value} onClick={()=>{setOrderType(value);resetConfirmation();}}>{value==='market'?'Market':'Limit'}</button>)}</div>
       {initialBalance?<label className="ticket-available ticket-initial-balance"><span>Initial balance</span><span><input type="number" aria-label="Initial balance" required min={1} max={1e9} step="any" value={Number.isFinite(initialBalance.value)?initialBalance.value:''} disabled={busy} onChange={event=>initialBalance.onChange(event.target.valueAsNumber)}/><small>{collateral}</small></span></label>
-        :<div className="ticket-available"><span>Available margin</span><strong>{number(data?.balance?.free,4)} <small>{collateral}</small></strong></div>}
-      <div className="ticket-market-price"><span>Market price</span><strong>{number(price,priceDigits)} <small>{collateral}</small></strong></div>
-      <label className="ticket-size"><span>{unit==='USDT'?'Margin':'Position size'}</span><div><input aria-label="Position size" type="number" min="0" step="any" placeholder="Enter amount" value={size} disabled={disabled||positionOpen} onChange={event=>setSize(event.target.value)}/><select aria-label="Position size unit" value={unit} onChange={event=>{setUnit(event.target.value as 'asset'|'USDT');setSize('');setConfirmed(false);}}><option value="USDT">{collateral}</option><option value="asset">{asset}</option></select></div></label>
-      <fieldset className="ticket-tpsl"><legend>TP / SL</legend>
-        <label className="ticket-option"><input type="checkbox" checked={useStop} disabled={disabled||positionOpen} onChange={event=>{setUseStop(event.target.checked);setConfirmed(false);}}/><span>Stop loss</span><small>{paper?'Simulated trigger on market updates':'Reduce-only trigger at the exchange'}</small></label>
-        {useStop&&<label className="ui-field ticket-stop"><span>Stop loss price <small>{collateral}</small></span><input type="number" aria-label="Stop loss price" min="0" step="any" placeholder={price?`Long: below ${price} · Short: above`:'Stop loss price'} value={stop} disabled={disabled||positionOpen} onChange={event=>setStop(event.target.value)}/></label>}
-        <label className="ticket-option"><input type="checkbox" checked={useTakeProfit} disabled={disabled||positionOpen} onChange={event=>{setUseTakeProfit(event.target.checked);setConfirmed(false);}}/><span>Take profit</span><small>Closes the whole position at the target</small></label>
-        {useTakeProfit&&<label className="ui-field ticket-stop"><span>Take profit price <small>{collateral}</small></span><input type="number" aria-label="Take profit price" min="0" step="any" placeholder="Take profit price" value={takeProfit} disabled={disabled||positionOpen} onChange={event=>setTakeProfit(event.target.value)}/></label>}
+        :<div className="ticket-available"><span>Available to trade</span><strong>{number(available,4)} <small>{collateral}</small></strong></div>}
+      {limit?<label className="ticket-size ticket-price"><span>Price <small>{collateral}</small></span><div>
+          <input aria-label="Limit price" type="number" min="0" step="any" placeholder="Limit price" value={limitPrice} disabled={inputsDisabled} onChange={event=>{setLimitPrice(event.target.value);resetConfirmation();}}/>
+          <button type="button" className="ticket-price-last" disabled={inputsDisabled||marketPrice==null} onClick={()=>{if(marketPrice!=null)setLimitPrice(String(marketPrice));resetConfirmation();}}>Last</button>
+        </div></label>
+        :<div className="ticket-market-price"><span>Market price</span><strong>{number(marketPrice,priceDigits)} <small>{collateral}</small></strong></div>}
+      <label className="ticket-size"><span>{unit==='USDT'?'Margin':'Size'}</span><div><input aria-label="Order size" type="number" min="0" step="any" placeholder="Enter amount" value={size} disabled={inputsDisabled} onChange={event=>{setSize(event.target.value);resetConfirmation();}}/><select aria-label="Order size unit" value={unit} onChange={event=>{setUnit(event.target.value as SizeUnit);setSize('');resetConfirmation();}}><option value="USDT">{collateral}</option><option value="asset">{asset}</option></select></div></label>
+      <div className="ticket-share">
+        <input type="range" aria-label="Margin share of available funds" min={0} max={100} step={1} value={sizeShare} disabled={inputsDisabled||!available||!validPrice} onChange={event=>chooseShare(Number(event.target.value))}/>
+        <output>{sizeShare}%</output>
+        <div className="ticket-share-steps">{SIZE_STEPS.map(step=><button key={step} type="button" aria-pressed={sizeShare===step} disabled={inputsDisabled||!available||!validPrice} onClick={()=>chooseShare(step)}>{step}%</button>)}</div>
+      </div>
+      {protectionAvailable?<fieldset className="ticket-tpsl"><legend>TP / SL</legend>
+        <label className="ticket-option"><input type="checkbox" checked={useStop} disabled={inputsDisabled} onChange={event=>{setUseStop(event.target.checked);resetConfirmation();}}/><span>Stop loss</span><small>{paper?'Simulated trigger on market updates':'Reduce-only trigger at the exchange'}</small></label>
+        {useStop&&<label className="ui-field ticket-stop"><span>Stop loss price <small>{collateral}</small></span><input type="number" aria-label="Stop loss price" min="0" step="any" placeholder={validPrice?`Long: below ${entryPrice} · Short: above`:'Stop loss price'} value={stop} disabled={inputsDisabled} onChange={event=>setStop(event.target.value)}/></label>}
+        <label className="ticket-option"><input type="checkbox" checked={useTakeProfit} disabled={inputsDisabled} onChange={event=>{setUseTakeProfit(event.target.checked);resetConfirmation();}}/><span>Take profit</span><small>Closes the whole position at the target</small></label>
+        {useTakeProfit&&<label className="ui-field ticket-stop"><span>Take profit price <small>{collateral}</small></span><input type="number" aria-label="Take profit price" min="0" step="any" placeholder="Take profit price" value={takeProfit} disabled={inputsDisabled} onChange={event=>setTakeProfit(event.target.value)}/></label>}
         {!useStop&&<p className="ticket-warning">No stop loss: losses are not limited. Leveraged positions can be liquidated.</p>}
-      </fieldset>
-      <div className="ticket-estimates"><div><span>Estimated size</span><b>{number(quantity)} {asset}</b></div><div><span>Position value</span><b>{number(notional,2)} {collateral}</b></div><div><span>Estimated margin</span><b>{number(margin,4)} {collateral}</b></div></div>
-      <label className="ticket-confirm"><input type="checkbox" checked={confirmed} disabled={disabled||positionOpen} onChange={event=>setConfirmed(event.target.checked)}/><span>{paper?'Use virtual funds for this paper order.':'I confirm this places a real market order.'}</span></label>
-      <div className="ticket-submit-row"><Button className="ticket-buy" disabled={openDisabled||stopWrongSide('long')||takeProfitWrongSide('long')} onClick={()=>void open('long')}>{busy?'Submitting...':'Open Long'}</Button><Button className="ticket-sell" disabled={openDisabled||stopWrongSide('short')||takeProfitWrongSide('short')} onClick={()=>void open('short')}>{busy?'Submitting...':'Open Short'}</Button></div>
+      </fieldset>:<p className="ticket-help ticket-tpsl-note">TP/SL for a limit entry are added after it fills: use Close → Edit TP/SL on the position.</p>}
+      <div className="ticket-estimates"><div><span>Order value</span><b>{number(notional,2)} {collateral}</b></div><div><span>Margin required</span><b>{number(margin,4)} {collateral}</b></div><div><span>Size</span><b>{number(quantity)} {asset}</b></div></div>
+      <label className="ticket-confirm"><input type="checkbox" checked={confirmed} disabled={inputsDisabled||pendingEntry} onChange={event=>setConfirmed(event.target.checked)}/><span>{paper?'Use virtual funds for this paper order.':`I confirm this places a real ${limit?'limit':'market'} order.`}</span></label>
+      <div className="ticket-submit-row"><Button className="ticket-buy" disabled={sideDisabled('long')} onClick={()=>void open('long')}>{busy?'Submitting...':'Buy / Long'}</Button><Button className="ticket-sell" disabled={sideDisabled('short')} onClick={()=>void open('short')}>{busy?'Submitting...':'Sell / Short'}</Button></div>
       {positionOpen&&<p className="ticket-help">A {asset} position is already open. Select Close to manage it.</p>}
       {!busy&&openBlockReason&&<p className="ticket-help">{openBlockReason}</p>}
     </>:<div className="ticket-close-panel">
       <div className="ticket-order-type"><strong>Market close</strong><StatusBadge>Reduce only</StatusBadge></div>
-      {position?<><div className="ticket-position"><StatusBadge tone={position.side==='long'?'positive':'negative'}>{position.side.toUpperCase()}</StatusBadge><strong>{number(position.quantity)} {asset}</strong></div><dl><div><dt>Entry price</dt><dd>{number(position.entryPrice,3)}</dd></div><div><dt>Mark price</dt><dd>{number(position.markPrice,3)}</dd></div><div><dt>Unrealized PnL</dt><dd className={(position.unrealizedPnl??0)<0?'negative':'positive'}>{number(position.unrealizedPnl,4)} {collateral}</dd></div></dl><Button variant="danger" disabled={closeDisabled} onClick={()=>void close()}>Close entire {position.side} position</Button>{(position.side==='long'||position.side==='short')&&<><Button variant="secondary" disabled={disabled} onClick={()=>setEditingProtection(true)}>Edit TP/SL</Button>{editingProtection&&<PositionProtection paper={paper} venue={venue} asset={asset} side={position.side} quantity={position.quantity} entryPrice={position.entryPrice} price={position.markPrice??price} disabled={disabled} onRun={onRun} onClose={()=>setEditingProtection(false)}/>}</>}</>:<p className="ticket-help">{!accountVerified?'Waiting for verified position data.':positionOpen?'Multiple positions detected. Use the Close button on each row in Positions.':`No open ${asset} position to close.`}</p>}
+      {position?<><div className="ticket-position"><StatusBadge tone={position.side==='long'?'positive':'negative'}>{position.side.toUpperCase()}</StatusBadge><strong>{number(position.quantity)} {asset}</strong></div><dl><div><dt>Entry price</dt><dd>{number(position.entryPrice,priceDigits)}</dd></div><div><dt>Mark price</dt><dd>{number(position.markPrice,priceDigits)}</dd></div><div><dt>Unrealized PnL</dt><dd className={(position.unrealizedPnl??0)<0?'negative':'positive'}>{number(position.unrealizedPnl,4)} {collateral}</dd></div></dl><Button variant="danger" disabled={closeDisabled} onClick={()=>void close()}>Close entire {position.side} position</Button>{(position.side==='long'||position.side==='short')&&<><Button variant="secondary" disabled={disabled} onClick={()=>setEditingProtection(true)}>Edit TP/SL</Button>{editingProtection&&<PositionProtection paper={paper} venue={venue} asset={asset} side={position.side} quantity={position.quantity} entryPrice={position.entryPrice} price={position.markPrice??marketPrice} disabled={disabled} onRun={onRun} onClose={()=>setEditingProtection(false)}/>}</>}</>:<p className="ticket-help">{!accountVerified?'Waiting for verified position data.':positionOpen?'Multiple positions detected. Use the Close button on each row in Positions.':`No open ${asset} position to close.`}</p>}
     </div>}
+    {entryOrders.length>0&&<section className="ticket-open-orders" aria-label="Open orders">
+      <h3>Open orders <small>{entryOrders.length}</small></h3>
+      <ul>{entryOrders.map(order=><li key={order.id}>
+        <StatusBadge tone={order.side==='buy'?'positive':'negative'}>{order.side==='buy'?'LONG':'SHORT'}</StatusBadge>
+        <span>{number(order.quantity)} {asset} @ {number(order.price,priceDigits)}</span>
+        <Button variant="ghost" disabled={busy||!connected} onClick={()=>void cancel(order)}>Cancel</Button>
+      </li>)}</ul>
+    </section>}
     {botRunning&&<p className="ticket-help">Stop the running strategy to enable manual orders.</p>}
   </div>;
 }

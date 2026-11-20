@@ -302,6 +302,30 @@ class LiveOrderSafetyTests(unittest.TestCase):
         self.assertEqual(callback.call_count, 2)
         callback.assert_called_with('htx')
 
+    def test_limit_entry_rounds_price_and_never_opens_over_a_position(self) -> None:
+        self.exchange.amount_to_precision.side_effect = lambda symbol, amount: amount
+        self.exchange.price_to_precision.side_effect = lambda symbol, price: round(price, 2)
+        self.exchange.create_order.return_value = {'id': 'resting', 'amount': 2, 'status': 'open'}
+        self.service.prepare_account = MagicMock()
+        self.service._htx_with_position_side = lambda exchange, side, place: place(side)
+        with patch.object(self.service, 'positions', return_value=[]):
+            result = self.service.open_limit('htx', 'long', 2, 41.234, leverage=5)
+        self.service.prepare_account.assert_called_once_with('htx', 5)
+        args = self.exchange.create_order.call_args.args
+        self.assertEqual(args[1:5], ('limit', 'buy', 2, 41.23))
+        self.assertEqual(result['limitPrice'], 41.23)
+        with patch.object(self.service, 'positions', return_value=[{'contracts': 1}]), self.assertRaises(ValueError):
+            self.service.open_limit('htx', 'short', 2, 45)
+
+    def test_cancel_order_uses_market_symbol_and_isolated_htx_account(self) -> None:
+        self.exchange.cancel_order.return_value = {'status': 'canceled'}
+        callback = MagicMock()
+        self.service.on_execution = callback
+        result = self.service.cancel_order('htx', 'abc')
+        self.exchange.cancel_order.assert_called_once_with('abc', 'XAG/USDT:USDT', {'marginMode': 'isolated'})
+        self.assertEqual(result['order'], {'id': 'abc', 'status': 'canceled'})
+        callback.assert_called_once_with('htx')
+
     def test_close_targets_each_classic_margin_account(self) -> None:
         self.market['id'] = 'XAG-USDT'
         self.exchange.options = {'localAccountApi': 'classic'}

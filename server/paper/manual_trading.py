@@ -49,6 +49,25 @@ class ManualPaperTrading:
             raise ValueError('Invalid exchange price')
         return price, now
 
+    @staticmethod
+    def check_protection(direction: int, price: float, stop: float | None, target: float | None, basis: str) -> None:
+        if stop is not None and (price-stop)*direction <= 0:
+            raise ValueError(f'Stop loss must be on the losing side of the {basis}')
+        if target is not None and (target-price)*direction <= 0:
+            raise ValueError(f'Take profit must be on the profitable side of the {basis}')
+
+    def open_manual(self, order: dict, price: float, now: int) -> None:
+        """Fill a virtual entry at `price`; `order` holds direction, quantity, leverage and protection."""
+        state = self.state
+        margin = order['quantity']*price/order['leverage']
+        if margin > state['balance'] or margin <= 0:
+            raise ValueError('Insufficient virtual margin')
+        state['settings']['max_leverage'] = order['leverage']
+        state['openPosition'] = dict(direction=order['direction'], entry_time=now, entry_price=price,
+            quantity=order['quantity'], stop=order.get('stop') or 0, take_profit=order.get('take_profit'),
+            trailing_active=False, leverage=order['leverage'], margin=margin)
+        state.update(latestPrice=price, quoteTime=now, equity=state['balance'])
+
     def manual_order(self, request):
         # Fetch outside the account lock; recheck session and bot ownership afterwards.
         with self.lock:
@@ -64,21 +83,33 @@ class ManualPaperTrading:
                 return self.status()
             if not state['running'] or state['halted'] or state['openPosition']:
                 raise ValueError('Manual account is paused or already has an open position')
+            if state.get('pendingOrder'):
+                raise ValueError('Cancel the open limit order before placing another')
             direction = 1 if request.direction == 'long' else -1
-            stop, target = request.stop_price, request.take_profit_price
-            if stop is not None and (price-stop)*direction <= 0:
-                raise ValueError('Stop loss must be on the losing side of the entry price')
-            if target is not None and (target-price)*direction <= 0:
-                raise ValueError('Take profit must be on the profitable side of the entry price')
-            margin = request.quantity*price/request.leverage
-            if margin > state['balance'] or margin <= 0:
+            order = dict(direction=direction, quantity=request.quantity, leverage=request.leverage,
+                         stop=request.stop_price, take_profit=request.take_profit_price)
+            limit = request.limit_price if request.order_type == 'limit' else None
+            # A limit priced through the market fills now at the market price, like an exchange taker order.
+            resting = limit is not None and (price-limit)*direction > 0
+            entry = limit if resting else price
+            self.check_protection(direction, entry, order['stop'], order['take_profit'],
+                                  'limit price' if resting else 'entry price')
+            if request.quantity*entry/request.leverage > state['balance']:
                 raise ValueError('Insufficient virtual margin')
-            state['settings']['max_leverage'] = request.leverage
-            state['openPosition'] = dict(direction=direction, entry_time=now, entry_price=price,
-                quantity=request.quantity, stop=stop or 0, take_profit=target, trailing_active=False,
-                leverage=request.leverage, margin=margin)
+            if resting:
+                state['pendingOrder'] = dict(order, id=request.request_id, type='limit', price=limit, created_at=now)
+                state.update(latestPrice=price, quoteTime=now)
+            else:
+                self.open_manual(order, price, now)
             state['manualRequests'] = (state.get('manualRequests', [])+[request.request_id])[-50:]
-            state.update(latestPrice=price, quoteTime=now, equity=state['balance'])
+            self.save(force=True)
+            return self.status()
+
+    def manual_cancel(self):
+        with self.lock:
+            if not self.state or not self.state.get('pendingOrder'):
+                raise ValueError('No open paper order to cancel')
+            self.state['pendingOrder'] = None
             self.save(force=True)
             return self.status()
 
@@ -116,9 +147,23 @@ class ManualPaperTrading:
                 self.finish_manual(price, now, 'manual_close')
             return self.status()
 
+    def fill_pending(self, price: float, now: int) -> None:
+        """Fill a resting virtual limit order once the market trades at or through its price."""
+        state, order = self.state, self.state.get('pendingOrder')
+        if not order or state['openPosition'] or (price-order['price'])*order['direction'] > 0:
+            return
+        state['pendingOrder'] = None
+        try:
+            self.open_manual(order, order['price'], now)
+        except ValueError as error:
+            state['quoteError'] = f'Limit order cancelled: {error}'
+        self.save(force=True)
+
     def mark_manual(self, price: float, now: int) -> None:
-        state, position = self.state, self.state['openPosition']
+        state = self.state
         state.update(latestPrice=price, quoteTime=now, virtualTime=now)
+        self.fill_pending(price, now)
+        position = state['openPosition']
         if position:
             direction = position['direction']
             stop, target = position.get('stop'), position.get('take_profit')

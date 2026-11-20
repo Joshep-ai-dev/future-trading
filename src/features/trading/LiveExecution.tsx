@@ -57,8 +57,8 @@ export default function LiveExecution({view,settings,onSettingsChange,onConfigur
       if(path==='/api/exchange/disconnect')disconnectExchangeStream(venue);
       if(path==='/api/exchange/connect'||path==='/api/exchange/reconnect')reconnectExchangeStream(venue);
       if(path==='/api/exchange/auto/start'){setMode('bot');}
-      if(path==='/api/exchange/order'||path==='/api/exchange/close'||path==='/api/exchange/protection'){
-        if(result.order)setMessage(`Order ${result.order.id} | ${result.order.side} | ${result.order.status??'accepted'}${result.takeProfitError?` | ${result.takeProfitError}`:''}. See Positions for filled market orders.`);
+      if(path==='/api/exchange/order'||path==='/api/exchange/cancel'||path==='/api/exchange/close'||path==='/api/exchange/protection'){
+        if(result.order&&path==='/api/exchange/order')setMessage(`Order ${result.order.id} | ${result.order.type??'market'} ${result.order.side} | ${result.order.status??'accepted'}${result.takeProfitError?` | ${result.takeProfitError}`:''}. ${result.order.type==='limit'?'It rests in Open orders until it fills.':'See Positions for filled market orders.'}`);
         window.dispatchEvent(new CustomEvent('exchange-order-updated',{detail:{venue}}));
         void refresh();
         return true;

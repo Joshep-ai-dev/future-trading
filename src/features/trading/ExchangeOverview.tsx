@@ -3,7 +3,7 @@ import {api} from '../../shared/api/api';
 import type {ExchangeVenue} from '../../shared/api/exchangeVenue';
 import {AssetTable,OrderTable,PositionTable} from './ExchangeTables';
 import {EmptyState,Panel,TabBar} from '../../shared/ui/ui';
-import {useExchangeStream,type LivePosition} from '../../shared/api/useExchangeStream';
+import {useExchangeStream,type LiveOrder,type LivePosition} from '../../shared/api/useExchangeStream';
 import LiveTradeHistory from './LiveTradeHistory';
 import {BotEventLog} from './TradingHistory';
 import PatternPanel from './PatternPanel';
@@ -43,6 +43,16 @@ export default function ExchangeOverview({venue}:{venue:ExchangeVenue}){
         body:JSON.stringify({venue,side:position.side,margin_mode:position.marginMode,confirmation:'CLOSE LIVE POSITION'}),
       });
       setMessage(result.message??'Close submitted. Waiting for exchange confirmation.');
+    }catch(reason){setMessage(String(reason));}finally{setBusy(false);}
+  }
+
+  async function cancelOrder(order:LiveOrder){
+    if(!window.confirm(`Cancel the ${order.side} ${order.type} order for ${order.quantity} ${asset}?`))return;
+    setBusy(true);setMessage('');
+    try{
+      const result=await api<{message?:string}>('/api/exchange/cancel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({venue,order_id:order.id})});
+      setMessage(result.message??'Cancel submitted.');
+      window.dispatchEvent(new CustomEvent('exchange-order-updated',{detail:{venue}}));
     }catch(reason){setMessage(String(reason));}finally{setBusy(false);}
   }
 
@@ -92,7 +102,7 @@ export default function ExchangeOverview({venue}:{venue:ExchangeVenue}){
         </>:
         !sectionError&&<EmptyState compact title={positions?`No open ${asset} positions`:'Loading positions'} description={positions?'Your exchange positions will appear here automatically.':'Waiting for a verified account snapshot.'}/>)}
       {tab==='orders'&&(orders?.length?
-        <OrderTable asset={asset} collateral={collateral} orders={orders}/>:
+        <OrderTable asset={asset} collateral={collateral} orders={orders} disabled={busy||!connected} canCancel={order=>(data?.orders??[]).some(item=>item.id===order.id)} onCancel={order=>void cancelOrder(order)}/>:
         !sectionError&&<EmptyState compact title={orders?'No open orders for this market':'Loading orders'} description={venue==='htx'?'Includes standard, TP/SL, trigger and trailing orders from isolated and cross accounts.':'Orders are shown for the selected exchange and market.'}/>)}
       {tab==='assets'&&<AssetTable balance={data?.balance}/>}
       {tab==='history'&&<LiveTradeHistory venue={venue}/>}
