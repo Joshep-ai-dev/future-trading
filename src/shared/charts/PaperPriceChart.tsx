@@ -36,7 +36,6 @@ import {
   CandlestickSeries,
   createChart,
   createSeriesMarkers,
-  HistogramSeries,
   LineSeries,
   LineStyle,
   type IChartApi,
@@ -51,7 +50,6 @@ import ChartTools, {
 } from "./ChartTools";
 import type { Analysis } from "../types/types";
 import type { PaperTrade, Position } from "../../features/trading/PaperTrading";
-import { chartVolume } from "./chartVolume";
 import PatternRangeAnalyzer from "./PatternRangeAnalyzer";
 import ChartTimeNavigator from "./ChartTimeNavigator";
 
@@ -166,13 +164,6 @@ export default function PaperPriceChart(props: Props) {
     price
       .priceScale()
       .applyOptions({ scaleMargins: { top: 0.06, bottom: 0.1 } });
-    const volume = chart.addSeries(HistogramSeries, {
-      priceScaleId: "",
-      priceFormat: { type: "volume" },
-      lastValueVisible: false,
-      priceLineVisible: false,
-    });
-    volume.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
     const detachDrawings = drawing.attach(chart, price, container.current);
     const renderer = new StudyRenderer(chart, price);
     let studyValues = new Map<number, Record<string, StudyValue[]>>();
@@ -371,7 +362,6 @@ export default function PaperPriceChart(props: Props) {
         price.setData(
           data.candles.map((c) => ({ ...c, time: c.time as UTCTimestamp })),
         );
-      volume.setData(chartVolume(data.candles));
 
       const duration = TIMEFRAMES[props.timeframe as keyof typeof TIMEFRAMES];
       const completed = data.candles.filter(

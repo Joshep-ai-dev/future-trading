@@ -135,6 +135,11 @@ export const INDICATOR_SCHEMAS:Readonly<Record<SettingsKind,IndicatorSchema>>={
     ],
     rules:[{test:c=>c.macdFast<c.macdSlow,message:'Fast length must be shorter than slow length.',keys:['macdFast','macdSlow']}],
   },
+  volume:{
+    title:'Volume',
+    inputs:[{type:'check',key:'volumeShowMa',label:'Show moving average'},length('volumeMaLength','MA length')],
+    style:[color('volumeUpColor','Growing'),color('volumeDownColor','Falling'),color('volumeMaColor','Volume MA'),width('volumeMaWidth')],
+  },
   vwap:{
     title:'VWAP',
     inputs:[

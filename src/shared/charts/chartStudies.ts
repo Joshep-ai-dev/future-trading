@@ -6,13 +6,15 @@ import {normalizeIndicatorConfig,readIndicatorSettings} from './indicatorSchema'
 export type StudyKind='ma'|OverlayKind|IndicatorKind;
 export type ChartStudy={id:string;kind:StudyKind;config:IndicatorConfig;hidden:boolean};
 
-export const STUDY_KINDS:readonly StudyKind[]=['ma','triplema','bollinger','supertrend','vwap','zigzag','rsi','macd','adx','atr'];
+export const STUDY_KINDS:readonly StudyKind[]=['volume','ma','triplema','bollinger','supertrend','vwap','zigzag','rsi','macd','adx','atr'];
 export const PANE_KINDS:readonly IndicatorKind[]=['rsi','macd','adx','atr'];
 export const isPaneStudy=(kind:StudyKind):kind is IndicatorKind=>(PANE_KINDS as readonly string[]).includes(kind);
 export const settingsKind=(kind:StudyKind):SettingsKind=>kind==='ma'?'trendsma':kind;
 
 const storageKey='silver.chart.studies.v1';
 const legacyKey='silver.chart.oscillators';
+/** Set once Volume (formerly always drawn by each chart) has been added to a saved list as a study. */
+const volumeMigratedKey='silver.chart.studies.volume';
 const changed='silver:chart-studies-changed';
 const EMPTY:ChartStudy[]=[];
 let current:ChartStudy[]|null=null;
@@ -30,8 +32,8 @@ function migrate():ChartStudy[]{
         .filter(kind=>kind==='bollinger'?old.bollinger!==false:old[kind]===true)
         .map(kind=>({id:newId(),kind,config,hidden:false}));
     }
-  }catch{/* Fall back to the default study. */}
-  return [{id:newId(),kind:'bollinger',config,hidden:false}];
+  }catch{/* Fall back to the default studies. */}
+  return [{id:newId(),kind:'volume',config,hidden:false},{id:newId(),kind:'bollinger',config,hidden:false}];
 }
 function read():ChartStudy[]{
   if(current)return current;
@@ -40,16 +42,26 @@ function read():ChartStudy[]{
     if(raw!==null){
       const parsed=JSON.parse(raw);
       if(Array.isArray(parsed)){
-        current=parsed
+        current=addVolumeOnce(parsed
           .filter(item=>item&&typeof item.id==='string'&&STUDY_KINDS.includes(item.kind))
-          .map(item=>({id:item.id,kind:item.kind,config:normalizeIndicatorConfig(item.config),hidden:item.hidden===true}));
+          .map(item=>({id:item.id,kind:item.kind,config:normalizeIndicatorConfig(item.config),hidden:item.hidden===true})));
         return current;
       }
     }
   }catch{/* Rebuild below. */}
   current=migrate();
-  try{localStorage.setItem(storageKey,JSON.stringify(current));}catch{/* Session only. */}
+  try{localStorage.setItem(storageKey,JSON.stringify(current));localStorage.setItem(volumeMigratedKey,'1');}catch{/* Session only. */}
   return current;
+}
+/** Charts used to draw volume themselves; saved lists get it once as a study, so removing it afterwards sticks. */
+function addVolumeOnce(studies:ChartStudy[]):ChartStudy[]{
+  try{
+    if(localStorage.getItem(volumeMigratedKey))return studies;
+    const next=studies.some(study=>study.kind==='volume')?studies:[{id:newId(),kind:'volume' as const,config:readIndicatorSettings(),hidden:false},...studies];
+    localStorage.setItem(storageKey,JSON.stringify(next));
+    localStorage.setItem(volumeMigratedKey,'1');
+    return next;
+  }catch{return studies;/* Storage unavailable: keep the saved list as is. */}
 }
 function save(next:ChartStudy[]){
   current=next;

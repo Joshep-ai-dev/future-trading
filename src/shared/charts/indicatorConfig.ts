@@ -5,7 +5,7 @@ import type {VwapAnchor} from './vwap';
 /** Studies drawn in their own pane under the price chart. */
 export type IndicatorKind='atr'|'adx'|'rsi'|'macd';
 /** Studies drawn over the price series. */
-export type OverlayKind='zigzag'|'supertrend'|'bollinger'|'triplema'|'vwap';
+export type OverlayKind='volume'|'zigzag'|'supertrend'|'bollinger'|'triplema'|'vwap';
 /** Settings dialogs: chart indicators plus the strategy's Trend SMA line. */
 export type SettingsKind=IndicatorKind|OverlayKind|'trendsma';
 
@@ -41,6 +41,8 @@ export type IndicatorConfig={
   macdFast:number;macdSlow:number;macdSignal:number;macdSource:PriceSource;macdOscillatorMa:MacdMa;macdSignalMa:MacdMa;
   macdColor:string;macdSignalColor:string;macdGrowAboveColor:string;macdFallAboveColor:string;
   macdGrowBelowColor:string;macdFallBelowColor:string;macdWidth:number;
+  // Volume (bars colored by candle direction, drawn at 50 % opacity like TradingView)
+  volumeShowMa:boolean;volumeMaLength:number;volumeUpColor:string;volumeDownColor:string;volumeMaColor:string;volumeMaWidth:number;
   // VWAP
   vwapAnchor:VwapAnchor;vwapSource:PriceSource;vwapShowBands:boolean;vwapBandMultiplier:number;
   vwapColor:string;vwapBandColor:string;vwapWidth:number;
@@ -63,6 +65,7 @@ export const defaultIndicators:Readonly<IndicatorConfig>={
   macdFast:12,macdSlow:26,macdSignal:9,macdSource:'close',macdOscillatorMa:'EMA',macdSignalMa:'EMA',
   macdColor:'#2962ff',macdSignalColor:'#ff6d00',macdGrowAboveColor:'#26a69a',macdFallAboveColor:'#b2dfdb',
   macdGrowBelowColor:'#ffcdd2',macdFallBelowColor:'#ff5252',macdWidth:1,
+  volumeShowMa:false,volumeMaLength:20,volumeUpColor:'#089981',volumeDownColor:'#f23645',volumeMaColor:'#2962ff',volumeMaWidth:1,
   vwapAnchor:'Session',vwapSource:'hlc3',vwapShowBands:true,vwapBandMultiplier:1,
   vwapColor:'#2962ff',vwapBandColor:'#4caf50',vwapWidth:1,
 };

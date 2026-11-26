@@ -13,7 +13,7 @@ import {AdxVisualizer,adxColor,adxLevels,diColors,levelColor} from './adxDisplay
 import {PaneBand} from './PaneBand';
 import type {IndicatorConfig,IndicatorKind} from './indicatorConfig';
 import {isPaneStudy,type ChartStudy} from './chartStudies';
-import type {LegendOverlay,StudyValue} from './ChartLegend';
+import {compactVolume,type LegendOverlay,type StudyValue} from './ChartLegend';
 import {TV} from './tvTheme';
 
 type Bar={time:number;open:number;high:number;low:number;close:number;volume?:number};
@@ -148,6 +148,32 @@ export class StudyRenderer{
         setVisible:visible=>overlay.setVisible(visible),
         dispose:()=>this.price.detachPrimitive(overlay)};
     }
+    if(study.kind==='volume'){
+      // Own overlay scale per instance, squeezed into the bottom fifth of the price pane.
+      const scale={priceScaleId:`volume-${study.id}`,priceFormat:{type:'volume' as const},lastValueVisible:false,priceLineVisible:false};
+      const bars=this.chart.addSeries(HistogramSeries,scale,0);
+      bars.priceScale().applyOptions({scaleMargins:{top:.8,bottom:0}});
+      const average=config.volumeShowMa?this.line(config.volumeMaColor,config.volumeMaWidth,0,{...scale,crosshairMarkerVisible:false}):null;
+      const up=alpha(config.volumeUpColor,.5),down=alpha(config.volumeDownColor,.5);
+      const series=[bars,...(average?[average]:[])];
+      return {study,
+        paint:({current},add)=>{
+          const rows=current.filter(c=>c.volume!=null&&Number.isFinite(c.volume));
+          bars.setData(rows.map(c=>({time:t(c.time),value:c.volume!,color:c.close>=c.open?up:down})));
+          const length=config.volumeMaLength;let sum=0;
+          const ma=rows.map((c,index)=>{
+            sum+=c.volume!;if(index>=length)sum-=rows[index-length].volume!;
+            return index+1<length?null:sum/length;
+          });
+          average?.setData(rows.map((c,index)=>ma[index]===null?{time:t(c.time)}:{time:t(c.time),value:ma[index]!}));
+          rows.forEach((c,index)=>add(c.time,[
+            {text:compactVolume(c.volume!),color:c.close>=c.open?config.volumeUpColor:config.volumeDownColor},
+            ...(average?[{text:ma[index]===null?'∅':compactVolume(ma[index]!),color:config.volumeMaColor}]:[]),
+          ]));
+        },
+        setVisible:visible=>series.forEach(item=>item.applyOptions({visible})),
+        dispose:()=>series.forEach(item=>this.chart.removeSeries(item))};
+    }
     if(study.kind==='vwap'){
       const format={priceFormat:{type:'price' as const,precision:3,minMove:.001}};
       const vwap=this.line(config.vwapColor,config.vwapWidth,0,{lastValueVisible:true,crosshairMarkerVisible:false,...format});
@@ -279,6 +305,7 @@ export function studyLegends(studies:readonly ChartStudy[],actions:{onSettings:(
   return studies.filter(study=>!isPaneStudy(study.kind)).map(study=>{
     const c:IndicatorConfig=study.config;
     const [name,params,color]=study.kind==='ma'?['MA',String(c.trendSmaLength),c.trendSmaColor]
+      :study.kind==='volume'?['Vol',c.volumeShowMa?`MA ${c.volumeMaLength}`:'',c.volumeUpColor]
       :study.kind==='triplema'?['Triple MA',`${c.maFast} ${c.maMid} ${c.maSlow}${c.maType==='EMA'?' EMA':''}`,c.maFastColor]
       :study.kind==='bollinger'?['BB',`${c.bbLength} ${c.bbMaType} ${c.bbSource} ${c.bbMultiplier}${c.bbOffset?` ${c.bbOffset}`:''}`,c.bbBasisColor]
       :study.kind==='zigzag'?['Zig Zag',`${c.zigzagDeviation}%`,c.zigzagColor]

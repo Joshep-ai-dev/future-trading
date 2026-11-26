@@ -5,7 +5,6 @@ import {
   CandlestickSeries,
   createChart,
   createSeriesMarkers,
-  HistogramSeries,
   LineSeries,
   BaselineSeries,
   LineStyle,
@@ -38,7 +37,6 @@ import {
   type IndicatorPoint,
   type BacktestSettings,
 } from "../types/types";
-import { chartVolume } from "./chartVolume";
 import ChartLegend, {
   legendData,
   type LegendData,
@@ -274,14 +272,6 @@ export default function BacktestChart({
       .priceScale()
       .applyOptions({ scaleMargins: { top: 0.06, bottom: 0.1 } });
     price.setData(view.map((c) => ({ ...c, time: c.time as UTCTimestamp })));
-    const volume = chart.addSeries(HistogramSeries, {
-      priceScaleId: "",
-      priceFormat: { type: "volume" },
-      lastValueVisible: false,
-      priceLineVisible: false,
-    });
-    volume.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
-    volume.setData(chartVolume(view));
     const detachDrawings = drawing.attach(chart, price, ref.current);
     drawing.setCandles(view, barSeconds);
     const renderer = new StudyRenderer(chart, price);

@@ -97,12 +97,6 @@ export default function ChartLegend({
           </span>
         )}
       </div>
-      {candle?.volume !== undefined && (
-        <div className='tv-legend-row'>
-          <span className='tv-legend-name'>Vol</span>
-          <span style={{ color }}>{compactVolume(candle.volume)}</span>
-        </div>
-      )}
       {!collapsed &&
         overlays.map((overlay) => (
           <div
