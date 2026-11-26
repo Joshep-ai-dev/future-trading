@@ -136,7 +136,7 @@ button:hover:not(:disabled) {
   color: #5b9cf6;
 }
 
-.brand-mark svg {
+.brand-mark img {
   width: 24px;
   height: 24px;
 }

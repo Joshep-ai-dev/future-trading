@@ -16,7 +16,7 @@
 .auth-card{align-self:center;justify-self:center;width:min(400px,calc(100% - 48px));padding:40px 0;border:0;background:transparent;box-shadow:none}
 .auth-brand{display:flex;align-items:center;gap:12px}.auth-brand strong,.auth-brand small{display:block}.auth-brand strong{color:var(--tv-blue-light);font-size:16px;letter-spacing:1px}.auth-brand small{margin-top:3px;color:var(--muted);font-size:8px;letter-spacing:2px}
 .auth-brand .brand-mark{display:grid;place-items:center;width:32px;height:32px;border-radius:8px;background:#ffffff14;color:var(--text)}
-.auth-brand .brand-mark svg{width:20px;height:20px}
+.auth-brand .brand-mark img{width:20px;height:20px}
 .auth-card .auth-brand{display:none;margin-bottom:38px}
 @media (max-width:900px){.auth-page{grid-template-columns:minmax(0,1fr);place-items:center;background:radial-gradient(circle at 50% 0,#272727 0,transparent 42%),var(--background)}.auth-hero{display:none}.auth-card{padding:34px;border:1px solid var(--border);border-radius:12px;background:#191919;box-shadow:0 24px 80px #0008}.auth-card .auth-brand{display:flex}}
 @media (max-width:480px){.auth-card{width:calc(100% - 24px);padding:26px 20px}}

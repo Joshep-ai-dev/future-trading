@@ -233,13 +233,13 @@ table tbody tr:hover td {
   height: 28px;
   border: 0;
   border-radius: 7px;
-  background: linear-gradient(140deg, #e0e0e0, #979797);
+  background: #151e2e;
   color: #0e0e0e;
 }
 
-.brand-mark svg {
-  width: 17px;
-  height: 17px;
+.brand-mark img {
+  width: 24px;
+  height: 24px;
 }
 
 .brand-sub {
