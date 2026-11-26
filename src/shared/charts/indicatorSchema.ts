@@ -1,4 +1,5 @@
 import {BB_MA_TYPES,BB_SOURCES} from './bollingerBands';
+import {VWAP_ANCHORS} from './vwap';
 import {defaultIndicators,type IndicatorConfig,type MaSmoothing,type MaType,type SettingsKind} from './indicatorConfig';
 
 type Config=IndicatorConfig;
@@ -36,6 +37,7 @@ export type SettingsIssue={keys:readonly ConfigKey[];message:string};
 export const LINE_WIDTHS=[1,2,3,4] as const;
 const MA_SMOOTHINGS:readonly MaSmoothing[]=['RMA','SMA','EMA','WMA'];
 const MA_TYPES:readonly MaType[]=['SMA','EMA'];
+const EMA_FIRST:readonly MaType[]=['EMA','SMA'];
 
 // Small builders keep the schema table readable.
 const length=(key:NumberKey,label='Length'):NumberField=>({type:'number',key,label,min:1,max:1000,step:1,integer:true});
@@ -116,6 +118,33 @@ export const INDICATOR_SCHEMAS:Readonly<Record<SettingsKind,IndicatorSchema>>={
       {type:'number',key:'atrThreshold',label:'Threshold',min:0},
     ],
     style:[color('atrColor','ATR'),width('atrWidth')],
+  },
+  macd:{
+    title:'MACD',
+    inputs:[
+      length('macdFast','Fast length'),length('macdSlow','Slow length'),
+      {type:'select',key:'macdSource',label:'Source',options:BB_SOURCES,optionLabel:capitalize},
+      length('macdSignal','Signal smoothing'),
+      {type:'select',key:'macdOscillatorMa',label:'Oscillator MA type',options:EMA_FIRST},
+      {type:'select',key:'macdSignalMa',label:'Signal line MA type',options:EMA_FIRST},
+    ],
+    style:[
+      color('macdColor','MACD'),color('macdSignalColor','Signal'),width('macdWidth'),
+      color('macdGrowAboveColor','Histogram: grow above 0'),color('macdFallAboveColor','Histogram: fall above 0'),
+      color('macdGrowBelowColor','Histogram: grow below 0'),color('macdFallBelowColor','Histogram: fall below 0'),
+    ],
+    rules:[{test:c=>c.macdFast<c.macdSlow,message:'Fast length must be shorter than slow length.',keys:['macdFast','macdSlow']}],
+  },
+  vwap:{
+    title:'VWAP',
+    inputs:[
+      {type:'select',key:'vwapAnchor',label:'Anchor period',options:VWAP_ANCHORS},
+      {type:'select',key:'vwapSource',label:'Source',options:BB_SOURCES,optionLabel:capitalize},
+      {type:'check',key:'vwapShowBands',label:'Show bands'},
+      {type:'number',key:'vwapBandMultiplier',label:'Bands multiplier',min:.1,max:10,step:.1},
+      {type:'note',text:'Periods start at 00:00 UTC (week: Monday). Bars without volume do not move the VWAP.'},
+    ],
+    style:[color('vwapColor','VWAP'),color('vwapBandColor','Bands'),width('vwapWidth')],
   },
 };
 

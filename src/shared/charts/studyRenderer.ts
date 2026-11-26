@@ -1,4 +1,4 @@
-import {LineSeries,LineStyle,type AutoscaleInfo,type IChartApi,type ISeriesApi,type UTCTimestamp} from 'lightweight-charts';
+import {HistogramSeries,LineSeries,LineStyle,type AutoscaleInfo,type IChartApi,type ISeriesApi,type UTCTimestamp} from 'lightweight-charts';
 import {BollingerOverlay} from './BollingerOverlay';
 import {chartBollingerBands} from './bollingerBands';
 import {SupertrendOverlay} from './SupertrendOverlay';
@@ -6,6 +6,8 @@ import {chartSupertrend} from './supertrend';
 import {chartZigZag} from './zigZag';
 import {chartTripleMa,TRIPLE_MA_OPACITY,tripleMaColors} from './tripleMa';
 import {chartOscillators} from './chartOscillators';
+import {chartMacd,macdHistogramColor,type MacdPoint} from './macd';
+import {chartVwap} from './vwap';
 import {alpha,indicatorColor} from './indicatorColors';
 import {AdxVisualizer,adxColor,adxLevels,diColors,levelColor} from './adxDisplay';
 import {PaneBand} from './PaneBand';
@@ -14,7 +16,7 @@ import {isPaneStudy,type ChartStudy} from './chartStudies';
 import type {LegendOverlay,StudyValue} from './ChartLegend';
 import {TV} from './tvTheme';
 
-type Bar={time:number;open:number;high:number;low:number;close:number};
+type Bar={time:number;open:number;high:number;low:number;close:number;volume?:number};
 /** all: every loaded candle; current: up to the indicator clock (overlays); completed: closed candles (panes). */
 export type StudyInput={all:Bar[];current:Bar[];completed:Bar[];duration:number};
 export type PaneValue={value:number|null;extra?:{value:number|null;color:string}[]};
@@ -146,10 +148,75 @@ export class StudyRenderer{
         setVisible:visible=>overlay.setVisible(visible),
         dispose:()=>this.price.detachPrimitive(overlay)};
     }
-    return this.createPane(study,study.kind as IndicatorKind);
+    if(study.kind==='vwap'){
+      const format={priceFormat:{type:'price' as const,precision:3,minMove:.001}};
+      const vwap=this.line(config.vwapColor,config.vwapWidth,0,{lastValueVisible:true,crosshairMarkerVisible:false,...format});
+      const bands=config.vwapShowBands?[0,1].map(()=>this.line(config.vwapBandColor,1,0,{lastValueVisible:false,crosshairMarkerVisible:false,...format})):[];
+      const lines=[vwap,...bands];
+      return {study,
+        paint:({current},add)=>{
+          const points=chartVwap(current,{anchor:config.vwapAnchor,source:config.vwapSource,bandMultiplier:config.vwapBandMultiplier});
+          // A line point's color paints the segment that leaves it, so the last bar of each period is made
+          // transparent: the jump into the next period's reset disappears and the line breaks like TradingView's.
+          const series=(field:'vwap'|'upper'|'lower')=>points.map((point,index)=>{
+            const value=point[field];
+            if(value===null)return {time:t(point.time)};
+            return points[index+1]?.anchored?{time:t(point.time),value,color:'transparent'}:{time:t(point.time),value};
+          });
+          vwap.setData(series('vwap'));
+          if(bands.length){bands[0].setData(series('upper'));bands[1].setData(series('lower'));}
+          for(const point of points)if(point.vwap!==null)add(point.time,[
+            {text:point.vwap.toFixed(3),color:config.vwapColor},
+            ...(bands.length?[{text:point.upper!.toFixed(3),color:config.vwapBandColor},{text:point.lower!.toFixed(3),color:config.vwapBandColor}]:[]),
+          ]);
+        },
+        setVisible:visible=>lines.forEach(series=>series.applyOptions({visible})),
+        dispose:()=>lines.forEach(series=>this.chart.removeSeries(series))};
+    }
+    if(study.kind==='macd')return this.createMacdPane(study);
+    return this.createPane(study,study.kind as Exclude<IndicatorKind,'macd'>);
   }
 
-  private createPane(study:ChartStudy,kind:IndicatorKind):Item{
+  /** MACD pane: MACD and signal lines over a four-color histogram, with a zero line. */
+  private createMacdPane(study:ChartStudy):Item{
+    const config=study.config;
+    const format={priceFormat:{type:'price' as const,precision:4,minMove:.0001}};
+    const macd=this.line(config.macdColor,config.macdWidth,this.chart.panes().length,format);
+    macd.priceScale().applyOptions({scaleMargins:{top:.12,bottom:.08}});
+    const paneIndex=macd.getPane().paneIndex();
+    const histogram=this.chart.addSeries(HistogramSeries,{priceLineVisible:false,lastValueVisible:false,...format},paneIndex);
+    const signal=this.line(config.macdSignalColor,config.macdWidth,paneIndex,format);
+    macd.createPriceLine({price:0,color:'rgba(156,156,156,0.5)',title:'',lineStyle:LineStyle.Dotted,lineWidth:1,axisLabelVisible:false});
+    const colors={growAbove:config.macdGrowAboveColor,fallAbove:config.macdFallAboveColor,growBelow:config.macdGrowBelowColor,fallBelow:config.macdFallBelowColor};
+    let data:MacdPoint[]=[],key='';
+    const byTime=new Map<number,MacdPoint>();
+    const series=[histogram,macd,signal];
+    return {study,pane:macd,
+      paint:({completed})=>{
+        const last=completed.at(-1);
+        const next=`${completed.length}:${completed[0]?.time}:${last?.time}:${last?.close}`;
+        if(next===key)return;
+        key=next;
+        data=chartMacd(completed,{fast:config.macdFast,slow:config.macdSlow,signal:config.macdSignal,source:config.macdSource,oscillatorMa:config.macdOscillatorMa,signalMa:config.macdSignalMa});
+        byTime.clear();for(const point of data)byTime.set(point.time,point);
+        macd.setData(data.map(p=>p.macd===null?{time:t(p.time)}:{time:t(p.time),value:p.macd}));
+        signal.setData(data.map(p=>p.signal===null?{time:t(p.time)}:{time:t(p.time),value:p.signal}));
+        histogram.setData(data.map((p,index)=>p.histogram===null?{time:t(p.time)}
+          :{time:t(p.time),value:p.histogram,color:macdHistogramColor(p.histogram,data[index-1]?.histogram??null,colors)}));
+      },
+      valueAt:time=>{
+        const point=(time===null?undefined:byTime.get(time))??data.at(-1);
+        const bar=point?.histogram??null;
+        return {value:point?.macd??null,extra:[
+          {value:point?.signal??null,color:config.macdSignalColor},
+          {value:bar,color:bar!==null&&bar<0?config.macdFallBelowColor:config.macdGrowAboveColor},
+        ]};
+      },
+      setVisible:visible=>series.forEach(item=>item.applyOptions({visible})),
+      dispose:()=>series.forEach(item=>this.chart.removeSeries(item))};
+  }
+
+  private createPane(study:ChartStudy,kind:Exclude<IndicatorKind,'macd'>):Item{
     const config=study.config;
     const series=this.line(kind==='adx'?adxColor(null,config):kind==='atr'?config.atrColor:config.rsiColor,kind==='adx'?config.adxWidth:kind==='atr'?config.atrWidth:config.rsiWidth,this.chart.panes().length,
       {priceFormat:{type:'price',precision:kind==='atr'?3:2,minMove:kind==='atr'?.001:.01}});
@@ -215,6 +282,7 @@ export function studyLegends(studies:readonly ChartStudy[],actions:{onSettings:(
       :study.kind==='triplema'?['Triple MA',`${c.maFast} ${c.maMid} ${c.maSlow}${c.maType==='EMA'?' EMA':''}`,c.maFastColor]
       :study.kind==='bollinger'?['BB',`${c.bbLength} ${c.bbMaType} ${c.bbSource} ${c.bbMultiplier}${c.bbOffset?` ${c.bbOffset}`:''}`,c.bbBasisColor]
       :study.kind==='zigzag'?['Zig Zag',`${c.zigzagDeviation}%`,c.zigzagColor]
+      :study.kind==='vwap'?['VWAP',`${c.vwapAnchor} ${c.vwapSource}${c.vwapShowBands?` ${c.vwapBandMultiplier}`:''}`,c.vwapColor]
       :['Supertrend',`${c.supertrendLength} ${c.supertrendMultiplier}`,c.stUpColor];
     return {key:study.id,name,params,color,hidden:study.hidden,
       onToggleVisible:()=>actions.onToggleHidden(study.id),

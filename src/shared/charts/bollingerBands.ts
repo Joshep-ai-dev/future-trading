@@ -2,9 +2,21 @@ import type {Candle} from '../../features/trading/replayAnimation';
 
 export const BB_MA_TYPES=['SMA','EMA','SMMA (RMA)','WMA','VWMA'] as const;
 export const BB_SOURCES=['close','open','high','low','hl2','hlc3','ohlc4','hlcc4'] as const;
-export type BollingerConfig={length:number;maType:typeof BB_MA_TYPES[number];source:typeof BB_SOURCES[number];multiplier:number;offset:number};
+export type BollingerConfig={length:number;maType:typeof BB_MA_TYPES[number];source:PriceSource;multiplier:number;offset:number};
 export type BollingerPoint={time:number;basis:number|null;upper:number|null;lower:number|null};
 export const defaultBollinger:BollingerConfig={length:20,maType:'SMA',source:'close',multiplier:2,offset:0};
+
+export type PriceSource=typeof BB_SOURCES[number];
+/** Pine-style price source of one candle (close, hl2, hlc3, ohlc4, ...). */
+export function priceSource(candle:{open:number;high:number;low:number;close:number},source:PriceSource):number{
+  switch(source){
+    case 'hl2':return (candle.high+candle.low)/2;
+    case 'hlc3':return (candle.high+candle.low+candle.close)/3;
+    case 'ohlc4':return (candle.open+candle.high+candle.low+candle.close)/4;
+    case 'hlcc4':return (candle.high+candle.low+2*candle.close)/4;
+    default:return candle[source];
+  }
+}
 
 export function validBollinger(config:BollingerConfig):boolean{
   return Number.isSafeInteger(config.length)&&config.length>=1&&BB_MA_TYPES.includes(config.maType)&&BB_SOURCES.includes(config.source)
@@ -25,8 +37,7 @@ export function chartBollingerBands(candles:Candle[],config:BollingerConfig=defa
   let cursor=0,count=0,mean=0,m2=0,sum=0,weighted=0,volumeSum=0,volumePriceSum=0,volumeCount=0;
   let ema:number|null=null,rma:number|null=null;
   return candles.map(candle=>{
-    const value=source==='hl2'?(candle.high+candle.low)/2:source==='hlc3'?(candle.high+candle.low+candle.close)/3:
-      source==='ohlc4'?(candle.open+candle.high+candle.low+candle.close)/4:source==='hlcc4'?(candle.high+candle.low+2*candle.close)/4:candle[source];
+    const value=priceSource(candle,source);
     if(!Number.isFinite(value))return {time:candle.time,basis:null,upper:null,lower:null};
     const full=count===length;
     if(full){

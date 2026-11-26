@@ -1,9 +1,11 @@
-import {defaultBollinger,type BollingerConfig} from './bollingerBands';
+import {defaultBollinger,type BollingerConfig,type PriceSource} from './bollingerBands';
+import type {MacdMa} from './macd';
+import type {VwapAnchor} from './vwap';
 
 /** Studies drawn in their own pane under the price chart. */
-export type IndicatorKind='atr'|'adx'|'rsi';
+export type IndicatorKind='atr'|'adx'|'rsi'|'macd';
 /** Studies drawn over the price series. */
-export type OverlayKind='zigzag'|'supertrend'|'bollinger'|'triplema';
+export type OverlayKind='zigzag'|'supertrend'|'bollinger'|'triplema'|'vwap';
 /** Settings dialogs: chart indicators plus the strategy's Trend SMA line. */
 export type SettingsKind=IndicatorKind|OverlayKind|'trendsma';
 
@@ -35,6 +37,13 @@ export type IndicatorConfig={
   adxBullBgColor:string;adxBearBgColor:string;adxWidth:number;
   // ATR
   atrLength:number;atrSmoothing:MaSmoothing;atrThreshold:number;atrColor:string;atrWidth:number;
+  // MACD
+  macdFast:number;macdSlow:number;macdSignal:number;macdSource:PriceSource;macdOscillatorMa:MacdMa;macdSignalMa:MacdMa;
+  macdColor:string;macdSignalColor:string;macdGrowAboveColor:string;macdFallAboveColor:string;
+  macdGrowBelowColor:string;macdFallBelowColor:string;macdWidth:number;
+  // VWAP
+  vwapAnchor:VwapAnchor;vwapSource:PriceSource;vwapShowBands:boolean;vwapBandMultiplier:number;
+  vwapColor:string;vwapBandColor:string;vwapWidth:number;
 };
 
 /** TradingView built-in defaults (inputs and plot colors). */
@@ -51,4 +60,9 @@ export const defaultIndicators:Readonly<IndicatorConfig>={
   adxWeakColor:'#787b86',adxTrendColor:'#ff9800',adxStrongColor:'#4caf50',diPlusColor:'#00e676',diMinusColor:'#f23645',
   adxBullBgColor:'#4caf50',adxBearBgColor:'#f23645',adxWidth:2,
   atrLength:14,atrSmoothing:'RMA',atrThreshold:0.03,atrColor:'#b71c1c',atrWidth:1,
+  macdFast:12,macdSlow:26,macdSignal:9,macdSource:'close',macdOscillatorMa:'EMA',macdSignalMa:'EMA',
+  macdColor:'#2962ff',macdSignalColor:'#ff6d00',macdGrowAboveColor:'#26a69a',macdFallAboveColor:'#b2dfdb',
+  macdGrowBelowColor:'#ffcdd2',macdFallBelowColor:'#ff5252',macdWidth:1,
+  vwapAnchor:'Session',vwapSource:'hlc3',vwapShowBands:true,vwapBandMultiplier:1,
+  vwapColor:'#2962ff',vwapBandColor:'#4caf50',vwapWidth:1,
 };

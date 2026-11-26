@@ -65,7 +65,7 @@ export default function ChartTools({chartRef,valueLabel='Price',horizontalLabel=
     chartRef.current?.priceScale('right').setAutoScale(true);
     chartRef.current?.timeScale().fitContent();
   }
-  const studyList=(['ma','triplema','bollinger','supertrend','zigzag','rsi','adx','atr'] as const).map(key=>({key,name:STUDY_NAMES[key][0],description:STUDY_NAMES[key][1]}));
+  const studyList=(['ma','triplema','bollinger','supertrend','vwap','zigzag','rsi','macd','adx','atr'] as const).map(key=>({key,name:STUDY_NAMES[key][0],description:STUDY_NAMES[key][1]}));
   const needle=query.trim().toLowerCase();
   const matches=(text:string)=>!needle||text.toLowerCase().includes(needle);
   return <div className="chart-actions tv-toolbar compact-chart-toolbar">
@@ -99,7 +99,7 @@ export default function ChartTools({chartRef,valueLabel='Price',horizontalLabel=
   </div>;
 }
 
-const STUDY_NAMES={zigzag:['Zig Zag','Swing highs and lows - percentage reversal'],ma:['MA','Simple moving average'],triplema:['Triple MA','Three moving averages · 20 / 50 / 100'],atr:['Average True Range','ATR · volatility'],adx:['Average Directional Index','ADX · trend strength'],rsi:['Relative Strength Index','RSI · momentum oscillator'],supertrend:['Supertrend','ATR trend overlay'],bollinger:['Bollinger Bands','BB · moving average and standard-deviation bands']} as const;
+const STUDY_NAMES={vwap:['VWAP','Volume-weighted average price · session / week / month anchor'],macd:['MACD','Moving average convergence divergence · 12 26 9'],zigzag:['Zig Zag','Swing highs and lows - percentage reversal'],ma:['MA','Simple moving average'],triplema:['Triple MA','Three moving averages · 20 / 50 / 100'],atr:['Average True Range','ATR · volatility'],adx:['Average Directional Index','ADX · trend strength'],rsi:['Relative Strength Index','RSI · momentum oscillator'],supertrend:['Supertrend','ATR trend overlay'],bollinger:['Bollinger Bands','BB · moving average and standard-deviation bands']} as const;
 
 /** Small round button over the chart, like TradingView's "scroll to realtime". */
 export function ScrollToLatest({onClick}:{onClick:()=>void}){
