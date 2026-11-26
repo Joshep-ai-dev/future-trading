@@ -30,7 +30,7 @@ WARMUP_DAYS = 10
 # Parameter -> (kind, low, high, step). The UI offers exactly these ranges.
 SEARCH_SPACE = {
     'st_length': ('int', 7, 21, 1),
-    'st_multiplier': ('float', 2., 5., .25),
+    'st_multiplier': ('float', 1.5, 5., .25),
     'adx_threshold': ('float', 20., 35., 1.),
     'rsi_long_min': ('float', 45., 60., 1.),
     'rsi_short_max': ('float', 40., 55., 1.),

@@ -46,7 +46,7 @@ export default function MaterialDatePicker({value,minimum,maximum,disabled=false
 export function MaterialTimePicker({value,disabled=false,onChange}:{value:string;disabled?:boolean;onChange:(value:string)=>void}){
   const current=dayjs(`2000-01-01T${value}`);
   return <PickerField label="Choose chart time" text={value} disabled={disabled} className="is-time">
-    {close=><MultiSectionDigitalClock value={current} ampm={false} timeSteps={{hours:1,minutes:1}} disabled={disabled} onChange={(selected,_state,section)=>{if(!selected?.isValid())return;onChange(selected.format('HH:mm'));if(section==='minutes')close();}} sx={{'& .MuiMultiSectionDigitalClockSection-root':{width:64,maxHeight:260},'& .MuiMultiSectionDigitalClockSection-item':{fontSize:12,width:52}}}/>}
+    {close=><MultiSectionDigitalClock value={current} ampm={false} timeSteps={{hours:1,minutes:1}} onChange={(selected,_state,section)=>{if(!selected?.isValid())return;onChange(selected.format('HH:mm'));if(section==='minutes')close();}} sx={{'& .MuiMultiSectionDigitalClockSection-root':{width:64,maxHeight:260},'& .MuiMultiSectionDigitalClockSection-item':{fontSize:12,width:52}}}/>}
   </PickerField>;
 }
 

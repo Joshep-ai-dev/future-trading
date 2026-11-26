@@ -70,19 +70,14 @@ export default function ScalperSettings({
         <SettingsCard
           step={1}
           title='Signal'
-          description='Enter on a SuperTrend flip of the completed candle, filled at the next candle’s open. The 15m trend uses only completed 15m candles.'
+          description='Enter at the next open after a completed candle flips SuperTrend and ATR is above the minimum.'
         >
           <div className='setup-grid'>
             {num("st_length", "SuperTrend ATR length", 2, 200)}
             {num("st_multiplier", "SuperTrend multiplier", 0.1, 20, "any")}
-            {num("ema_fast_length", "Short EMA (5m)", 2, 500)}
-            {num("htf_ema_length", "Trend EMA (higher TF)", 2, 1000)}
-            <Field label='Higher timeframe'>
-              <select value={config.htf_timeframe} onChange={(e) => set({ htf_timeframe: e.target.value as Config["htf_timeframe"] })}>
-                {["15m", "30m", "1h"].map((tf) => (
-                  <option key={tf}>{tf}</option>
-                ))}
-              </select>
+            {num("atr_length", "ATR length", 2, 200)}
+            <Field label='Minimum ATR' hint='The signal candle’s ATR must be strictly above this value in price units.'>
+              <input type='number' required min={0} step='any' value={config.atr_min} onChange={(e) => set({ atr_min: Number(e.target.value) })} />
             </Field>
             <Field label='Trade direction'>
               <select value={config.trade_mode} onChange={(e) => set({ trade_mode: e.target.value as Config["trade_mode"] })}>
@@ -98,9 +93,17 @@ export default function ScalperSettings({
           </div>
         </SettingsCard>
 
-        <SettingsCard step={2} title='Filters' description={`${filters} of 8 on. Each filter can only remove trades; switch them off to compare.`}>
+        <SettingsCard step={2} title='Optional filters' description={`${filters} of 8 on.`}>
           <div className='adx-st-filters'>
-            <Filter title='Trend' description='Long: 15m close above its EMA 200 and 5m close above EMA 50 (short: below).' checked={config.use_trend_filter} onChange={(v) => set({ use_trend_filter: v })} />
+            <Filter title='Trend' description='Compare the close with its EMA on the execution and higher timeframes.' checked={config.use_trend_filter} onChange={(v) => set({ use_trend_filter: v })}>
+              {num("ema_fast_length", "Execution EMA", 2, 500)}
+              {num("htf_ema_length", "Higher timeframe EMA", 2, 1000)}
+              <Field label='Higher timeframe'>
+                <select value={config.htf_timeframe} onChange={(e) => set({ htf_timeframe: e.target.value as Config["htf_timeframe"] })}>
+                  {["15m", "30m", "1h"].map((tf) => <option key={tf}>{tf}</option>)}
+                </select>
+              </Field>
+            </Filter>
             <Filter title='ADX' description='Trend strength above the threshold.' checked={config.use_adx_filter} onChange={(v) => set({ use_adx_filter: v })}>
               {num("adx_length", "ADX length", 2, 200)}
               {num("adx_threshold", "Threshold", 0, 100, 0.5)}
@@ -156,13 +159,12 @@ export default function ScalperSettings({
               {num("trail_atr", "Trail from", 0, 50, "any", "× ATR", "0 = off")}
               {num("trail_distance_atr", "Trail distance", 0.1, 50, "any", "× ATR")}
               {num("max_hold_bars", "Max hold", 1, 500, 1, "candles")}
-              {num("atr_length", "ATR length", 2, 200)}
               <Field label='Exit on opposite flip'>
                 <Toggle label='Exit on opposite SuperTrend flip' checked={config.exit_on_flip} onChange={(v) => set({ exit_on_flip: v })} />
               </Field>
             </div>
           ) : (
-            <p className='lab-note'>Off: plain SuperTrend stop-and-reverse (exit and reverse on the opposite flip).</p>
+            <p className='lab-note'>Exit on the opposite SuperTrend flip. Reverse when the new entry passes the ATR minimum and any enabled filters.</p>
           )}
         </SettingsCard>
 
@@ -212,7 +214,8 @@ export default function ScalperSettings({
           <dl>
             <div><dt>Strategy</dt><dd>SuperTrend Scalper</dd></div>
             <div><dt>SuperTrend</dt><dd>{config.st_length} / {config.st_multiplier}</dd></div>
-            <div><dt>Filters</dt><dd>{filters} of 8 on</dd></div>
+            <div><dt>ATR gate</dt><dd>ATR({config.atr_length}) &gt; {config.atr_min}</dd></div>
+            <div><dt>Optional filters</dt><dd>{filters} of 8 on</dd></div>
             <div><dt>Exits</dt><dd>{config.use_atr_exits ? `SL ${config.stop_atr} · TP ${config.target_atr} ATR` : "Stop and reverse"}</dd></div>
             <div><dt>Risk</dt><dd>{config.risk_pct}% per trade</dd></div>
             <div><dt>Balance</dt><dd>{settings.capital.toLocaleString()} USDT</dd></div>

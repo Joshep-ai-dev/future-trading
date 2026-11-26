@@ -102,9 +102,11 @@ class StScalper(StrategyRunner):
 
     def chart_columns(self, frame, request, bar_seconds):
         from server.strategies.st_scalper import indicators
-        bars = indicators(frame, self.settings(request), bar_seconds)
-        # The 5m EMA is drawn where the chart shows the strategy trend line.
-        return bars.assign(bb_basis=np.nan, bb_upper=np.nan, bb_lower=np.nan, trend_sma=bars.ema_fast, bb_width_pct=np.nan)
+        s = self.settings(request)
+        bars = indicators(frame, s, bar_seconds)
+        return bars.assign(bb_basis=np.nan, bb_upper=np.nan, bb_lower=np.nan, bb_width_pct=np.nan,
+                           trend_sma=bars.ema_fast if s.use_trend_filter else np.nan,
+                           adx=bars.adx if s.use_adx_filter else np.nan)
 
     def readiness(self, bar, request, frame=None):
         from server.strategies.st_scalper import readiness

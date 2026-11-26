@@ -7,6 +7,7 @@ import pandas as pd
 from pydantic import ValidationError
 
 from server.app import CandleRequest, Parameters, candle_page, history, run
+from server.market.data import _complete_chart_bars, load_chart_bars
 
 
 class HistoryTests(unittest.TestCase):
@@ -30,17 +31,44 @@ class HistoryTests(unittest.TestCase):
         self.assertFalse(page['hasMore'])
         json.dumps(pages, allow_nan=False)
 
+    def test_forward_pages_stop_before_the_current_chart_window(self) -> None:
+        times = [int(stamp.timestamp()) for stamp in self.frame.index]
+        with patch('server.app.load_chart_bars', return_value=self.frame):
+            first = history(CandleRequest(timeframe='5m', after=times[3], before=times[10], limit=3))
+            self.assertEqual([row['time'] for row in first['candles']], [times[4], times[6], times[7]])
+            self.assertTrue(first['hasMore'])
+            second = history(CandleRequest(
+                timeframe='5m', after=first['candles'][-1]['time'], before=times[10], limit=3,
+            ))
+            self.assertEqual([row['time'] for row in second['candles']], times[8:10])
+            self.assertFalse(second['hasMore'])
+
     def test_empty_page_at_start_and_exact_page_boundary(self):
         first = int(self.frame.index[0].timestamp())
         self.assertEqual(candle_page(self.frame, before=first), dict(candles=[],hasMore=False,nextBefore=None))
         self.assertFalse(candle_page(self.frame, limit=11)['hasMore'])
 
+    def test_chart_cache_reloads_when_a_source_file_changes(self) -> None:
+        self.addCleanup(_complete_chart_bars.cache_clear)
+        _complete_chart_bars.cache_clear()
+        with (
+            patch('server.market.data.load_bars', return_value=(self.frame, {})) as loader,
+            patch('server.market.data._file_version', return_value=(1, 100, 1)) as version,
+        ):
+            first = load_chart_bars('5m', 'xag')
+            self.assertIs(load_chart_bars('5m', 'xag'), first)
+            self.assertEqual(len(first), 11)
+            version.return_value = (2, 100, 1)
+            self.assertIsNot(load_chart_bars('5m', 'xag'), first)
+            self.assertEqual(loader.call_count, 2)
+
     def test_api_accepts_timeframe_and_forwards_cursor(self):
         before = int(self.frame.index[8].timestamp())
-        with patch('server.app.load_bars', return_value=(self.frame, {})) as loader:
+        with patch('server.app.load_chart_bars', return_value=self.frame) as loader:
             response = history(CandleRequest(timeframe='5m', before=before, limit=3))
-            loader.assert_called_once_with('5m')
+            loader.assert_called_once_with('5m', instrument='xag')
             self.assertEqual(response, candle_page(self.frame, before, 3))
+        with patch('server.app.load_bars', return_value=(self.frame, {})):
             initial = run(Parameters(timeframe='5m'))
             self.assertEqual(initial['history']['nextBefore'], int(self.frame.index[0].timestamp()))
             self.assertFalse(initial['history']['hasMore'])
@@ -57,6 +85,7 @@ class HistoryTests(unittest.TestCase):
         with patch('server.app.load_bars', return_value=(frame, {})):
             preview = run(Parameters(timeframe='5m'))
             self.assertEqual([row['time'] for row in preview['candles']], expected)
+        with patch('server.app.load_chart_bars', return_value=frame):
             page = history(CandleRequest(timeframe='5m', limit=200))
             pages = [page]
             while page['hasMore']:

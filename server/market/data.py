@@ -1,11 +1,53 @@
 """Read the specified OKX CSV; preserve gaps and never rewrite source data."""
+from functools import lru_cache
 from pathlib import Path
+from threading import Lock
 import numpy as np
 import pandas as pd
 
 CSV = Path(__file__).resolve().parents[2] / 'data' / 'OKX_XAG-USDT-SWAP_1m.csv'
 STABLE_CSV = CSV.with_name('OKX_STABLE-USDT-SWAP_1m.csv')
 TIMEFRAMES = {'1m': 60, '3m': 180, '5m': 300, '10m': 600, '15m': 900, '30m': 1800, '1h': 3600, '4h': 14400, '1d': 86400}
+
+
+def _xag_overlays() -> tuple[Path, Path]:
+    return (CSV.with_name('OKX_XAG-USDT-SWAP_1m_history.csv'),
+            CSV.with_name('OKX_XAG-USDT-SWAP_1m_updates.csv'))
+
+
+def _file_version(path: Path) -> tuple[int, int, int] | None:
+    try:
+        stat = path.stat()
+    except FileNotFoundError:
+        return None
+    return stat.st_mtime_ns, stat.st_size, stat.st_ino
+
+
+_chart_cache_lock = Lock()
+
+
+@lru_cache(maxsize=4)
+def _complete_chart_bars(
+    timeframe: str, instrument: str, paths: tuple[Path, ...],
+    versions: tuple[tuple[int, int, int] | None, ...], closed_bucket: int,
+) -> pd.DataFrame:
+    frame, _ = load_bars(timeframe, path=paths[0], instrument=instrument)
+    return frame.dropna(subset=['open', 'high', 'low', 'close'])
+
+
+def load_chart_bars(timeframe: str, instrument: str) -> pd.DataFrame:
+    """Return shared, complete candles for read-only chart pagination."""
+    if instrument == 'xag':
+        paths = (CSV, *_xag_overlays())
+    elif instrument == 'stable':
+        paths = (STABLE_CSV,)
+    else:
+        from server.market.datasets import dataset_path
+        paths = (dataset_path(instrument),)
+    with _chart_cache_lock:
+        versions = tuple(_file_version(path) for path in paths)
+        closed_bucket = int(pd.Timestamp.now(tz='UTC').timestamp()) // TIMEFRAMES[timeframe]
+        return _complete_chart_bars(timeframe, instrument, paths, versions, closed_bucket)
 
 
 def load_bars(timeframe='1m', path=None, instrument='xag'):
@@ -25,8 +67,7 @@ def load_bars(timeframe='1m', path=None, instrument='xag'):
     # CSVs stay independent. Atomic replacement lets readers see a whole cache.
     if Path(path).resolve() == CSV.resolve():
         # Older backfilled history first, then the source, then newer updates (later wins on overlap).
-        history = CSV.with_name('OKX_XAG-USDT-SWAP_1m_history.csv')
-        cache = CSV.with_name('OKX_XAG-USDT-SWAP_1m_updates.csv')
+        history, cache = _xag_overlays()
         parts = [pd.read_csv(history)] if history.exists() else []
         parts += [df] + ([pd.read_csv(cache)] if cache.exists() else [])
         if len(parts) > 1:

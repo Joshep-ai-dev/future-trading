@@ -9,7 +9,7 @@ function scalperRules(settings:BacktestSettings):Rule[]{
   const filters=[c.use_trend_filter&&`${c.htf_timeframe} EMA ${c.htf_ema_length} + EMA ${c.ema_fast_length}`,c.use_adx_filter&&`ADX > ${c.adx_threshold}`,c.use_rsi_filter&&'RSI band',
     c.use_volatility_filter&&'ATR percentile',c.use_regime_filter&&'regime',c.use_session_filter&&c.sessions.join('/'),c.use_news_filter&&'news',c.use_volume_filter&&'volume'].filter(Boolean).join(' · ');
   return [
-    ['Entry',`SuperTrend ${c.st_length}/${c.st_multiplier} flip, next-candle open`],
+    ['Entry',`SuperTrend ${c.st_length}/${c.st_multiplier} flip with ATR(${c.atr_length}) > ${c.atr_min}, next-candle open`],
     ['Exit',c.use_atr_exits?`SL ${c.stop_atr} · TP ${c.target_atr} ATR · BE ${c.breakeven_atr} · trail ${c.trail_atr} · ${c.max_hold_bars} candles`:'Opposite flip (stop and reverse)'],
     ['Filters',filters||'None'],
     ['Risk',`${c.risk_pct}% of equity per trade`],

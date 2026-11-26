@@ -15,7 +15,7 @@ from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from server.market.data import load_bars, TIMEFRAMES
+from server.market.data import load_bars, load_chart_bars, TIMEFRAMES
 from server.market.live_quote import silver_quote
 from server.market.online_analysis import router as online_analysis_router
 from server.forecast_research import ForecastRequest, run_forecast_test
@@ -479,7 +479,7 @@ async def exchange_stream(venue: Literal['okx','htx','mexc','binance','hyperliqu
 @app.get('/api/exchange/candles')
 def exchange_candles(venue: Literal['okx','htx','mexc','binance','hyperliquid'],
                      timeframe: Literal['1m','3m','5m','10m','15m','30m','1h','4h','1d'] = '1m',
-                     before: int | None = None, *, request: Request):
+                     before: int | None = None, recent: bool = False, *, request: Request):
     ws = workspace(request)
     try:
         exchange, market = ws.exchange._get(venue)
@@ -487,7 +487,7 @@ def exchange_candles(venue: Literal['okx','htx','mexc','binance','hyperliquid'],
         supported = [key for key in durations if key in exchange.timeframes
                      and durations[key] <= durations[timeframe] and durations[timeframe] % durations[key] == 0]
         source = max(supported, key=lambda key: durations[key]) if supported else '1m'
-        limit = 500
+        limit = min(500, 2 * (durations[timeframe] // durations[source])) if recent and before is None else 500
         since = None if before is None else max(0, before * 1000 - limit * durations[source] * 1000)
         if venue == 'htx' and before is not None:
             # HTX contract klines ignore `from`/`to` when `size` is present.
@@ -1233,18 +1233,21 @@ def fine_tune_backtest(parameters: FineTuneRequest, request: Request):
 
 class CandleRequest(Parameters):
     before: int | None = Field(default=None, ge=0, le=4102444800)
+    after: int | None = Field(default=None, ge=0, le=4102444800)
     limit: int = Field(default=5000, ge=1, le=5000)
 
 
-def candle_page(frame, before=None, limit=5000):
-    complete = frame.dropna(subset=['open', 'high', 'low', 'close'])
+def candle_page(frame, before=None, limit=5000, *, after: int | None = None):
     if before is not None:
-        complete = complete.loc[complete.index < pd.Timestamp(before, unit='s', tz='UTC')]
-    selected = complete.tail(limit)
-    candles = [dict(time=int(t.timestamp()), open=float(row.open), high=float(row.high),
+        frame = frame.iloc[:frame.index.searchsorted(pd.Timestamp(before, unit='s', tz='UTC'))]
+    if after is not None:
+        frame = frame.iloc[frame.index.searchsorted(pd.Timestamp(after, unit='s', tz='UTC'), side='right'):]
+    complete = frame.dropna(subset=['open', 'high', 'low', 'close'])
+    selected = complete.head(limit) if after is not None else complete.tail(limit)
+    candles = [dict(time=int(row.Index.timestamp()), open=float(row.open), high=float(row.high),
                     low=float(row.low), close=float(row.close),
-                    **optional_volume(row.volume if 'volume' in selected.columns else None))
-               for t, row in selected.iterrows()]
+                    **optional_volume(getattr(row, 'volume', None)))
+               for row in selected.itertuples()]
     return dict(candles=candles, hasMore=len(complete) > len(selected),
                 nextBefore=candles[0]['time'] if candles else None)
 
@@ -1252,8 +1255,8 @@ def candle_page(frame, before=None, limit=5000):
 @app.post('/api/candles')
 def history(parameters: CandleRequest):
     try:
-        frame, _ = load_bars(parameters.timeframe, instrument=parameters.market)
-        return candle_page(frame, parameters.before, parameters.limit)
+        frame = load_chart_bars(parameters.timeframe, instrument=parameters.market)
+        return candle_page(frame, parameters.before, parameters.limit, after=parameters.after)
     except (ValueError, OSError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 

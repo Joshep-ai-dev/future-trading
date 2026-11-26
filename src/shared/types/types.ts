@@ -65,7 +65,7 @@ export type AdxSupertrendConfig = {
 export type StScalperConfig = {
   st_length: number; st_multiplier: number; htf_timeframe: '15m'|'30m'|'1h'; htf_ema_length: number; ema_fast_length: number;
   adx_length: number; adx_threshold: number; rsi_length: number; rsi_long_min: number; rsi_long_max: number; rsi_short_min: number; rsi_short_max: number;
-  atr_length: number; atr_window: number; atr_pct_min: number; atr_pct_max: number; volume_sma: number; volume_mult: number;
+  atr_length: number; atr_min: number; atr_window: number; atr_pct_min: number; atr_pct_max: number; volume_sma: number; volume_mult: number;
   sessions: ('asia'|'london'|'overlap'|'newyork'|'late')[];
   news_high_before: number; news_high_after: number; news_medium_before: number; news_medium_after: number;
   use_trend_filter: boolean; use_adx_filter: boolean; use_rsi_filter: boolean; use_volatility_filter: boolean; use_session_filter: boolean;

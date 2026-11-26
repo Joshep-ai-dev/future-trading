@@ -22,6 +22,21 @@ class ScalperTests(unittest.TestCase):
     def setUp(self):
         self.frame = market(4000)
 
+    def test_default_entries_require_a_flip_and_atr_strictly_above_minimum(self) -> None:
+        settings = Settings()
+        bars = pd.DataFrame({
+            'st_line': [10.] * 6,
+            'atr': [.02, .03, .031, .031, .031, np.nan],
+            'flip_up': [True, True, True, False, False, True],
+            'flip_down': [False, False, False, True, False, False],
+        })
+
+        signals = entries(bars, settings, 300)
+
+        self.assertEqual(settings.st_multiplier, 1.5)
+        self.assertEqual(signals.entry_long.tolist(), [False, False, True, False, False, False])
+        self.assertEqual(signals.entry_short.tolist(), [False, False, False, True, False, False])
+
     def test_signals_and_higher_timeframe_are_causal(self):
         s = Settings(**{**OPEN, 'use_trend_filter': True, 'use_adx_filter': True, 'use_rsi_filter': True})
         full = indicators(self.frame, s, 300)

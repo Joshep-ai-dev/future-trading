@@ -439,6 +439,44 @@
   left: 54px;
 }
 
+.chart-loading-status {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 6;
+  pointer-events: none;
+}
+
+.chart-loading-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid #454a57;
+  border-radius: 6px;
+  background: #1e222d;
+  color: #f0f3fa;
+  font-size: 12px;
+}
+
+.chart-loading-spinner {
+  width: 13px;
+  height: 13px;
+  border: 2px solid #626a7c;
+  border-top-color: currentColor;
+  border-radius: 50%;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .chart-loading-spinner {
+    animation: chart-loading-spin 0.8s linear infinite;
+  }
+}
+
+@keyframes chart-loading-spin {
+  to { transform: rotate(360deg); }
+}
+
 .tv-drawing-toolbar {
   position: absolute;
   top: 0;

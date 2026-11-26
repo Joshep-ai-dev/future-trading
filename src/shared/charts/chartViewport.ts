@@ -2,8 +2,7 @@ import type {IChartApi,UTCTimestamp} from 'lightweight-charts';
 
 export function candleLogical(chart:IChartApi,time:number|undefined){
   if(time===undefined)return null;
-  const scale=chart.timeScale(),x=scale.timeToCoordinate(time as UTCTimestamp);
-  return x===null?null:scale.coordinateToLogical(x);
+  return chart.timeScale().timeToIndex(time as UTCTimestamp);
 }
 
 /** Keep fractional zoom and blank space, even when the oldest candles roll off. */

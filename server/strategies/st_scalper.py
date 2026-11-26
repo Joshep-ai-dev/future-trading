@@ -2,7 +2,11 @@
 
 Signal (all evaluated on the *completed* 5m candle; nothing repaints):
 
-* SuperTrend(ATR ``st_length``, ``st_multiplier``) flips bullish / bearish.
+* SuperTrend(ATR ``st_length``, factor 1.5 by default) flips bullish / bearish
+  and Wilder ATR is strictly above 0.03 in price units by default.
+
+Optional entry filters (off by default):
+
 * Trend: the last *completed* 15m candle closes above / below its EMA 200
   (a 15m candle is known only at its close), and the 5m close is above /
   below EMA 50.
@@ -24,8 +28,8 @@ candles at the close; an opposite SuperTrend flip exits at the next open.
 Fees, spread, slippage and funding are charged on every fill. Size risks
 ``risk_pct`` of equity on the initial stop (capped by leverage).
 
-With ``use_atr_exits`` off the strategy is the plain SuperTrend
-stop-and-reverse baseline (exit / reverse on the opposite flip only).
+With ``use_atr_exits`` off, an opposite flip exits the position. A reversal
+also requires the new entry to pass the ATR minimum and enabled filters.
 """
 from __future__ import annotations
 
@@ -49,7 +53,7 @@ MEDIUM_IMPACT = frozenset({'ppi', 'retail', 'gdp_pce', 'minutes'})
 class Settings:
     # Signal
     st_length: int = 10
-    st_multiplier: float = 3.
+    st_multiplier: float = 1.5
     htf_timeframe: str = '15m'
     htf_ema_length: int = 200
     ema_fast_length: int = 50
@@ -61,6 +65,7 @@ class Settings:
     rsi_short_min: float = 30.
     rsi_short_max: float = 50.
     atr_length: int = 14
+    atr_min: float = .03
     atr_window: int = 2000  # ~7 days of 5m candles for the ATR percentile
     atr_pct_min: float = 10.
     atr_pct_max: float = 95.
@@ -72,13 +77,13 @@ class Settings:
     news_medium_before: int = 10
     news_medium_after: int = 15
     # Filters (each can be switched off for the step-by-step comparison)
-    use_trend_filter: bool = True
-    use_adx_filter: bool = True
-    use_rsi_filter: bool = True
-    use_volatility_filter: bool = True
-    use_session_filter: bool = True
-    use_news_filter: bool = True
-    use_regime_filter: bool = True
+    use_trend_filter: bool = False
+    use_adx_filter: bool = False
+    use_rsi_filter: bool = False
+    use_volatility_filter: bool = False
+    use_session_filter: bool = False
+    use_news_filter: bool = False
+    use_regime_filter: bool = False
     use_volume_filter: bool = False
     # Exits and risk
     use_atr_exits: bool = True
@@ -113,6 +118,8 @@ class Settings:
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not np.isfinite(value) or not low <= value <= high:
                 raise ValueError(f'{name} must be between {low} and {high}')
+        if isinstance(self.atr_min, bool) or not isinstance(self.atr_min, (int, float)) or not np.isfinite(self.atr_min) or self.atr_min < 0:
+            raise ValueError('atr_min must be a finite nonnegative number')
         if self.rsi_long_min >= self.rsi_long_max or self.rsi_short_min >= self.rsi_short_max:
             raise ValueError('RSI band minimum must be below its maximum')
         if self.atr_pct_min >= self.atr_pct_max:
@@ -220,7 +227,7 @@ def indicators(frame: pd.DataFrame, s: Settings, bar_seconds: int) -> pd.DataFra
 def entries(bars: pd.DataFrame, s: Settings, bar_seconds: int, events: list[tuple[int, str]] | None = None) -> pd.DataFrame:
     """entry_long / entry_short and one boolean column per filter (True = passes)."""
     out = pd.DataFrame(index=bars.index)
-    ready = np.isfinite(bars.st_line) & bars.atr.notna()
+    ready = np.isfinite(bars.st_line) & np.isfinite(bars.atr) & (bars.atr > s.atr_min)
     long_ok, short_ok = bars.flip_up & ready, bars.flip_down & ready
     checks_long, checks_short = {}, {}
     if s.use_trend_filter:
@@ -457,6 +464,9 @@ def readiness(bar, signal_row, s: Settings) -> dict:
         prefix = 'long' if sign == 1 else 'short'
         flip = bool(bar.flip_up if sign == 1 else bar.flip_down)
         checks = [dict(label='SuperTrend flip this candle', passed=flip, value=float(bar.st_direction), threshold=sign)]
+        atr = float(bar.atr)
+        checks.append(dict(label=f'ATR > {s.atr_min:g}', passed=bool(np.isfinite(atr) and atr > s.atr_min),
+                           value=atr if np.isfinite(atr) else None, threshold=s.atr_min))
         for name, label in (('trend', '15m EMA 200 and 5m EMA 50'), ('adx', f'ADX > {s.adx_threshold:g}'), ('rsi', 'RSI in band'),
                             ('volatility', 'ATR percentile in range'), ('session', 'Session enabled'), ('news', 'No news window'),
                             ('regime', 'Strong trend regime'), ('volume', 'Volume above average')):
@@ -467,24 +477,34 @@ def readiness(bar, signal_row, s: Settings) -> dict:
 
     long_checks, short_checks = side(1), side(-1)
     score = lambda checks: round(100*sum(c['passed'] for c in checks)/len(checks))  # noqa: E731
+    values = dict(atr=float(bar.atr), session=str(bar.session))
+    if s.use_adx_filter:
+        values['adx'] = float(bar.adx)
+    if s.use_rsi_filter:
+        values['rsi'] = float(bar.rsi)
+    if s.use_regime_filter:
+        values['regime'] = str(bar.regime)
     return dict(longChecks=long_checks, shortChecks=short_checks, longReadiness=score(long_checks), shortReadiness=score(short_checks),
-                indicators=dict(adx=float(bar.adx), rsi=float(bar.rsi), atr=float(bar.atr), regime=str(bar.regime), session=str(bar.session)))
+                indicators=values)
 
 
 # Step-by-step comparison (the user's six variants).
 VARIANTS = (
-    ('baseline', 'SuperTrend only (stop and reverse)', dict(use_trend_filter=False, use_adx_filter=False, use_rsi_filter=False,
+    ('baseline', 'SuperTrend + ATR minimum (stop and reverse)', dict(use_trend_filter=False, use_adx_filter=False, use_rsi_filter=False,
                                                          use_volatility_filter=False, use_session_filter=False, use_news_filter=False,
                                                          use_regime_filter=False, use_atr_exits=False)),
-    ('ema', '+ EMA trend filter', dict(use_adx_filter=False, use_rsi_filter=False, use_volatility_filter=False,
+    ('ema', '+ EMA trend filter', dict(use_trend_filter=True, use_adx_filter=False, use_rsi_filter=False, use_volatility_filter=False,
                                        use_session_filter=False, use_news_filter=False, use_regime_filter=False, use_atr_exits=False)),
-    ('adx', '+ ADX', dict(use_rsi_filter=False, use_volatility_filter=False, use_session_filter=False, use_news_filter=False,
+    ('adx', '+ ADX', dict(use_trend_filter=True, use_adx_filter=True, use_rsi_filter=False, use_volatility_filter=False, use_session_filter=False, use_news_filter=False,
                           use_regime_filter=False, use_atr_exits=False)),
-    ('rsi', '+ RSI', dict(use_volatility_filter=False, use_session_filter=False, use_news_filter=False,
+    ('rsi', '+ RSI', dict(use_trend_filter=True, use_adx_filter=True, use_rsi_filter=True, use_volatility_filter=False, use_session_filter=False, use_news_filter=False,
                           use_regime_filter=False, use_atr_exits=False)),
-    ('atr_exits', '+ ATR exits (SL / TP / BE / trail / time)', dict(use_volatility_filter=False, use_session_filter=False,
-                                                                    use_news_filter=False, use_regime_filter=False)),
-    ('full', '+ regime, volatility, session and news filters', dict()),
+    ('atr_exits', '+ ATR exits (SL / TP / BE / trail / time)', dict(use_trend_filter=True, use_adx_filter=True, use_rsi_filter=True,
+                                                                  use_volatility_filter=False, use_session_filter=False,
+                                                                  use_news_filter=False, use_regime_filter=False, use_atr_exits=True)),
+    ('full', '+ regime, volatility, session and news filters', dict(use_trend_filter=True, use_adx_filter=True, use_rsi_filter=True,
+                                                                   use_volatility_filter=True, use_session_filter=True,
+                                                                   use_news_filter=True, use_regime_filter=True, use_atr_exits=True)),
 )
 
 
