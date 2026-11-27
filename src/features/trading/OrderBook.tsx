@@ -1,6 +1,7 @@
 import {useEffect,useMemo,useRef,useState} from 'react';
 import {useExchangeStream,type LiveTrade,type OrderBookSnapshot} from '../../shared/api/useExchangeStream';
 import {instrumentDetails,useExchangeInstrument} from '../../shared/api/exchangeInstrument';
+import {okxPublicMarketUrl,okxPublicSymbol,useMarketEvent} from '../../shared/api/useMarketEvent';
 import type {ExchangeVenue} from '../../shared/api/exchangeVenue';
 
 const ROW_HEIGHT=24,MIN_LEVELS=5,MAX_LEVELS=50;
@@ -35,29 +36,22 @@ const amount=(value:number)=>value.toLocaleString(undefined,{minimumFractionDigi
 type Tab='book'|'trades';
 type PanelData={symbol?:string;book:OrderBookSnapshot|null;trades:LiveTrade[]|null};
 
-/** Latest value of a server-sent event stream; the stream is open only while ``url`` is set. */
-function useEventStream<T>(url:string|null){
-  const [value,setValue]=useState<T|null>(null);
-  useEffect(()=>{
-    setValue(null);
-    if(!url)return;
-    const source=new EventSource(url);
-    source.onmessage=event=>{try{setValue(JSON.parse(event.data) as T);}catch{/* Ignore malformed frames. */}};
-    return()=>source.close();
-  },[url]);
-  return value;
-}
-
-/** Live page: reads only the selected tab from the connected exchange, only while shown. */
-export default function OrderBook({venue}:{venue:ExchangeVenue}){
+export default function OrderBook({venue,active}:{venue:ExchangeVenue;active:boolean}){
   const {data,connected}=useExchangeStream(venue);
-  const base=instrumentDetails(useExchangeInstrument()).base;
+  const instrument=useExchangeInstrument();
+  const base=instrumentDetails(instrument).base;
   const [tab,setTab]=useState<Tab>('book');
-  const book=useEventStream<OrderBookSnapshot>(connected&&tab==='book'?`/api/exchange/depth?venue=${venue}&kind=orderBook`:null);
-  const trades=useEventStream<LiveTrade[]>(connected&&tab==='trades'?`/api/exchange/depth?venue=${venue}&kind=trades`:null);
-  return <OrderBookPanel id="live-order-book" tab={tab} onTab={setTab} data={{symbol:data?.symbol,book,trades}} base={base} resetKey={`${venue}-${base}`}
-    emptyBook={connected?'Waiting for the order book...':'Connect an exchange to stream the order book.'}
-    emptyTrades={connected?'Waiting for trades...':'Connect an exchange to stream trades.'}/>;
+  const accountAvailable=connected&&!!data?.symbol&&!data.errors.connection;
+  const publicOkx=venue==='okx'&&!accountAvailable;
+  const source=(kind:'orderBook'|'trades')=>publicOkx
+    ?okxPublicMarketUrl(kind,instrument)
+    :accountAvailable?`/api/exchange/depth?venue=${venue}&kind=${kind}`:null;
+  const book=useMarketEvent<OrderBookSnapshot>(active&&tab==='book'?source('orderBook'):null);
+  const trades=useMarketEvent<LiveTrade[]>(active&&tab==='trades'?source('trades'):null);
+  const symbol=publicOkx?okxPublicSymbol(instrument):data?.symbol;
+  return <OrderBookPanel id="live-order-book" tab={tab} onTab={setTab} data={{symbol,book,trades}} base={base} resetKey={`${venue}-${instrument}`}
+    emptyBook={publicOkx||accountAvailable?'Waiting for the order book...':'Connect an exchange to stream the order book.'}
+    emptyTrades={publicOkx||accountAvailable?'Waiting for trades...':'Connect an exchange to stream trades.'}/>;
 }
 
 /** Paper page: real-time public OKX XAG book or trades (selected tab only), streamed while shown. */
@@ -66,8 +60,8 @@ export function PublicOrderBook({active,market,symbol,base,unavailable}:{active:
   const [tab,setTab]=useState<Tab>('book');
   const live=active&&!unavailable;
   const source=(kind:'orderBook'|'trades')=>`/api/market/realtime?${new URLSearchParams({kind,market})}`;
-  const book=useEventStream<OrderBookSnapshot>(live&&tab==='book'?source('orderBook'):null);
-  const trades=useEventStream<LiveTrade[]>(live&&tab==='trades'?source('trades'):null);
+  const book=useMarketEvent<OrderBookSnapshot>(live&&tab==='book'?source('orderBook'):null);
+  const trades=useMarketEvent<LiveTrade[]>(live&&tab==='trades'?source('trades'):null);
   return <OrderBookPanel id="paper-order-book" tab={tab} onTab={setTab} data={{symbol,book,trades}} base={base} resetKey={market}
     emptyBook={unavailable??'Loading order book...'} emptyTrades={unavailable??'Loading trades...'}/>;
 }

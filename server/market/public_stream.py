@@ -7,6 +7,7 @@ while a browser listens and limited to the kinds currently wanted, fanned out as
 """
 import asyncio
 import json
+import math
 import threading
 import time
 
@@ -131,7 +132,12 @@ class VenueMarketStream(BroadcastStream):
                     ticker = await client.watch_ticker(self.symbol)
                     if ticker.get('last') is not None:
                         # Some venues (e.g. Hyperliquid mids) omit the timestamp; the chart buckets ticks by it.
-                        self.publish('ticker', dict(symbol=self.symbol, last=float(ticker['last']), timestamp=ticker.get('timestamp') or int(time.time()*1000)))
+                        fields = ('last', 'percentage', 'high', 'low', 'baseVolume', 'quoteVolume')
+                        values = {key: ticker[key] for key in fields
+                                  if isinstance(ticker.get(key), (int, float)) and math.isfinite(ticker[key])}
+                        self.publish('ticker', dict(symbol=self.symbol,
+                                                   timestamp=ticker.get('timestamp') or int(time.time()*1000),
+                                                   **values))
                 delay = 1
             except asyncio.CancelledError:
                 raise
@@ -141,7 +147,7 @@ class VenueMarketStream(BroadcastStream):
 
 
 class PublicStreams:
-    """One shared stream per downloaded market key ('dataset:<id>'), created on first use."""
+    """Shared streams for downloaded markets and public OKX perpetuals."""
 
     def __init__(self):
         self.streams: dict[str, VenueMarketStream] = {}
@@ -156,6 +162,17 @@ class PublicStreams:
                 if dataset is None:
                     raise ValueError('Download this market from its exchange first')
                 stream = self.streams[market] = VenueMarketStream(dataset['venue'], dataset['symbol'])
+            return stream
+
+    def get_okx(self, symbol: str) -> VenueMarketStream:
+        from server.exchanges.market_catalog import market_catalog
+        key = f'okx:{symbol}'
+        with self.lock:
+            stream = self.streams.get(key)
+            if stream is None:
+                if not any(market['id'] == symbol for market in market_catalog('okx')):
+                    raise ValueError('Choose an active OKX linear perpetual market.')
+                stream = self.streams[key] = VenueMarketStream('okx', symbol)
             return stream
 
     async def close(self) -> None:

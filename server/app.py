@@ -995,9 +995,20 @@ def public_market_order_book(part: Literal['book', 'trades'] = 'book'):
 
 
 @app.get('/api/market/realtime')
-async def public_market_realtime(kind: Literal['ticker', 'orderBook', 'trades'], market: str = 'xag'):
-    """Real-time public ticker, order book or trades (display only): OKX XAG, or a downloaded exchange market."""
-    if market == 'xag':
+async def public_market_realtime(kind: Literal['ticker', 'orderBook', 'trades'], market: str = 'xag',
+                                 okx_symbol: str | None = None):
+    """Real-time public ticker, order book or trades for OKX or a downloaded market."""
+    if okx_symbol is not None:
+        from server.market.okx_public_stream import SYMBOL, okx_public_stream
+        if okx_symbol == SYMBOL:
+            stream = okx_public_stream
+        else:
+            from server.market.public_stream import public_streams
+            try:
+                stream = await asyncio.to_thread(public_streams.get_okx, okx_symbol)
+            except ValueError as error:
+                raise HTTPException(status_code=404, detail=str(error)) from error
+    elif market == 'xag':
         from server.market.okx_public_stream import okx_public_stream as stream
     elif market.startswith('dataset:'):
         from server.market.public_stream import public_streams

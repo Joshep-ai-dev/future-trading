@@ -1,6 +1,15 @@
 import unittest
 
-from server.market.okx_public_stream import LocalBook
+from server.market.okx_public_stream import LocalBook, ticker_view
+
+
+class PublicTickerTests(unittest.TestCase):
+    def test_reads_24_hour_statistics_and_base_volume(self) -> None:
+        ticker = ticker_view(dict(last='66', open24h='60', high24h='68', low24h='59',
+                                  volCcy24h='12345', vol24h='24690', ts='100'))
+        self.assertEqual(ticker['last'], 66)
+        self.assertAlmostEqual(ticker['percentage'], 10)
+        self.assertEqual((ticker['high'], ticker['low'], ticker['baseVolume']), (68, 59, 12345))
 
 
 class LocalBookTests(unittest.TestCase):

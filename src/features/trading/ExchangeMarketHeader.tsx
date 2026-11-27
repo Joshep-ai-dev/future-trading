@@ -1,4 +1,3 @@
-import {useMarketTitle} from '../../shared/ui/useDocumentTitle';
 import MarketSymbolLabel from '../../shared/ui/MarketSymbolLabel';
 import {useMarketQuotes,type MarketQuote} from '../../shared/api/useMarketQuotes';
 import {useEffect,useRef,useState,type ReactNode} from 'react';
@@ -6,6 +5,7 @@ import {EXCHANGES,type ExchangeVenue} from '../../shared/api/exchangeVenue';
 import MarketHeader from '../../shared/ui/MarketHeader';
 import {liveNumber as number,reconnectExchangeStream,useExchangeStream} from '../../shared/api/useExchangeStream';
 import {useExchangeMarkets,instrumentDetails,saveExchangeInstrument,useExchangeInstrument,type ExchangeInstrument} from '../../shared/api/exchangeInstrument';
+import {okxPublicMarketUrl,okxPublicSymbol,useMarketEvent} from '../../shared/api/useMarketEvent';
 import {api} from '../../shared/api/api';
 
 export default function ExchangeMarketHeader({venue,timeframe,active=true,botRunning=false,actions}:{venue:ExchangeVenue;timeframe:string;active?:boolean;botRunning?:boolean;actions?:ReactNode}){
@@ -39,8 +39,15 @@ export default function ExchangeMarketHeader({venue,timeframe,active=true,botRun
   const [switching,setSwitching]=useState(false),[switchError,setSwitchError]=useState('');
   const priceDigits=instrument.id==='stable'?5:3;
   const collateral=venue==='hyperliquid'?'USDC':'USDT';
-  const market=data?.market;
-  useMarketTitle(active,number(market?.last,priceDigits),`${instrument.base}/${collateral}`);
+  const accountAvailable=connected&&!!data?.symbol&&!data.errors.connection;
+  const publicOkx=venue==='okx'&&!accountAvailable;
+  const publicTicker=useMarketEvent<{
+    last?:number|null; percentage?:number|null; high?:number|null; low?:number|null;
+    quoteVolume?:number|null; baseVolume?:number|null;
+  }>(active&&publicOkx?okxPublicMarketUrl('ticker',instrumentId):null);
+  const market=publicOkx?publicTicker:data?.market;
+  const volume=market?.quoteVolume??publicTicker?.baseVolume;
+  const volumeUnit=market?.quoteVolume!=null||publicTicker?.baseVolume==null?collateral:instrument.base;
   useEffect(()=>{
     const close=(event:PointerEvent)=>{if(picker.current&&!picker.current.contains(event.target as Node))picker.current.open=false;};
     const escape=(event:KeyboardEvent)=>{if(event.key==='Escape'&&picker.current){picker.current.open=false;picker.current.querySelector('summary')?.focus();}};
@@ -50,7 +57,7 @@ export default function ExchangeMarketHeader({venue,timeframe,active=true,botRun
   async function changeInstrument(value:ExchangeInstrument){
     if(value===instrumentId||switching||botRunning)return;
     setSwitchError('');
-    if(connected){
+    if(accountAvailable){
       setSwitching(true);
       try{
         await api('/api/exchange/reconnect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({venue,instrument:value})});
@@ -62,7 +69,7 @@ export default function ExchangeMarketHeader({venue,timeframe,active=true,botRun
   }
   return <MarketHeader
     analysisTimeframe={timeframe}
-    analysisSymbol={data?.symbol??`${instrument.base}/${collateral}`}
+    analysisSymbol={publicOkx?okxPublicSymbol(instrumentId):(data?.symbol??`${instrument.base}/${collateral}`)}
     active={active}
     icon={instrument.icon}
     selector={
@@ -103,7 +110,7 @@ export default function ExchangeMarketHeader({venue,timeframe,active=true,botRun
     metrics={[
       {label:'24h change',value:market?.percentage==null?'\u2014':`${market.percentage>=0?'+':''}${number(market.percentage,2)}%`,tone:(market?.percentage??0)<0?'negative':'positive'},
       {label:'24h high / low',value:`${number(market?.high,priceDigits)} / ${number(market?.low,priceDigits)}`},
-      {label:'24h volume',value:formatVolume(market?.quoteVolume),unit:collateral},
+      {label:'24h volume',value:formatVolume(volume),unit:volumeUnit},
     ]}
     actions={actions}
     notice={(switchError||switching||botRunning)&&<div className={`live-header-notice ${switchError?'negative':''}`} role="status">{switchError|| (switching?'Switching market...':'Stop the bot to change markets.')}</div>}

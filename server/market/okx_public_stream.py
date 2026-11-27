@@ -6,6 +6,7 @@ contracts to XAG with the instrument's contract value.
 """
 import asyncio
 import json
+import math
 import time
 
 import aiohttp
@@ -16,6 +17,20 @@ from server.market.public_stream import BroadcastStream
 
 URL = 'wss://ws.okx.com/ws/v5/public'
 CHANNELS = {'ticker': 'tickers', 'orderBook': 'books', 'trades': 'trades'}
+
+
+def ticker_view(item: dict) -> dict:
+    def number(key: str) -> float | None:
+        value = item.get(key)
+        if value in (None, ''):
+            return None
+        result = float(value)
+        return result if math.isfinite(result) else None
+
+    last, opened = number('last'), number('open24h')
+    return dict(symbol=SYMBOL, last=last, timestamp=int(item['ts']),
+                percentage=(last / opened - 1) * 100 if last is not None and opened else None,
+                high=number('high24h'), low=number('low24h'), baseVolume=number('volCcy24h'))
 
 
 class LocalBook:
@@ -93,7 +108,7 @@ class OkxPublicStream(BroadcastStream):
                             delay = 1
                             if channel == 'tickers':
                                 item = data[-1]
-                                self.publish('ticker', dict(symbol=SYMBOL, last=float(item['last']), timestamp=int(item['ts'])))
+                                self.publish('ticker', ticker_view(item))
                             elif channel == 'books':
                                 for item in data:
                                     if not book.apply(packet.get('action', 'snapshot'), item):

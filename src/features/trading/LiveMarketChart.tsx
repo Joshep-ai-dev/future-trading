@@ -7,7 +7,9 @@ import {mergeHistory} from '../../shared/charts/candleHistory';
 import {TIMEFRAMES} from '../../shared/charts/chartTimeframe';
 import type {ExchangeVenue} from '../../shared/api/exchangeVenue';
 import type {Analysis,BacktestSettings} from '../../shared/types/types';
-import {useExchangeStream} from '../../shared/api/useExchangeStream';
+import {okxPublicSymbol} from '../../shared/api/useMarketEvent';
+import {useMarketTitle} from '../../shared/ui/useDocumentTitle';
+import {liveNumber,useExchangeStream} from '../../shared/api/useExchangeStream';
 import {instrumentDetails,useExchangeInstrument} from '../../shared/api/exchangeInstrument';
 
 type Candle=Analysis['candles'][number];
@@ -30,7 +32,7 @@ function exchangeBuckets(rows: number[][], duration: number): Candle[] {
 const StreamingPriceChart=memo(PaperPriceChart);
 const emptyStops:[]=[];
 const emptyTrades:[]=[];
-export default function LiveMarketChart({venue,settings,overlay,toolbarEnd,onTimeframeChange}:{venue:ExchangeVenue;settings:BacktestSettings;overlay?:ReactNode;toolbarEnd?:ReactNode;onTimeframeChange?:(value:BacktestSettings['entry_timeframe'])=>void}){
+export default function LiveMarketChart({venue,settings,active,overlay,toolbarEnd,onTimeframeChange}:{venue:ExchangeVenue;active:boolean;settings:BacktestSettings;overlay?:ReactNode;toolbarEnd?:ReactNode;onTimeframeChange?:(value:BacktestSettings['entry_timeframe'])=>void}){
   const {data,connected}=useExchangeStream(venue);
   const instrument = useExchangeInstrument();
   const asset = instrumentDetails(instrument).base;
@@ -41,11 +43,14 @@ export default function LiveMarketChart({venue,settings,overlay,toolbarEnd,onTim
   const accountAvailable = connected && !!data?.symbol && !data.errors.connection;
   const publicOkx = venue === 'okx' && !accountAvailable;
   const symbol = publicOkx
-    ? (instrument.includes('/') ? instrument : 'XAG/USDT:USDT')
+    ? okxPublicSymbol(instrument)
     : (data?.symbol ?? `${asset}/${venue === 'hyperliquid' ? 'USDC' : 'USDT'}`);
   const candleUrl = `/api/exchange/candles?venue=${venue}&timeframe=${timeframe}` +
     (publicOkx ? `&public_symbol=${encodeURIComponent(symbol)}` : '');
   const available = publicOkx || (!!data?.symbol && !data.errors.connection);
+  const latestPrice = (publicOkx ? null : data?.market?.last) ?? candles.at(-1)?.close;
+  useMarketTitle(active, liveNumber(latestPrice, instrument === 'stable' ? 5 : 3),
+    `${asset}/${venue === 'hyperliquid' ? 'USDC' : 'USDT'}`);
   useEffect(()=>{setTimeframe(settings.entry_timeframe);},[settings.entry_timeframe]);
   function changeTimeframe(value:string){
     if(!(value in TIMEFRAMES)||value===timeframe)return;

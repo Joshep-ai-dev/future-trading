@@ -226,6 +226,12 @@ table tbody tr:hover td {
   letter-spacing: .6px;
 }
 
+.brand-wordmark {
+  color: var(--text);
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+
 .brand-mark {
   display: grid;
   place-items: center;
