@@ -282,6 +282,22 @@ class ExchangeConnectionTests(unittest.TestCase):
             params={'until': 1_699_999_999_999})
         self.assertTrue(result['hasMore'])
 
+    def test_public_okx_candles_do_not_require_account_credentials(self) -> None:
+        from server.app import exchange_candles
+        symbol = 'XAG/USDT:USDT'
+        self.exchange.markets = {symbol: {'symbol': symbol, 'swap': True, 'linear': True}}
+        self.exchange.timeframes = {'1m': '1m', '5m': '5m'}
+        candles = [[1_699_999_700_000, 1, 2, 1, 2, 10]]
+        self.exchange.fetch_ohlcv.return_value = candles
+        with (
+            patch('server.market.dataset_sync.public_exchange', return_value=self.exchange),
+            patch('server.app.workspace') as workspace,
+        ):
+            result = exchange_candles('okx', '5m', recent=True, public_symbol=symbol, request=None)
+        workspace.assert_not_called()
+        self.exchange.fetch_ohlcv.assert_called_once_with(symbol, '5m', since=None, limit=2)
+        self.assertEqual(result, {'candles': candles, 'hasMore': True})
+
 
 class LiveOrderSafetyTests(unittest.TestCase):
     def setUp(self) -> None:

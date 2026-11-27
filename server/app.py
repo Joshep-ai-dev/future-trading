@@ -479,10 +479,20 @@ async def exchange_stream(venue: Literal['okx','htx','mexc','binance','hyperliqu
 @app.get('/api/exchange/candles')
 def exchange_candles(venue: Literal['okx','htx','mexc','binance','hyperliquid'],
                      timeframe: Literal['1m','3m','5m','10m','15m','30m','1h','4h','1d'] = '1m',
-                     before: int | None = None, recent: bool = False, *, request: Request):
-    ws = workspace(request)
+                     before: int | None = None, recent: bool = False,
+                     public_symbol: str | None = None, *, request: Request):
+    public_client = None
     try:
-        exchange, market = ws.exchange._get(venue)
+        if public_symbol is None:
+            exchange, market = workspace(request).exchange._get(venue)
+        else:
+            if venue != 'okx':
+                raise ValueError('Public live candles are available for OKX.')
+            from server.market.dataset_sync import public_exchange
+            public_client = exchange = public_exchange(venue)
+            market = exchange.markets.get(public_symbol)
+            if not market or not market.get('swap') or not market.get('linear'):
+                raise ValueError('Choose an OKX linear perpetual market.')
         durations = {'1m':60,'3m':180,'5m':300,'10m':600,'15m':900,'30m':1800,'1h':3600,'4h':14400,'1d':86400}
         supported = [key for key in durations if key in exchange.timeframes
                      and durations[key] <= durations[timeframe] and durations[timeframe] % durations[key] == 0]
@@ -507,6 +517,10 @@ def exchange_candles(venue: Literal['okx','htx','mexc','binance','hyperliquid'],
         raise HTTPException(status_code=400, detail=str(error)) from error
     except Exception as error:
         raise HTTPException(status_code=502, detail='Exchange candle history is unavailable.') from error
+    finally:
+        close = getattr(public_client, 'close', None)
+        if callable(close):
+            close()
 
 
 class HistoryDownloadRequest(BaseModel):
