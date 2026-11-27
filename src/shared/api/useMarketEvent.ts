@@ -1,5 +1,15 @@
 import {useEffect,useState} from 'react';
 
+export type PublicMarketTicker = {
+  last?: number | null;
+  timestamp?: number | null;
+  percentage?: number | null;
+  high?: number | null;
+  low?: number | null;
+  quoteVolume?: number | null;
+  baseVolume?: number | null;
+};
+
 export function okxPublicSymbol(instrument: string) {
   return instrument.includes('/') ? instrument : 'XAG/USDT:USDT';
 }

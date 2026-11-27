@@ -5,10 +5,10 @@ import {EXCHANGES,type ExchangeVenue} from '../../shared/api/exchangeVenue';
 import MarketHeader from '../../shared/ui/MarketHeader';
 import {liveNumber as number,reconnectExchangeStream,useExchangeStream} from '../../shared/api/useExchangeStream';
 import {useExchangeMarkets,instrumentDetails,saveExchangeInstrument,useExchangeInstrument,type ExchangeInstrument} from '../../shared/api/exchangeInstrument';
-import {okxPublicMarketUrl,okxPublicSymbol,useMarketEvent} from '../../shared/api/useMarketEvent';
+import {okxPublicSymbol,type PublicMarketTicker} from '../../shared/api/useMarketEvent';
 import {api} from '../../shared/api/api';
 
-export default function ExchangeMarketHeader({venue,timeframe,active=true,botRunning=false,actions}:{venue:ExchangeVenue;timeframe:string;active?:boolean;botRunning?:boolean;actions?:ReactNode}){
+export default function ExchangeMarketHeader({venue,timeframe,active=true,botRunning=false,actions,publicTicker}:{venue:ExchangeVenue;publicTicker:PublicMarketTicker|null;timeframe:string;active?:boolean;botRunning?:boolean;actions?:ReactNode}){
   const {data,connected}=useExchangeStream(venue);
   const instrumentId=useExchangeInstrument(),instrument=instrumentDetails(instrumentId);
   const {markets,error:marketError,loading,retry}=useExchangeMarkets(venue);
@@ -41,10 +41,6 @@ export default function ExchangeMarketHeader({venue,timeframe,active=true,botRun
   const collateral=venue==='hyperliquid'?'USDC':'USDT';
   const accountAvailable=connected&&!!data?.symbol&&!data.errors.connection;
   const publicOkx=venue==='okx'&&!accountAvailable;
-  const publicTicker=useMarketEvent<{
-    last?:number|null; percentage?:number|null; high?:number|null; low?:number|null;
-    quoteVolume?:number|null; baseVolume?:number|null;
-  }>(active&&publicOkx?okxPublicMarketUrl('ticker',instrumentId):null);
   const market=publicOkx?publicTicker:data?.market;
   const volume=market?.quoteVolume??publicTicker?.baseVolume;
   const volumeUnit=market?.quoteVolume!=null||publicTicker?.baseVolume==null?collateral:instrument.base;

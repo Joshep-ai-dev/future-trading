@@ -6,10 +6,10 @@ import TradingChartHeader from '../../shared/charts/TradingChartHeader';
 import {mergeHistory} from '../../shared/charts/candleHistory';
 import {TIMEFRAMES} from '../../shared/charts/chartTimeframe';
 import type {ExchangeVenue} from '../../shared/api/exchangeVenue';
-import type {Analysis,BacktestSettings} from '../../shared/types/types';
-import {okxPublicSymbol} from '../../shared/api/useMarketEvent';
+import {fmt,type Analysis,type BacktestSettings} from '../../shared/types/types';
+import {okxPublicSymbol,type PublicMarketTicker} from '../../shared/api/useMarketEvent';
 import {useMarketTitle} from '../../shared/ui/useDocumentTitle';
-import {liveNumber,useExchangeStream} from '../../shared/api/useExchangeStream';
+import {useExchangeStream} from '../../shared/api/useExchangeStream';
 import {instrumentDetails,useExchangeInstrument} from '../../shared/api/exchangeInstrument';
 
 type Candle=Analysis['candles'][number];
@@ -32,7 +32,7 @@ function exchangeBuckets(rows: number[][], duration: number): Candle[] {
 const StreamingPriceChart=memo(PaperPriceChart);
 const emptyStops:[]=[];
 const emptyTrades:[]=[];
-export default function LiveMarketChart({venue,settings,active,overlay,toolbarEnd,onTimeframeChange}:{venue:ExchangeVenue;active:boolean;settings:BacktestSettings;overlay?:ReactNode;toolbarEnd?:ReactNode;onTimeframeChange?:(value:BacktestSettings['entry_timeframe'])=>void}){
+export default function LiveMarketChart({venue,settings,active,overlay,toolbarEnd,onTimeframeChange,publicTicker}:{venue:ExchangeVenue;publicTicker:PublicMarketTicker|null;active:boolean;settings:BacktestSettings;overlay?:ReactNode;toolbarEnd?:ReactNode;onTimeframeChange?:(value:BacktestSettings['entry_timeframe'])=>void}){
   const {data,connected}=useExchangeStream(venue);
   const instrument = useExchangeInstrument();
   const asset = instrumentDetails(instrument).base;
@@ -48,8 +48,30 @@ export default function LiveMarketChart({venue,settings,active,overlay,toolbarEn
   const candleUrl = `/api/exchange/candles?venue=${venue}&timeframe=${timeframe}` +
     (publicOkx ? `&public_symbol=${encodeURIComponent(symbol)}` : '');
   const available = publicOkx || (!!data?.symbol && !data.errors.connection);
-  const latestPrice = (publicOkx ? null : data?.market?.last) ?? candles.at(-1)?.close;
-  useMarketTitle(active, liveNumber(latestPrice, instrument === 'stable' ? 5 : 3),
+  const publicPrice = publicTicker?.last;
+  const publicTime = publicTicker?.timestamp;
+  const publicBucket = publicTime && Number.isFinite(publicTime)
+    ? Math.floor(publicTime / 1000 / duration) * duration
+    : null;
+  const displayedCandles = useMemo(() => {
+    const last = candles.at(-1);
+    if (!publicOkx || !last || publicPrice == null || !Number.isFinite(publicPrice) ||
+        publicPrice <= 0 || publicBucket === null) return candles;
+    const time = publicBucket;
+    if (time < last.time) return candles;
+    if (time === last.time) {
+      if (last.close === publicPrice) return candles;
+      return [...candles.slice(0, -1), {
+        ...last,
+        high: Math.max(last.high, publicPrice),
+        low: Math.min(last.low, publicPrice),
+        close: publicPrice,
+      }];
+    }
+    return [...candles, {time, open: publicPrice, high: publicPrice, low: publicPrice, close: publicPrice}].slice(-1000);
+  }, [candles, publicOkx, publicPrice, publicBucket]);
+  const latestPrice = (publicOkx ? null : data?.market?.last) ?? displayedCandles.at(-1)?.close;
+  useMarketTitle(active, fmt(latestPrice ?? null, instrument === 'stable' ? 5 : 3),
     `${asset}/${venue === 'hyperliquid' ? 'USDC' : 'USDT'}`);
   useEffect(()=>{setTimeframe(settings.entry_timeframe);},[settings.entry_timeframe]);
   function changeTimeframe(value:string){
@@ -153,13 +175,13 @@ export default function LiveMarketChart({venue,settings,active,overlay,toolbarEn
       return [...previous,{time,open:lastPrice,high:lastPrice,low:lastPrice,close:lastPrice}].slice(-1000);
     });
   },[loaded,connected,publicOkx,data?.market?.last,data?.market?.timestamp,data?.sectionTimes.market,data?.sectionTimes.candle,duration]);
-  const indicators=useMemo(()=>candles.map((c,index)=>{
-    const length=settings.bb_reversal.bb_length,rows=candles.slice(Math.max(0,index-length+1),index+1);
+  const indicators=useMemo(()=>displayedCandles.map((c,index)=>{
+    const length=settings.bb_reversal.bb_length,rows=displayedCandles.slice(Math.max(0,index-length+1),index+1);
     const basis=rows.length===length?rows.reduce((sum,row)=>sum+row.close,0)/length:null;
     const deviation=basis===null?null:Math.sqrt(rows.reduce((sum,row)=>sum+(row.close-basis)**2,0)/length)*settings.bb_reversal.bb_mult;
-    const smaLength=settings.bb_reversal.sma_length,smaRows=candles.slice(Math.max(0,index-smaLength+1),index+1);
+    const smaLength=settings.bb_reversal.sma_length,smaRows=displayedCandles.slice(Math.max(0,index-smaLength+1),index+1);
     return {time:c.time,bbBasis:basis,bbUpper:basis===null||deviation===null?null:basis+deviation,bbLower:basis===null||deviation===null?null:basis-deviation,trendSma:smaRows.length===smaLength?smaRows.reduce((sum,row)=>sum+row.close,0)/smaLength:null};
-  }),[candles,settings.bb_reversal.bb_length,settings.bb_reversal.bb_mult,settings.bb_reversal.sma_length]);
+  }),[displayedCandles,settings.bb_reversal.bb_length,settings.bb_reversal.bb_mult,settings.bb_reversal.sma_length]);
   const loadHistory=useCallback(async(before:number)=>{
     const result=await api<{candles:number[][];hasMore:boolean}>(`${candleUrl}&before=${before}`);
     return {
@@ -168,9 +190,9 @@ export default function LiveMarketChart({venue,settings,active,overlay,toolbarEn
     };
   },[candleUrl,duration]);
   const historyDownload=<MarketHistoryDownload key={`${venue}-${asset}`} venue={venue} symbol={symbol} connected={connected}/>;
-  const chartHeader=<TradingChartHeader symbol={symbol} timeframe={timeframe} onTimeframeChange={changeTimeframe} mode={publicOkx ? "OKX PUBLIC MARKET" : `${venue.toUpperCase()} LIVE MARKET`} caption={publicOkx ? `${timeframe} public candles ? updates every 3s` : `${timeframe} exchange candles - streaming updates`}/>;
+  const chartHeader=<TradingChartHeader symbol={symbol} timeframe={timeframe} onTimeframeChange={changeTimeframe} mode={publicOkx ? "OKX PUBLIC MARKET" : `${venue.toUpperCase()} LIVE MARKET`} caption={publicOkx ? `${timeframe} public candles ? live price` : `${timeframe} exchange candles - streaming updates`}/>;
   return <section className={`terminal-panel price-panel live-price-panel ${candles.length?'has-live-candles':''}`}>{!candles.length&&<div className="chart-actions tv-toolbar compact-chart-toolbar chart-loading-toolbar"><div className="chart-toolbar-heading">{chartHeader}</div><div className="chart-navigation-tools">{historyDownload}</div>{toolbarEnd&&<div className="chart-toolbar-end">{toolbarEnd}</div>}</div>}{overlay}
     {(error||(!publicOkx&&(data?.errors.connection||data?.errors.candleStream||!connected)))&&<p className="exchange-inline-error" role="status">{error||data?.errors.connection||data?.errors.candleStream||'Connecting to exchange stream…'}</p>}
-    {candles.length?<StreamingPriceChart toolbarActions={historyDownload} toolbarEnd={toolbarEnd} header={chartHeader} key={`${venue}-${asset}-${timeframe}`} sessionId={0} allowLocalHistory={false} loadHistory={loadHistory} historyLabel="Pan left to load exchange history" symbol={symbol} showSma={settings.bb_reversal.use_sma_trend_adjustment} timeframe={timeframe} atrLength={settings.bb_reversal.atr_length} adxLength={settings.bb_reversal.adx_length} candles={candles} indicators={indicators} stops={emptyStops} trades={emptyTrades} position={null} livePositions={data?.positions} indicatorClock={publicOkx ? Date.now() / 1000 : (data?.sectionTimes.candle??data?.sectionTimes.market??0)/1000}/>:<div className="chart-empty"><h3>{error?'Exchange chart unavailable':'Connecting to live market'}</h3><p>{venue.toUpperCase()} {asset}/USDT perpetual candles</p></div>}
+    {candles.length?<StreamingPriceChart toolbarActions={historyDownload} toolbarEnd={toolbarEnd} header={chartHeader} key={`${venue}-${asset}-${timeframe}`} sessionId={0} allowLocalHistory={false} loadHistory={loadHistory} historyLabel="Pan left to load exchange history" symbol={symbol} showSma={settings.bb_reversal.use_sma_trend_adjustment} timeframe={timeframe} atrLength={settings.bb_reversal.atr_length} adxLength={settings.bb_reversal.adx_length} candles={displayedCandles} indicators={indicators} stops={emptyStops} trades={emptyTrades} position={null} livePositions={data?.positions} indicatorClock={publicOkx ? Date.now() / 1000 : (data?.sectionTimes.candle??data?.sectionTimes.market??0)/1000}/>:<div className="chart-empty"><h3>{error?'Exchange chart unavailable':'Connecting to live market'}</h3><p>{venue.toUpperCase()} {asset}/USDT perpetual candles</p></div>}
   </section>;
 }
